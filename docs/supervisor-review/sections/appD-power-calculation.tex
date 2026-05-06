@@ -1,3 +1,53 @@
 \section{Power-Calculation Transparency Table}\label{app:D}
 
-\textit{TBD --- drafted by Data-Methodology per spec \S3.9.}
+This appendix presents whatever per-iteration power derivation is
+feasible at writing time against the framework's pre-pinned
+\(\mathrm{MDES} = 0.40\) standard-deviation units of \(Y\) and
+\(\mathrm{Power}_{\min} = 0.80\) at one-sided \(\alpha = 0.05\). The
+method follows the standard one-sided power formula for an OLS
+coefficient under autocorrelated residuals \citep[\S 6.18]{hansen2022},
+with HAC-corrected effective sample size
+\(N_{\mathrm{eff}} = N \cdot (1 - \rho_1)/(1 + \rho_1)\) where
+\(\rho_1\) is the first-order residual autocorrelation. Cells where
+the derivation cannot be honestly produced from the artifacts available
+at writing time are flagged \emph{inherited} and cross-referenced to
+the supervisor-ask in Section~\ref{sec:7} (\(\S 7.4\)). We do not
+fabricate any number we cannot derive from a stable artifact.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{3.0cm} p{1.4cm} p{1.6cm} p{1.4cm} p{1.6cm} p{4.0cm}@{}}
+\toprule
+Iteration & \(N\) & \(\hat{\rho}_1\) (resid.) & \(N_{\mathrm{eff}}\) & Implied power at MDES\(=0.40\) & Notes \\
+\midrule
+Pair D                & 134 & inherited       & inherited       & inherited & \(\hat{\rho}_1\) on the primary residuals not re-derived from a stable artifact at writing time; HAC \(L = 12\) was used in inference but the residual autocorrelation diagnostic is not recorded as a standalone number in the verdict pack. Inherited from Phase-A.0 Rev-5.3.1; re-derivation tabled for \(\S 7.4\). \\
+\addlinespace
+dev-AI Stage-1        & 134 (expected) & not yet estimated & --- & not yet estimable & Phase~2 estimation not yet run; residual autocorrelation cannot be computed before estimation. \\
+\addlinespace
+FX-vol-CPI primary    & 947 & inherited       & inherited       & inherited & Pre-registered HAC bandwidth \(L = 4\) at the weekly cadence; the residual autocorrelation diagnostic is recorded indirectly through the gate-aggregation reconciliation but not as a single-number artifact. Inherited from Phase-A.0 Rev-5.3.1; re-derivation tabled for \(\S 7.4\). \\
+\addlinespace
+Phase-A.0 remittance  & ---  & not applicable  & not applicable  & not applicable & Iteration EXITed at the kill-criterion step before estimation; no power computation is meaningful. \\
+\addlinespace
+P1 SN18               & 8 events (target) & not applicable & not applicable & 0.80 vs.\ \(d = 1.4\); 0.40 vs.\ \(d = 0.8\); 0.13 vs.\ \(d = 0.5\) & Power profile pinned in the parked spec at \(\alpha_{\mathrm{primary}} = 0.0167\), \(N_{\mathrm{events}} = 8\), \(\mathrm{df} = 7\), two-sided. The pre-pinned profile is reproduced verbatim and is not converted to MDES \(= 0.40\) standard-deviation units, because the Cohen-\(d\) parameterization is the spec's own scale. \\
+\bottomrule
+\end{tabular}
+\caption{Per-iteration power derivation transparency. Cells flagged
+\emph{inherited} are not re-derived from the per-iteration realized
+\(N\) and residual autocorrelation; the framework currently inherits
+the \(N_{\min} = 75\), \(\mathrm{Power}_{\min} = 0.80\),
+\(\mathrm{MDES} = 0.40\)-SD invariants from the Phase-A.0 specification
+chain. Re-derivation per iteration is the dedicated supervisor ask in
+\(\S 7.4\).}\label{tab:powerD}
+\end{table}
+
+The table is the most direct substantive response to the
+\(\S 7.4\) ask: it converts the question ``is \(N_{\min} = 75\)
+defensible?'' from rhetorical to data-supported wherever the
+data are available, and it surfaces honestly the cells where the data
+are not available at writing time. The framework does not currently
+record a single-number residual-autocorrelation diagnostic in the
+verdict pack of either Pair~D or FX-vol-CPI; remediating that
+artifact gap is itself one of the methodological housekeeping tasks
+that any forward iteration would inherit, conditional on the
+supervisor's guidance.

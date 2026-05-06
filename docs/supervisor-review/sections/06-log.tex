@@ -1,3 +1,402 @@
 \section{The Abrigo Log: Record of Closed and Active Iterations}\label{sec:6}
 
-\textit{TBD --- drafted by Data-Methodology per spec \S3.6.}
+This section records the five iterations the project has run to date.
+Each iteration is presented in the same nine-field schema --- target
+population; \((Y, X)\) pair with operational definition; sign
+expectation and literature anchor; primary specification; sample;
+verdict; headline numbers; key caveats from independent review; and
+pre-registration sha256 chain. The section closes with a load-bearing
+caveat on cross-iteration multiple-comparison structure that we develop
+further as a supervisor question in \(\S\ref{sec:7}\) (\(\S 7.5\)).
+
+\subsection{Pair D --- BPO offshoring through COP/USD lag}\label{sec:6.1}
+
+\paragraph{Target population.} Colombian young workers aged 14--28
+(statutory youth band per Ley~1622 de 2013) employed in the broad
+services aggregate.
+
+\paragraph{(Y, X) pair.}
+\(Y_t\) is the share of young workers (14--28) whose primary occupation
+falls in CIIU Rev.~4~A.C. Sections G--T, computed monthly on the DANE
+GEIH micro-data with \texttt{FEX\_C\_2018} expansion factors and the
+DANE \emph{empalme} factor applied to the 2015--2020 segment for
+Marco-2005-to-Marco-2018 reconciliation; the dependent variable is the
+logit of the raw share. \(X_{t-k}\) is \(\log(\mathrm{COP\_USD}_{t-k})\)
+on the Banrep TRM end-of-month spot, for \(k \in \{6, 9, 12\}\) months.
+
+\paragraph{Sign expectation and literature anchor.} Positive. The
+transmission chain is Baumol cost disease
+\citep{baumolbowen1966, baumol2006} composed with US-Colombia BPO
+wage arbitrage \citep{mendietamunoz2017} and the standard
+six-to-twelve-month offshoring contracting cycle documented in the
+Philippines comparator \citep{beerepoothendriks2013, errighibodwell2017};
+displaced labor reallocates into services on the Rodrik-McMillan
+premature-deindustrialization channel \citep{rodrik2016, mcmillanrodrik2011}.
+
+\paragraph{Primary specification.} Equation~(\ref{eq:primary-monthly})
+with composite \(\beta_{\mathrm{composite}} = \beta_6 + \beta_9 +
+\beta_{12}\); one-sided test at \(\alpha = 0.05\); OLS-homoskedastic
+inference primary, HAC(\(L = 12\)) inference as robustness arm R4.
+
+\paragraph{Sample.} \(N = 134\) monthly observations, window
+2015-01-31 through 2026-02-28. The window's lower bound is the result
+of two CORRECTIONS-block revisions documented in the spec: an initial
+2008-01 lower bound was shortened to 2010-01 after a schema-stability
+HALT on the DANE empalme nota-técnica coverage, and then to 2015-01
+after a second HALT under the realization that the empalme files for
+the 2010--2014 segment ship CIIU Rev.~3 codes in the
+\texttt{RAMA4D} column despite the column header naming. The
+2015-01 lower bound is the DANE-canonical Rev.~4 value-content-verified
+window. The \(N = 134\) realized sample is well above the
+\(N_{\min} = 75\) floor.
+
+\paragraph{Verdict.} PASS, 2026-04-28.
+
+\paragraph{Headline numbers.} \(\hat{\beta}_{\mathrm{composite}} =
++0.13670985\); HAC standard error \(0.02465\); \(t = +5.5456\);
+one-sided \(p \approx 1.46 \times 10^{-8}\). Robustness rows R1--R4
+produced zero sign flips relative to the primary; the four-row classifier
+returned AGREE.
+
+\paragraph{Key caveats from independent review.} Four flags from the
+Reality Checker review of the closed iteration are inherited as
+load-bearing constraints on any downstream framing:
+\begin{enumerate}
+  \item The estimate hedges the \emph{correlation} between lagged COP/USD
+    and the broad-services young-worker share. It does not identify the
+    BPO transmission channel as the operative mechanism: any narrative
+    causal interpretation of the BPO chain is conjectural and is not
+    supported by the Stage-1 design.
+  \item The lag effect is concentrated at the six-month horizon
+    (\(\hat{\beta}_6 \approx +0.109\), approximately 80\% of the
+    composite) rather than uniformly spread across the 6--12-month
+    contracting window. The narrative that the project carries forward
+    is ``concentrated at the six-month horizon, within the
+    six-to-twelve-month window,'' not ``spread uniformly across
+    the window.''
+  \item The window-narrowing path through the two CORRECTIONS blocks
+    over-represents three macroeconomically distinctive regimes
+    (post-2014 oil-price collapse, the COVID shock, and the 2022--2024
+    Federal-Reserve tightening cycle); the regime-mix concern is
+    a residual identification concern beyond the four pre-registered
+    robustness arms.
+  \item The verdict is sensitive to a single off-spec design choice. An
+    orchestrator-brief variant that included a \texttt{marco2018\_dummy}
+    in the primary --- not in the spec text, where the dummy is the R1
+    arm only --- produces \(\hat{\beta}_{\mathrm{composite}} = +0.0815\)
+    at one-sided \(p \approx 0.080\), which would map to ESCALATE
+    Clause~A under the verdict tree of \(\S\ref{sec:5.6}\). The spec
+    text ran as authoritative because the spec sha256 was pinned
+    9.5 hours before Phase-2 dispatch; the off-spec variant is preserved
+    in the artifact \texttt{primary\_ols.json} under the field
+    \texttt{off\_spec\_sensitivity\_orchestrator\_brief} for audit. The
+    document carries this verdict-sensitivity record forward as part of
+    the framework's decision log.
+\end{enumerate}
+
+\paragraph{Pre-registration sha256 chain.}
+v1.1 \(\to\) v1.2 \(\to\) v1.2.1 \(\to\) v1.3 \(\to\) v1.3.1
+\(\to\) governing hash
+\texttt{964c62cca0...ef659}. The full hash chain and revision history
+are reproduced in Appendix~\ref{app:C}.
+
+\subsection{dev-AI Stage-1 --- Section J ICT through COP/USD lag}\label{sec:6.2}
+
+\paragraph{Target population.} Colombian young workers (14--28) employed
+in CIIU Rev.~4 A.C. Section J (Information and Communication, Divisions
+58--63: publishing, motion picture and video, programming and
+broadcasting, telecommunications, computer programming and consultancy,
+information service activities). The population is a strict subset of
+the Pair~D Sections G--T cut.
+
+\paragraph{(Y, X) pair.} \(Y_t\) is the Section-J young-worker share
+computed on DANE GEIH micro-data with the same monthly cadence,
+\texttt{FEX\_C\_2018} expansion factors, and \texttt{RAMA4D\_R4}
+sector coding as Pair~D, restricted to Section J via the published
+DANE Section table; the dependent variable is the logit. \(X_{t-k}\)
+is the same Banrep TRM end-of-month-spot panel as in Pair~D, with the
+same lag set \(k \in \{6, 9, 12\}\); the panel back-extends \(X\) to
+2014-01 to preserve \(Y\) starting at 2015-01.
+
+\paragraph{Sign expectation and literature anchor.} Positive. The
+mechanism is the same Baumol-arbitrage-offshoring chain as Pair~D
+narrowed from BPO-flavored services-broad to ICT-narrow
+tech-services offshoring; the same canonical references apply
+\citep{mendietamunoz2017, beerepoothendriks2013, errighibodwell2017,
+rodrik2016}.
+
+\paragraph{Primary specification.} Equation~(\ref{eq:primary-monthly})
+restated with the Section-J \(Y\); one-sided test at \(\alpha = 0.05\);
+OLS-homoskedastic inference primary, HAC(\(L = 12\)) inference as
+robustness arm R4.
+
+\paragraph{Sample.} Expected \(N \approx 134\) monthly observations,
+window 2015-01 through 2026-03 (one-month tolerance for end-of-window
+publication-lag drop). Phase~1 ingest closed at \(N = 134\) months
+schema-stable.
+
+\paragraph{Verdict.} IN PROGRESS. Phase~1 (data ingest) closed
+2026-05-05 with two diagnostic flags surfaced before estimation;
+Phase~2 (estimation) is the next step. Verdict is open.
+
+\paragraph{Headline numbers.} Not yet estimated.
+
+\paragraph{Key caveats from independent review.} The diagnostic flags
+surfaced at Phase~1 ingest, recorded in the spec as the
+CORRECTIONS-\(\kappa\) block, materially tighten the spec's
+robustness-arm discipline before estimation. We report the gap in two
+distinct numbers, because the realized data missed the ex-ante
+expectation on two distinct dimensions:
+\begin{enumerate}
+  \item \emph{Cell-count gap.} Realized monthly cell counts for the
+    Section-J young-worker stratum lie in \([94, 267]\) with median
+    \(145\); the ex-ante feasibility-memo baseline was \([700, 1200]\).
+    The realized range is a factor of roughly five-to-seven below
+    baseline. One month (2024-10-31) lies at \(\mathrm{cell\ count}
+    = 94\), inside a borderline rare-event regime under one hundred.
+    Seventy-four of the one hundred and thirty-four months
+    (approximately 55\%) lie below \(150\).
+  \item \emph{Share-magnitude gap.} Realized monthly raw shares lie in
+    \([0.014, 0.031]\); the ex-ante spec range was \([0.04, 0.10]\).
+    The realized range is a factor of roughly one-and-one-third to
+    three below baseline. Because the logit derivative
+    \(\mathrm{d}/\mathrm{d}Y\,\mathrm{logit}(Y) = 1/[Y(1-Y)]\) is
+    monotonically increasing in proximity to \(0\) and \(1\), the
+    realized range maps the logit derivative into \([33, 73]\), against
+    a v1.0.1-anticipated across-support amplification ratio of
+    \(2.34\). The realized derivative is a factor of three-to-seven
+    larger than the v1.0.1 baseline anticipated.
+\end{enumerate}
+The spec's pre-registered hedges against logit-derivative amplification
+(R1, the 2021 regime dummy on the logit-\(Y\); and R3, the raw-share
+specification that sidesteps the logit nonlinearity) become
+\emph{mandatory} ESCALATE triggers under realized
+\(\kappa\)-amplification: under the v1.0.2 hardening, sign-disagreement
+on either R1 or R3 individually re-routes the verdict from PASS to
+ESCALATE Clause~A regardless of the four-row aggregate consistency
+classification. The compositional-accounting concern is also
+load-bearing: a positive composite on Section J at Stage-1 PASS or
+ESCALATE-PASS is consistent with either an independent ICT-narrow
+mechanism or a re-discovery of the Pair~D broad-services PASS
+aggregated up to ICT, and the Stage-1 verdict cannot distinguish
+these two readings without a Section-(G--T-minus-J) decomposition
+that the spec does not pre-commit. Stage-2 dispatch on a Stage-1 PASS
+must inherit this caveat.
+
+\paragraph{Pre-registration sha256 chain.} v1.0 \(\to\) v1.0.1
+\(\to\) v1.0.2 \(\to\) governing hash
+\texttt{7c72292516...751f5a}.
+
+\subsection{FX-vol-CPI surprise --- Colombian CPI through TRM realised
+volatility}\label{sec:6.3}
+
+\paragraph{Target population.} Colombian corporates and remittance
+recipients with FX-volatility exposure on the COP/USD pair around
+Colombian CPI publication.
+
+\paragraph{(Y, X) pair.} \(Y_t\) is the weekly realized volatility of
+the Banrep TRM end-of-day series, computed on the daily log-return
+panel and aggregated to the weekly cadence under a Friday anchor.
+\(X_t\) is the signed AR(1) CPI surprise: the monthly DANE CPI
+release minus a one-step-ahead AR(1) forecast on prior CPI prints,
+mapped to the weekly cadence by carrying the surprise across the
+release week and zeros otherwise.
+
+\paragraph{Sign expectation and literature anchor.} Positive on the
+classic CPI-announcement-volatility channel: a larger absolute
+surprise should generate larger TRM realized volatility around the
+release. The pre-registered primary tested the signed surprise rather
+than the absolute surprise, on the prior that the Colombian
+hyperinflation anchor produces an asymmetric response.
+
+\paragraph{Primary specification.} Weekly OLS of TRM realized
+volatility on the signed AR(1) CPI surprise plus a small set of
+macro-surprise controls; one-sided test at \(\alpha = 0.05\);
+OLS-homoskedastic inference primary, HAC(\(L = 4\)) inference under
+the gate-aggregation rule. The pre-registered sensitivity universe
+spans thirteen rows (A1--A12 plus seven cumulative cuts S1--S7)
+hashed via a \texttt{sensitivity\_preregistration\_hash} on the
+panel fingerprint artifact.
+
+\paragraph{Sample.} \(N = 947\) weekly observations, window
+2008-01-02 through 2026-02-23.
+
+\paragraph{Verdict.} CLOSED FAIL on the pre-registered weekly primary,
+2026-04-19.
+
+\paragraph{Headline numbers.} \(\hat{\beta}_{\mathrm{CPI}} = -0.000685\)
+(HAC(4) standard error \(0.001794\)); \(90\%\) HAC interval
+\([-0.003636,\,+0.002266]\) (contains zero); the gate criterion
+\(\hat{\beta} - 1.28 \cdot \widehat{\mathrm{SE}} < 0\) returns
+\(-0.002981 < 0\), which is the FAIL trigger. Adjusted \(R^2 = 0.193\)
+clears the pre-pinned floor; the macro-surprise regressors alone
+contribute approximately zero. Under the pre-committed weekly OLS
+specification, Colombian AR(1) CPI surprises do not produce a
+statistically detectable increase in COP/USD realized volatility
+across the sample window. We separately note that the pre-registered
+A1 monthly-cadence sensitivity returned
+\(\hat{\beta} = +0.0152\) with a \(90\%\) interval
+\([+0.0057,\,+0.0246]\) and the A4 release-day-excluded sensitivity
+returned \(\hat{\beta} = +0.0033\) with a \(90\%\) interval
+\([+0.0005,\,+0.0062]\). Neither is the iteration's main finding ---
+the pre-registered primary is FAIL and the pre-registered primary
+\emph{is} the result. The two sensitivities are pre-registered
+robustness checks that returned positive significance at the
+\(90\%\) one-sided convention; they live in the iteration's
+pivot record as candidate inputs to a future
+monthly-cadence-primary specification, not as a rescue of the
+weekly primary.
+
+\paragraph{Key caveats from independent review.} The pre-registered
+T1 exogeneity test rejected at \(F = 15.12\),
+\(p \approx 1.3 \times 10^{-9}\); the iteration is therefore a
+\emph{predictive regression} in the strict sense of the
+Granger-predictive-versus-structural-causal distinction, and the
+estimated \(\hat{\beta}\) describes how past information predicts
+current realized volatility, not how an exogenous surprise causes
+future realized volatility. We do not interpret \(\hat{\beta}\) as an
+impulse-response. The HAC-versus-bootstrap reconciliation across the
+verdict tree returned AGREEMENT, ruling out a standard-error artifact.
+
+\paragraph{Pre-registration sha256 chain.} The iteration ran on the
+Phase-A.0 Rev~4 specification chain; the canonical artifacts are the
+panel fingerprint
+(\texttt{nb1\_panel\_fingerprint.json}) and the verdict file
+(\texttt{gate\_verdict.json}), both governed by the
+\texttt{sensitivity\_preregistration\_hash} pinned in the panel
+fingerprint.
+
+\subsection{Phase-A.0 remittance --- Colombian remittance corridor through
+FX}\label{sec:6.4}
+
+\paragraph{Target population.} Colombian household remittance recipients,
+indexed against the Colombian remittance corridor with FX pass-through.
+
+\paragraph{(Y, X) pair.} \(Y_t\) was the weekly TRM realized volatility
+panel (inherited from \(\S\ref{sec:6.3}\)). \(X_t\) was a candidate
+on-chain remittance-flow proxy constructed from cCOP and COPm aggregate
+user activity on Celo, partitioned to attempt to isolate Colombian
+household-remittance flow from third-party-DEX activity, treasury
+roundtripping, and bot arbitrage.
+
+\paragraph{Sign expectation and literature anchor.} Positive on the
+remittance-volatility channel: large remittance-flow shocks should
+generate FX-vol shocks at the receiving corridor. The literature anchor
+was the parametric-insurance-counterparty-matching tradition.
+
+\paragraph{Primary specification.} Pre-registered weekly OLS with
+empirical kill-criteria k1 (intent: an X-driver fingerprint must be
+present in remittance event-window data) and k2 (data-source: the X
+proxy must measure Colombian household remittance, not a generic
+on-chain volume aggregate).
+
+\paragraph{Sample.} Window 2024-09 through 2026-04, weekly cadence
+(panel construction did not reach final \(N\) before the EXIT verdict
+fired).
+
+\paragraph{Verdict.} CLOSED EXIT\_NON\_REMITTANCE, 2026-04-24.
+
+\paragraph{Headline numbers.} The iteration exited at the kill-criteria
+step rather than producing point estimates. Task~11.F Axis-1
+event-research returned zero of thirty peak-day flows that fingerprinted
+as remittance; approximately 87\% of the surveyed flow decomposed into
+TRM arbitrage, treasury roundtripping, campaigns, and bot activity, with
+the residual a thin retail tail. Kill criterion k1 fired (intent
+non-remittance dominant); kill criterion k2 fired in part (the
+unfiltered Dune aggregate at query 7366593 did not measure Colombian
+household remittance).
+
+\paragraph{Key caveats from independent review.} The exit was load-bearing
+on the kill-criterion discipline. Without the pre-registered EXIT
+criterion, the rev-4 plan's ``non-stop filter iteration'' policy would
+have run to a filter that appeared to ``rescue'' a remittance signal
+that was never captured upstream. The iteration carries forward the
+lesson that no post-hoc filter can reconstruct what was never measured
+upstream; any pivot must inherit the kill-criterion pattern.
+
+A further caveat applies to subsequent on-chain attribution. A
+2026-04-24 thesis proposed Carbon-DeFi basket-rebalancing volume as a
+candidate on-chain demand signal for an inequality-differential
+follow-on iteration; that attribution was retracted on 2026-04-27 after
+verification of the Mento V3 deployment manifest confirmed zero
+protocol-level integration between the Mento contracts and the Carbon
+contracts. Carbon \texttt{tokenstraded} events on Celo are pure
+third-party-DEX activity dominated by Bancor's own arbitrage routers
+(\(383{,}303\) distinct traders on the Mento Broker V2 swap event versus
+\(147\) on Carbon over comparable windows), not Mento Reserve user
+demand. The framework's on-chain demand-signal candidate has been
+re-pivoted to native Mento Broker V2 swap events on the Broker contract
+\texttt{0x777A8255...4CaD}, and the supervisor-review document does
+\emph{not} present Carbon-DeFi volume as the canonical Phase-A.0
+finding. The Phase-A.0 EXIT verdict stands on the original
+\((Y, X)\) pair as falsified-on-mechanism rather than failed-on-power.
+
+\paragraph{Pre-registration sha256 chain.} Phase-A.0 spec chain
+Rev~1 \(\to\) Rev~1.1 \(\to\) Rev~1.1.1 (all SUPERSEDED and RETIRED at
+EXIT) \(\to\) Rev~4.1 (kill-criterion-bearing); the on-chain attribution
+retraction is recorded in the framework memory at Rev-5.3.7.
+
+\subsection{P1 Bittensor SN18 --- event-study apparatus}\label{sec:6.5}
+
+\paragraph{Target population.} The proprietary-AI policy-shock-exposed
+population (LATAM developers paying USD-denominated AI APIs is the
+downstream candidate; the apparatus was authored before the
+target-population narrowing).
+
+\paragraph{(Y, X) pair.} \(Y_t\) was a Bittensor SN18 (Cortex.t) alpha
+event-study indicator; \(X_t\) was a set of pre-pinned policy-event
+dates (Bittensor halving 2025-12-15; dTAO mainnet activation 2025-02-13;
+Cortex.t milestone events).
+
+\paragraph{Sign expectation and literature anchor.} Two-sided. The
+methodology baseline was the Maymin (2026, arXiv:2603.29751)
+event-study framework with explicit divergences pinned in the spec.
+
+\paragraph{Primary specification.} Event-study apparatus over a
+nine-cell verdict cube (verdict-eligibility crossed with
+robustness-consistency), Bonferroni-corrected at
+\(\alpha_{\mathrm{primary}} = 0.0167\) over the conjunctive family
+P1 + P2 + P3, with \(N_{\min}^{\mathrm{events}} = 8\) and an
+asymmetric placebo gate.
+
+\paragraph{Sample.} Apparatus completed; data ingest deferred.
+
+\paragraph{Verdict.} PARKED, 2026-04-27.
+
+\paragraph{Headline numbers.} None: the apparatus is parked for the
+record; no graduating empirical claim was produced.
+
+\paragraph{Key caveats from independent review.} The slow-lane
+apparatus (three spec revisions, six verifier dispatches, a nine-cell
+verdict cube) was overkill for the project's stage goal of identifying
+a single empirically validated risk and a positive-\(\beta\) confirmation
+before protocol design. The user pivoted to the simple-\(\beta\)
+fast-lane track (Pair~D, dev-AI Stage-1) and parked P1 to preserve the
+intellectual capital of the spec work. Re-activation conditions are
+documented in the parking memory.
+
+\paragraph{Pre-registration sha256 chain.} Spec sha256
+\texttt{f855e036d3...b47aeab}.
+
+\subsection{Cross-iteration multiple-comparison caveat}\label{sec:6.6}
+
+The five iterations above are pre-registered individually but the
+\emph{decisions} that produced them --- which target populations to
+pursue, which \((Y, X)\) pairs to spec-pin, which to drop after an
+EXIT, which to deepen --- are themselves a meta-multiple-comparison
+structure. Pair~D's one-sided \(p \approx 1.46 \times 10^{-8}\) is
+overwhelmingly significant against any reasonable
+\citet{benjaminihochberg1995} or \citet{romanowolf2005} correction
+applied across five iteration-level tests, but the FX-vol-CPI
+pre-registered sensitivities (A1 monthly with \(90\%\) interval
+\([+0.0057, +0.0246]\); A4 release-day-excluded with \(90\%\) interval
+\([+0.0005, +0.0062]\)) are far less robust to such a correction; the
+A4 lower bound at \(0.0005\) is at the edge of significance even
+uncorrected. We therefore decline to make any aggregate claim about
+``what the project has established across five iterations.'' What the
+project has established at the per-iteration level is recorded above,
+iteration by iteration, with the appropriate hedges. The framework's
+posture toward iteration-selection bias and the appropriate
+familywise-error-rate or false-discovery-rate correction regime is
+the dedicated open question we put to the supervisor in
+Section~\ref{sec:7} (\(\S 7.5\)).
