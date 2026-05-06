@@ -28,6 +28,7 @@ def load_manifest() -> dict:
 def fetch_tier1() -> None:
     try:
         from huggingface_hub import hf_hub_download
+        from huggingface_hub.errors import RepositoryNotFoundError
     except ImportError:
         sys.exit(
             "huggingface_hub not installed. Run `make install` "
@@ -43,13 +44,22 @@ def fetch_tier1() -> None:
 
     print(f"[Tier 1] Pulling {len(files)} panels from {dataset}@{revision}...")
     for fname in files:
-        local = hf_hub_download(
-            repo_id=dataset,
-            filename=fname,
-            revision=revision,
-            repo_type="dataset",
-            local_dir=REPO_ROOT / "data",
-        )
+        try:
+            local = hf_hub_download(
+                repo_id=dataset,
+                filename=fname,
+                revision=revision,
+                repo_type="dataset",
+                local_dir=REPO_ROOT / "data",
+            )
+        except RepositoryNotFoundError:
+            sys.exit(
+                f"\n  ✗ HuggingFace dataset {dataset} not found.\n\n"
+                "  This is expected if the dataset has not been published yet.\n"
+                "  Maintainers: run `make publish` after setting HF_TOKEN.\n"
+                "  Cloners: ask a maintainer to publish, or use Tier 2 instead:\n"
+                "      make data-raw && make panels"
+            )
         print(f"  ✓ {Path(local).relative_to(REPO_ROOT)}")
     print(f"[Tier 1] Done. Panels available under {PANELS_DIR.relative_to(REPO_ROOT)}/")
 
