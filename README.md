@@ -13,7 +13,7 @@ contract tooling to reproduce any analysis here.**
 
 ```bash
 # 1. Clone
-git clone https://github.com/JMSBPP/abrigo-analytics.git
+git clone https://github.com/wvs-finance/abrigo-analytics.git
 cd abrigo-analytics
 
 # 2. Create venv (Python 3.13)
@@ -22,6 +22,7 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 
 # 3. Pull Tier 1 panels from HuggingFace (~30 sec, ~1 MB)
+#    Public dataset — no auth required for read-only pull.
 make data
 
 # 4. Open a notebook
@@ -30,6 +31,35 @@ jupyter lab notebooks/bpo_offshoring_fx_lag/Colombia/02_estimation.ipynb
 
 That's it. Cell 1 of each estimation notebook reads from `data/panels/` and
 the rest of the notebook runs end-to-end without internet.
+
+## Authentication (maintainers only)
+
+Cloners running `make data` need **no auth** — the HuggingFace dataset is public.
+The only operation that needs a token is `make publish`, which uploads new
+processed panels to the dataset (maintainer-only).
+
+The standard `huggingface_hub` env var is `HF_TOKEN`:
+
+```bash
+# 1. Get a write-scoped token at https://huggingface.co/settings/tokens
+# 2. Export in your shell (NEVER commit this):
+export HF_TOKEN='hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+
+# 3. Or use the interactive flow (token persisted to ~/.cache/huggingface/token):
+huggingface-cli login
+
+# 4. Then publish:
+make publish
+```
+
+A `.env.example` template is committed at the repo root. Copy to `.env` and fill
+in your token (the `.env` file is gitignored). Tools that read `.env`
+automatically (e.g., direnv, python-dotenv) will pick up `HF_TOKEN` from it.
+
+> ⚠ **Never paste a token into chat, commit messages, issues, PRs, or this
+> README itself.** Anything that lands in git history is effectively published.
+> If you suspect a token leaked, revoke it immediately at
+> https://huggingface.co/settings/tokens and create a fresh one.
 
 ## Reproducibility tiers
 

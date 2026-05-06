@@ -163,9 +163,25 @@ def stage(stage_dir: Path) -> dict[str, str]:
 
 def push(stage_dir: Path, repo: str) -> None:
     try:
-        from huggingface_hub import upload_folder
+        from huggingface_hub import upload_folder, whoami
     except ImportError:
         sys.exit("huggingface_hub not installed. `uv pip install huggingface-hub`.")
+
+    # Verify auth before attempting upload — fail fast with a useful pointer.
+    import os
+    has_env = bool(os.environ.get("HF_TOKEN"))
+    try:
+        whoami()
+    except Exception:
+        sys.exit(
+            "HuggingFace auth not configured.\n\n"
+            "  Either export your token before invoking:\n"
+            "      export HF_TOKEN='hf_…'\n"
+            "  or run the interactive login (persists to ~/.cache/huggingface/token):\n"
+            "      huggingface-cli login\n\n"
+            f"  HF_TOKEN env var present: {has_env}\n"
+            "  Get a write-scoped token at https://huggingface.co/settings/tokens"
+        )
 
     print(f"\n  pushing to https://huggingface.co/datasets/{repo}…")
     upload_folder(
