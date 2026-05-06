@@ -95,7 +95,7 @@ See `project_fx_vol_econ_complete_findings.md` for the 349-line comprehensive fi
    - What's the arc? Data overview → RV construction → Primary OLS → GARCH-X → T1-T7 → A1-A9 → Gate decision
    - What plots accompany each section?
    - Output format: `.ipynb` only, or also LaTeX PDF via nbconvert?
-   - Location: propose `contracts/notebooks/structural_econ_analysis.ipynb`
+   - Location: propose `notebooks/structural_econ_analysis.ipynb`
 
 2. **Write notebook spec** (narrative outline, not code plan)
    - Section headings + cell descriptions

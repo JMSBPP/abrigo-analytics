@@ -7,7 +7,7 @@ originSessionId: phase0-vb-mvp / Rev-5.3 → Rev-5.3.1 transition
 
 **Fact**: When a pre-committed scientific threshold fails the empirical evidence, the disciplined path is:
 1. HALT the calibration with a typed exception (e.g., `CalibrationStructurallyPathological`).
-2. File a disposition memo (`contracts/.scratch/...-pathological-disposition.md`) enumerating the threshold value, the empirical value, and ≥3 pivot options (abandon X-source / pivot to different X / loosen scope / panel-extend / pivot Y).
+2. File a disposition memo (`scratch/...-pathological-disposition.md`) enumerating the threshold value, the empirical value, and ≥3 pivot options (abandon X-source / pivot to different X / loosen scope / panel-extend / pivot Y).
 3. Surface the memo to the user and do NOT auto-select a pivot.
 4. After user picks a path, file a CORRECTIONS block in the next plan revision documenting (a) the original threshold, (b) the empirical value, (c) the user-chosen relaxation, (d) the load-bearing-guarantees-preserved argument.
 5. Run a 3-way review (CR + RC + Senior PM) of the CORRECTIONS revision before commit.

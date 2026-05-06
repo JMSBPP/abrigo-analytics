@@ -28,11 +28,11 @@ originSessionId: d1cfac41-85eb-4cae-ae40-bddd97fffc23
 - ESCALATE numerics pre-pinned: Clause B `|β̂|/SE < 0.5` AND (`|skew| > 1.0` OR `excess kurtosis > 3.0`); ESCALATE-PASS disjunction `quantile β̂(0.90) > 0 OR GARCH-X mean-β > 0 OR EVT extreme-quantile β̂ > 0` at p ≤ 0.10 one-sided
 
 **Spec sha256 (Pair D simple-β):** `f74b2ac577d5182842116a8798f307a610c185f1e6e259b8530e2ec266141728`
-- File: `contracts/docs/superpowers/specs/2026-04-27-simple-beta-pair-d-design.md`
+- File: `docs/specs/2026-04-27-simple-beta-pair-d-design.md`
 - Computed against file with `decision_hash` = sentinel `<to-be-pinned-after-Task-0.3>`; re-verify by replacing pinned hash with sentinel + recomputing
 - Spec v1 → v1.1 (RC + MQS-fresh both PASS-WITH-REV; ZERO BLOCKERs at any wave; MQS noted spec author "NOT sloppy")
 
-**Plan (Pair D simple-β):** `contracts/docs/superpowers/plans/2026-04-27-simple-beta-pair-d-implementation.md` — 407 lines, 4 phases / 9 tasks. v1 → v2 → v2.1 with 3 verifier waves (RC + SPM both PASS-WITH-REV); ZERO BLOCKERs at v2/v2.1.
+**Plan (Pair D simple-β):** `docs/plans/2026-04-27-simple-beta-pair-d-implementation.md` — 407 lines, 4 phases / 9 tasks. v1 → v2 → v2.1 with 3 verifier waves (RC + SPM both PASS-WITH-REV); ZERO BLOCKERs at v2/v2.1.
 
 **Phase 0 status:** COMPLETE. Spec sha256-pinned + committed.
 
@@ -49,11 +49,11 @@ originSessionId: d1cfac41-85eb-4cae-ae40-bddd97fffc23
 **Anti-fishing invariants carried forward:** N_MIN=75; α=0.05 one-sided; methodology-break empalme primary; restrict-≥2022 BANNED; ESCALATE numerics pre-pinned at spec authoring time; HALT protocol per `feedback_pathological_halt_anti_fishing_checkpoint` (typed exception → disposition memo with ≥3 pivot options → user surface → CORRECTIONS block → 3-way review).
 
 **Key file paths for resume:**
-- Spec: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/docs/superpowers/specs/2026-04-27-simple-beta-pair-d-design.md`
-- Plan: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/docs/superpowers/plans/2026-04-27-simple-beta-pair-d-implementation.md`
-- BPO research: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-27-colombian-bpo-non-industrialization-hedge-research.md` (committed in worktree per RC O1 closure)
-- GEIH feasibility: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-27-dane-geih-y-feasibility.md`
-- Output dir (Phase 1 DEs writing here): `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/simple-beta-pair-d/`
+- Spec: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/docs/specs/2026-04-27-simple-beta-pair-d-design.md`
+- Plan: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/docs/plans/2026-04-27-simple-beta-pair-d-implementation.md`
+- BPO research: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-27-colombian-bpo-non-industrialization-hedge-research.md` (committed in worktree per RC O1 closure)
+- GEIH feasibility: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-27-dane-geih-y-feasibility.md`
+- Output dir (Phase 1 DEs writing here): `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/simple-beta-pair-d/`
 - Worktree CLAUDE.md: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/CLAUDE.md` (Active iteration block lines ~148-172)
 
 **Auto-mode active.** User confirmed Phase 1 dispatch with "yes do on auto mode"; agents running unattended.

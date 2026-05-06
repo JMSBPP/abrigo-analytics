@@ -5,7 +5,7 @@ type: project
 originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
 ---
 
-**STATUS (2026-04-24): CLOSED — EXIT_NON_REMITTANCE.** See `project_phase_a0_exit_verdict.md` (authoritative close-out) and `contracts/.scratch/2026-04-24-phase-a0-exit-disposition.md` (full disposition memo). The content below is preserved as historical execution state for audit trail only.
+**STATUS (2026-04-24): CLOSED — EXIT_NON_REMITTANCE.** See `project_phase_a0_exit_verdict.md` (authoritative close-out) and `scratch/2026-04-24-phase-a0-exit-disposition.md` (full disposition memo). The content below is preserved as historical execution state for audit trail only.
 
 ---
 
@@ -15,7 +15,7 @@ originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
 
 **How to apply (resume protocol)**: when a future agent picks up this thread (either post-compaction or post-credit-reset), re-dispatch the 3 Task 11.E reviewers with these exact parameters:
 
-1. **Code Reviewer** against `contracts/docs/superpowers/specs/2026-04-20-remittance-surprise-trm-rv-spec-rev1.md` with fix-log at `contracts/.scratch/2026-04-20-remittance-spec-rev1.1.1-fix-log.md` as first-class input. CRITICAL audit: did Task 11.D correctly classify all 10 patches as wording-only? Scrutinize patches 4 (§4.1 scalar→6-channel), 5 (§4.4 t-test→joint-F-test), 6 (§4.5 MDES recomputation), 8 (§12 rows 5/6/7/8 supersedes). Plan line 368 says methodology-mechanism mis-classification triggers structural-econometrics skill re-invocation.
+1. **Code Reviewer** against `docs/specs/2026-04-20-remittance-surprise-trm-rv-spec-rev1.md` with fix-log at `scratch/2026-04-20-remittance-spec-rev1.1.1-fix-log.md` as first-class input. CRITICAL audit: did Task 11.D correctly classify all 10 patches as wording-only? Scrutinize patches 4 (§4.1 scalar→6-channel), 5 (§4.4 t-test→joint-F-test), 6 (§4.5 MDES recomputation), 8 (§12 rows 5/6/7/8 supersedes). Plan line 368 says methodology-mechanism mis-classification triggers structural-econometrics skill re-invocation.
 
 2. **Reality Checker** against same spec+fix-log. Audit: Task 11.C verdict citation (ρ=+0.7554, 2/5 sign, N=6, FAIL-BRIDGE); commit hashes `bc12e3c30`, `2bff6d79f`, `91e5d2664`; Dune `#7366593`; channel names match Task 11.B module; N_eff=78 vs smoke-test 84 reconciliation; MDES arithmetic; NBER w26323 + IMF OP 259 citations; anti-fishing claims.
 
@@ -53,8 +53,8 @@ After all 3 land, TW consolidation. Rule 13 cycle-cap: 3 cycles max, 3 per-revie
 
 ## Paper deep-reads (already on disk)
 
-- `contracts/.scratch/2026-04-20-nber-w26323-deep-read.md` — DGK 2019 fn 23 defends AR(1) surprise on admin aggregates
-- `contracts/.scratch/2026-04-20-imf-op259-deep-read.md` — Chami et al. 2008; reverse-causation motivates "predictive, not causal" caveat; REER vs TRM sign footnote
+- `scratch/2026-04-20-nber-w26323-deep-read.md` — DGK 2019 fn 23 defends AR(1) surprise on admin aggregates
+- `scratch/2026-04-20-imf-op259-deep-read.md` — Chami et al. 2008; reverse-causation motivates "predictive, not causal" caveat; REER vs TRM sign footnote
 
 ## Open gaps (pre-reset)
 
@@ -64,7 +64,7 @@ After all 3 land, TW consolidation. Rule 13 cycle-cap: 3 cycles max, 3 per-revie
 
 ## Plan location
 
-`contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md` @ `726ce8f74` (Rev-3.4). 46 tasks across 6 phase-labels (0, 1, 2a, 1.5, 2b, 3, 4).
+`docs/plans/2026-04-20-remittance-surprise-implementation.md` @ `726ce8f74` (Rev-3.4). 46 tasks across 6 phase-labels (0, 1, 2a, 1.5, 2b, 3, 4).
 
 ## Memory cross-refs
 

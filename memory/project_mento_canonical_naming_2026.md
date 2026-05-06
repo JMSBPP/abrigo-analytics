@@ -19,9 +19,9 @@ The address-level identity claim of the original memo ("address-level identity p
 - COPM-Minteo at `0xc92e8fc2947e32f2b574cca9f2f12097a71d5606` is out of Mento-native scope.
 
 **Audit trail:**
-- HALT-VERIFY disposition memo: `contracts/.scratch/2026-04-26-mr-beta-1-1-halt-resolution-beta.md`
-- DE inventory: `contracts/.scratch/2026-04-25-mento-native-address-inventory.md`
-- RC spot-check: `contracts/.scratch/2026-04-25-subtask-mr-beta-1-1-rc-spot-check.md`
+- HALT-VERIFY disposition memo: `scratch/2026-04-26-mr-beta-1-1-halt-resolution-beta.md`
+- DE inventory: `scratch/2026-04-25-mento-native-address-inventory.md`
+- RC spot-check: `scratch/2026-04-25-subtask-mr-beta-1-1-rc-spot-check.md`
 - Rev-5.3.5 CORRECTIONS block in major plan
 - Dune project: `celocolombianpeso_celo.stabletokenv2_*` (24 decoded tables)
 
@@ -43,7 +43,7 @@ The address-level identity claim of the original memo ("address-level identity p
 1. When authoring new specs/plans/notebooks: USDm/EURm/BRLm/KESm.
 2. When reading legacy 2026-04-23 and earlier artefacts: translate cUSD↔USDm, cEUR↔EURm, cREAL↔BRLm, cKES↔KESm; trust the address as the canonical identity.
 3. The `proxy_kind` slug naming in `onchain_xd_weekly` table follows `carbon_per_currency_<LEGACY_TICKER>_volume_usd` (slugged off the design doc revision pre-rebrand-discovery) — do not mass-rename to avoid migration disruption; document the legacy slug in the loader docstring.
-4. Address-verification provenance: `contracts/.scratch/2026-04-25-carbon-basket-gate-decision-memo.md` §1.
+4. Address-verification provenance: `scratch/2026-04-25-carbon-basket-gate-decision-memo.md` §1.
 
 ## Related memory
 

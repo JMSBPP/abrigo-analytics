@@ -8,14 +8,14 @@ Session about to compact 2026-04-26. Current state for resume:
 
 **Branch + HEAD**: `phase0-vb-mvp` at `865402c2c` (env.py path-depth fix); pushed to `dev/phase0-vb-mvp` (JMSBPP fork).
 
-**Major plan**: `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md` at Rev-5.3.4 (token-attribution corrigendum). 2387 lines.
+**Major plan**: `docs/plans/2026-04-20-remittance-surprise-implementation.md` at Rev-5.3.4 (token-attribution corrigendum). 2387 lines.
 
 **Headline state**:
 - Rev-2 mean-β regression CLOSED with gate FAIL (β̂=−2.7987e−8, n=76, T1 REJECTS).
 - 4-reviewer gate (CR + RC + SD + Model QA) all PASS-class on Rev-2.
-- HALT-disposition memo at `contracts/.scratch/2026-04-25-task110-rev2-gate-fail-disposition.md`.
+- HALT-disposition memo at `scratch/2026-04-25-task110-rev2-gate-fail-disposition.md`.
 - User picked α+β parallel tracks (Rev-3 ζ-group + brainstorm-α payments/consumption pivot).
-- Trend Researcher COMPLETED Mento user-base research (`contracts/.scratch/2026-04-25-mento-userbase-research.md`).
+- Trend Researcher COMPLETED Mento user-base research (`scratch/2026-04-25-mento-userbase-research.md`).
 - User scope tightening 2026-04-25: **Mento-native ONLY** (COPM at `0xc92e8fc2947e32f2b574cca9f2f12097a71d5606`); Minteo COPM and cCOP OUT of scope. Per `project_abrigo_mento_native_only.md`.
 
 **Sub-plan chain (2 of 3 converged)**:
@@ -24,7 +24,7 @@ Session about to compact 2026-04-26. Current state for resume:
 - ⏸️ ζ-α Rev-3 convex-payoff held for user-driven structural-econometrics interactive flow per ε deferral.
 
 **Currently in flight (at compact time)**:
-- DE for MR-β.1 sub-task 1 — On-chain address inventory (agentId `ad0dbdb92d1313ad0`). Output target: `contracts/.scratch/2026-04-25-mento-native-address-inventory.md`. Per sub-plan, post-commit needs RC spot-check single-pass review.
+- DE for MR-β.1 sub-task 1 — On-chain address inventory (agentId `ad0dbdb92d1313ad0`). Output target: `scratch/2026-04-25-mento-native-address-inventory.md`. Per sub-plan, post-commit needs RC spot-check single-pass review.
 
 **Next dispatches when DE returns**:
 1. RC spot-check single-pass review on MR-β.1 sub-task 1 output (per RC-R-4 advisory in MR-β.1 sub-plan)

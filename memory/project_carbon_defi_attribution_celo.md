@@ -35,8 +35,8 @@ The original memo's claim that the Carbon-basket flows "feed the Carbon-basket X
 - `0x20216f3056bf98e245562940e6c9c65ad9b31271` = **BancorArbitrageV2** (V1 successor, live since 2025-07-02; not in original memo)
 
 **Audit trail:**
-- Rev-5.3.6 disposition: `contracts/.scratch/2026-04-27-x-d-partition-rule-staleness-disposition-beta.md`
-- Rev-5.3.7 disposition (Option A pivot): `contracts/.scratch/2026-04-27-x-d-strategic-re-evaluation-disposition.md`
+- Rev-5.3.6 disposition: `scratch/2026-04-27-x-d-partition-rule-staleness-disposition-beta.md`
+- Rev-5.3.7 disposition (Option A pivot): `scratch/2026-04-27-x-d-strategic-re-evaluation-disposition.md`
 - Dune queries: 7382618, 7382632, 7382639, 7382645, 7382647, 7382711
 - Mento V3 deployment manifest: https://docs.mento.org/mento-v3/build/deployments/addresses.md
 
@@ -55,7 +55,7 @@ The original memo's claim that the Carbon-basket flows "feed the Carbon-basket X
 1. The "user-vs-arb" partition for Carbon flows must use the `trader` field on `carboncontroller_evt_tokenstraded` rows (see corrigendum memo for canonical partition rule).
 2. The protocol's hour-of-day signature (UTC 13–17 peak, ~1.9× peak/trough ratio, continuous diurnal) is consistent with North-American working-hours automation, not Colombian retail.
 3. Dune query IDs for reproducing attribution: `7371006`, `7371007`, `7371008`, `7371009`, `7371019`, `7371020`, `7371021`.
-4. Full attribution research: `contracts/.scratch/2026-04-24-copm-bot-attribution-research.md` (Task 11.N.2).
+4. Full attribution research: `scratch/2026-04-24-copm-bot-attribution-research.md` (Task 11.N.2).
 
 ## Related memory
 

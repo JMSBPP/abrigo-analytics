@@ -55,9 +55,9 @@ originSessionId: phase0-vb-mvp / Rev-5.3.7 strategic re-evaluation 2026-04-27
 - Rev-5.3.7: Carbon DeFi has no protocol-level Mento integration; entire X_d signal is third-party-DEX volume not Mento Reserve user demand
 
 **Audit trail**:
-- Rev-5.3.5 disposition: `contracts/.scratch/2026-04-26-mr-beta-1-1-halt-resolution-beta.md`
-- Rev-5.3.6 disposition: `contracts/.scratch/2026-04-27-x-d-partition-rule-staleness-disposition-beta.md`
-- Rev-5.3.7 disposition (Option A pivot): `contracts/.scratch/2026-04-27-x-d-strategic-re-evaluation-disposition.md`
+- Rev-5.3.5 disposition: `scratch/2026-04-26-mr-beta-1-1-halt-resolution-beta.md`
+- Rev-5.3.6 disposition: `scratch/2026-04-27-x-d-partition-rule-staleness-disposition-beta.md`
+- Rev-5.3.7 disposition (Option A pivot): `scratch/2026-04-27-x-d-strategic-re-evaluation-disposition.md`
 - Mento V3 deployment manifest: https://docs.mento.org/mento-v3/build/deployments/addresses.md
 - Dune queries: 7382618, 7382632, 7382639, 7382645, 7382647, 7382711
 

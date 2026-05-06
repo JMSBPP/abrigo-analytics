@@ -7,9 +7,9 @@ originSessionId: phase0-vb-mvp / 2026-04-25 session close
 
 **Fact**: A future agent resuming the Phase-1.5.5 / Rev-5.3.1 thread requires these load-bearing local paths and git anchors:
 
-- **Plan (source-of-truth)**: `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md`
-- **X_d design doc (immutable)**: `contracts/docs/superpowers/specs/2026-04-24-carbon-basket-xd-design.md`
-- **Y₃ design doc (immutable)**: `contracts/docs/superpowers/specs/2026-04-24-y3-inequality-differential-design.md`
+- **Plan (source-of-truth)**: `docs/plans/2026-04-20-remittance-surprise-implementation.md`
+- **X_d design doc (immutable)**: `docs/specs/2026-04-24-carbon-basket-xd-design.md`
+- **Y₃ design doc (immutable)**: `docs/specs/2026-04-24-y3-inequality-differential-design.md`
 - **DuckDB**: `contracts/data/structural_econ.duckdb` (~42MB; includes `onchain_xd_weekly` + `onchain_y3_weekly` after Task 11.N.2d lands)
 - **Branch**: `phase0-vb-mvp` (NOT main)
 - **Worktree**: `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom`

@@ -20,6 +20,6 @@ The HALT discipline worked twice — both pre-flights caught what would otherwis
 **Closure cost from this lesson:** v1.2.1 → v1.3 CORRECTIONS revision; ~2-4 hours of orchestrator time to draft + 3-way review + re-pin. Well worth catching, but worth more to prevent.
 
 **References:**
-- Disposition memo for the precipitating HALT: `contracts/.scratch/2026-04-28-task-1.1-step-1-empalme-rev3-vs-rev4-disposition.md`
-- Prior CORRECTIONS-α memo whose Step-0 verification was insufficient: `contracts/.scratch/2026-04-28-task-1.1-step-0-schema-pathological-disposition.md` §2.1 line 45 ("the 2010-01 and 2014-01 Empalme Ocupados.CSV contain RAMA4D + RAMA2D with Rev.4 a.c. codes" — verified by column-header presence only).
-- Spec v1.2.1 (now sha256-superseded by next CORRECTIONS-α' revision): `contracts/docs/superpowers/specs/2026-04-27-simple-beta-pair-d-design.md` (sha256 `b90be50b…4c6d`).
+- Disposition memo for the precipitating HALT: `scratch/2026-04-28-task-1.1-step-1-empalme-rev3-vs-rev4-disposition.md`
+- Prior CORRECTIONS-α memo whose Step-0 verification was insufficient: `scratch/2026-04-28-task-1.1-step-0-schema-pathological-disposition.md` §2.1 line 45 ("the 2010-01 and 2014-01 Empalme Ocupados.CSV contain RAMA4D + RAMA2D with Rev.4 a.c. codes" — verified by column-header presence only).
+- Spec v1.2.1 (now sha256-superseded by next CORRECTIONS-α' revision): `docs/specs/2026-04-27-simple-beta-pair-d-design.md` (sha256 `b90be50b…4c6d`).

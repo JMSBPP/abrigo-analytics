@@ -14,7 +14,7 @@ originSessionId: phase0-vb-mvp / Rev-5.3 §0.3 + Rev-5.3.1 Task 11.N.2c
 2. If `required_power(n, 13, 0.40)` drifts below `POWER_MIN = 0.80` due to data-driven `n` shrinkage, the correct response is HALT under `CalibrationStructurallyPathological`, NOT free-tuning `MDES_SD` upward to recover power.
 3. The Rev-5.3.1 N_MIN relaxation 80 → 75 was permitted because the pinned `required_power(75, 13, 0.40) = 0.8638 ≥ 0.80` — power floor preserved, not power-target chased.
 4. Source-text location: `contracts/scripts/carbon_calibration.py` (function + Final[str] hash constant); test file `contracts/scripts/tests/inequality/test_carbon_calibration.py` Step-0 block asserts hash byte-exact.
-5. Plan reference: `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md` Task 11.N.2c CORRECTIONS block + §0.3 MDES formulation pin.
+5. Plan reference: `docs/plans/2026-04-20-remittance-surprise-implementation.md` Task 11.N.2c CORRECTIONS block + §0.3 MDES formulation pin.
 
 ## Related memory
 

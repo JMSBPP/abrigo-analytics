@@ -26,7 +26,7 @@ originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
 | 4 Task 32 (end-to-end + idempotency) | COMPLETE — commit `4391142ee` |
 | 4 Task 33 (final docs + memory) | CLOSING — this memory file + peer completion record + CLAUDE.md edit |
 
-Implementation plan at `contracts/docs/superpowers/plans/2026-04-17-econ-notebook-implementation.md`. Design spec at `contracts/docs/superpowers/specs/2026-04-17-econ-notebook-design.md` (Rev 4).
+Implementation plan at `docs/plans/2026-04-17-econ-notebook-implementation.md`. Design spec at `docs/specs/2026-04-17-econ-notebook-design.md` (Rev 4).
 
 ## TEST BASELINE
 
@@ -136,11 +136,11 @@ Pre-commit lint at `contracts/scripts/lint_notebook_citations.py`. Required head
 3. `project_fx_vol_econ_complete_findings.md` (peer memory file) — full scientific findings
 4. `project_fx_vol_econ_gate_verdict_and_product_read.md` (peer memory file) — Abrigo strategic read
 5. `project_fx_vol_econ_reviewer_and_silent_test_pass_lessons.md` (peer memory file) — agent-facing lessons
-6. `contracts/notebooks/fx_vol_cpi_surprise/Colombia/README.md` — auto-rendered summary (product-facing)
-7. `contracts/notebooks/fx_vol_cpi_surprise/Colombia/estimates/gate_verdict.json` — machine-readable verdict
-8. `contracts/docs/superpowers/specs/2026-04-17-econ-notebook-design.md` — Rev 4 spec (pre-committed)
-9. `contracts/docs/superpowers/plans/2026-04-17-econ-notebook-implementation.md` — 33-task plan
-10. `contracts/.scratch/2026-04-19-fx-vol-econ-complete-findings-pre-task-33.md` — disk mirror of findings
+6. `notebooks/fx_vol_cpi_surprise/Colombia/README.md` — auto-rendered summary (product-facing)
+7. `notebooks/fx_vol_cpi_surprise/Colombia/estimates/gate_verdict.json` — machine-readable verdict
+8. `docs/specs/2026-04-17-econ-notebook-design.md` — Rev 4 spec (pre-committed)
+9. `docs/plans/2026-04-17-econ-notebook-implementation.md` — 33-task plan
+10. `scratch/2026-04-19-fx-vol-econ-complete-findings-pre-task-33.md` — disk mirror of findings
 
 **Do NOT re-read:** NB1/NB2/NB3 cell content (all frozen); Phase 0-3 trio author scripts under `/tmp/`.
 

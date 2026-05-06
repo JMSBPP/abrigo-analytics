@@ -18,10 +18,10 @@ originSessionId: phase0-vb-mvp / Rev-5.3.1 session close 2026-04-25
 
 **How to apply**:
 1. Resume: `git log --oneline 7afcd2ad6 -10` to see the verified chain; `git status` to see Task 11.N.2d in-flight changes.
-2. Task 11.N.2d brief: design doc `contracts/docs/superpowers/specs/2026-04-24-y3-inequality-differential-design.md` §13 plan-fold instructions.
+2. Task 11.N.2d brief: design doc `docs/specs/2026-04-24-y3-inequality-differential-design.md` §13 plan-fold instructions.
 3. Task 11.N.2d.1 brief: PM-FF-1 atomicity-hygiene split, runs in parallel with Task 11.O sensitivity-cross-validation step.
 4. Task 11.O brief: Rev-2 spec authoring under `/structural-econometrics`; primary Y = `Y₃_t` (NOT USD-COP carry — amendment-rider A1 RETIRED-as-applied via 11.N.2d); diagnostic Y's = per-country differentials + Y₃_bond + supply-channel + distribution-channel.
-5. Plan source-of-truth: `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md` @ `7afcd2ad6`.
+5. Plan source-of-truth: `docs/plans/2026-04-20-remittance-surprise-implementation.md` @ `7afcd2ad6`.
 6. If Task 11.N.2d hits a regression, do NOT auto-rerun the full chain — fix forward via CORRECTIONS-block discipline; the Y₃ design doc is immutable, so any structural change requires design-doc revision.
 
 ## Related memory

@@ -37,7 +37,7 @@ This session builds the **off-chain Python backend** for the RAN vault:
 ### What's IN PROGRESS (spec written, awaiting review):
 
 **`ran_data_api.py`** — shared query API module. Spec at:
-`contracts/docs/superpowers/specs/2026-04-11-ran-data-api-design.md`
+`docs/specs/2026-04-11-ran-data-api-design.md`
 
 This adds:
 - Pure query functions: `dataset_len`, `get_row`, `get_by_timestamp`, `get_range`, `get_min`, `get_max`, `get_all`
@@ -59,19 +59,19 @@ This adds:
 
 | File | Purpose |
 |------|---------|
-| `contracts/docs/superpowers/specs/2026-04-10-ran-growth-pipeline-design.md` | Original pipeline spec |
-| `contracts/docs/superpowers/specs/2026-04-11-ran-ffi-query-api-design.md` | FFI + schema upgrade spec |
-| `contracts/docs/superpowers/specs/2026-04-11-ran-data-api-design.md` | Data query API spec (LATEST) |
-| `contracts/docs/superpowers/plans/2026-04-10-ran-growth-pipeline.md` | Original pipeline plan |
-| `contracts/docs/superpowers/plans/2026-04-11-ran-ffi-query-api.md` | FFI + schema upgrade plan |
+| `docs/specs/2026-04-10-ran-growth-pipeline-design.md` | Original pipeline spec |
+| `docs/specs/2026-04-11-ran-ffi-query-api-design.md` | FFI + schema upgrade spec |
+| `docs/specs/2026-04-11-ran-data-api-design.md` | Data query API spec (LATEST) |
+| `docs/plans/2026-04-10-ran-growth-pipeline.md` | Original pipeline plan |
+| `docs/plans/2026-04-11-ran-ffi-query-api.md` | FFI + schema upgrade plan |
 | `contracts/TODO_DATA_ANALYSIS.md` | Solidity fuzz test reference (the target consumer) |
-| `contracts/.scratch/competing-agents-research.md` | Research on multi-agent patterns |
-| `contracts/.scratch/angstrom-indexer-globalGrowth-research.md` | Why archive RPC is the only data source |
+| `scratch/competing-agents-research.md` | Research on multi-agent patterns |
+| `scratch/angstrom-indexer-globalGrowth-research.md` | Why archive RPC is the only data source |
 
 ## How to Resume
 
 1. Read this memory file + the MEMORY.md index
-2. Read the LATEST spec: `contracts/docs/superpowers/specs/2026-04-11-ran-data-api-design.md`
+2. Read the LATEST spec: `docs/specs/2026-04-11-ran-data-api-design.md`
 3. Check if 3-way review results are pending or need re-dispatch
 4. If approved: transition to `/superpowers:writing-plans` for implementation
 5. Follow all NON-NEGOTIABLE rules from memory (TDD, scripts-only, real data, 2-way review)

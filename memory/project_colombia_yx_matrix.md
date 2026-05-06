@@ -76,11 +76,11 @@ No existing DeFi variance swap prices variance of on-chain stablecoin flow volum
 
 ## Source reports (persisted 2026-04-20)
 
-- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-20-ccop-mcop-observables-search.md` — Agent 1: on-chain observables inventory
-- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-20-remittance-volatility-swap-deep-read.md` — Agent 2: REMITTANCE_VOLATILITY_SWAP corpus deep-read
-- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-20-colombia-next-primary-candidate-ranked.md` — Agent 3: Y₁-fixed (TRM RV) X-ranking
-- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-20-colombia-Y2-CPI-Y3-remittance-X-ranking.md` — Agent 4: Y₂/Y₃-fixed X-ranking
-- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/.scratch/2026-04-20-colombia-fixed-X-vary-Y-ranking.md` — Agent 5: fixed-X product-first Y-ranking
+- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-20-ccop-mcop-observables-search.md` — Agent 1: on-chain observables inventory
+- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-20-remittance-volatility-swap-deep-read.md` — Agent 2: REMITTANCE_VOLATILITY_SWAP corpus deep-read
+- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-20-colombia-next-primary-candidate-ranked.md` — Agent 3: Y₁-fixed (TRM RV) X-ranking
+- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-20-colombia-Y2-CPI-Y3-remittance-X-ranking.md` — Agent 4: Y₂/Y₃-fixed X-ranking
+- `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/scratch/2026-04-20-colombia-fixed-X-vary-Y-ranking.md` — Agent 5: fixed-X product-first Y-ranking
 
 ## Engine design implications (not yet selected)
 

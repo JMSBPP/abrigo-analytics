@@ -46,10 +46,10 @@ The research question under pre-committed Rev 4 weekly OLS specification is answ
 
 | path | purpose | size |
 |---|---|---|
-| `contracts/notebooks/fx_vol_cpi_surprise/Colombia/01_data_eda.ipynb` | NB1 data EDA + 12 locked Decisions + ledger emission | 118 cells, ~3 MB rendered |
-| `contracts/notebooks/fx_vol_cpi_surprise/Colombia/02_estimation.ipynb` | NB2 OLS ladder + diagnostics + Student-t + GARCH-X + CPI/PPI + subsample + T3b + reconciliation + serialization | 45 cells |
-| `contracts/notebooks/fx_vol_cpi_surprise/Colombia/03_tests_and_sensitivity.ipynb` | NB3 T1-T7 tests + 13-row forest plot (A1-A12 + S1-S7) + §9 anti-fishing halt + §10 gate aggregation + §11 README auto-render | 34 cells |
-| `contracts/notebooks/fx_vol_cpi_surprise/Colombia/estimates/gate_verdict.json` | machine-readable final verdict, 358 B sorted-keys | 358 B |
+| `notebooks/fx_vol_cpi_surprise/Colombia/01_data_eda.ipynb` | NB1 data EDA + 12 locked Decisions + ledger emission | 118 cells, ~3 MB rendered |
+| `notebooks/fx_vol_cpi_surprise/Colombia/02_estimation.ipynb` | NB2 OLS ladder + diagnostics + Student-t + GARCH-X + CPI/PPI + subsample + T3b + reconciliation + serialization | 45 cells |
+| `notebooks/fx_vol_cpi_surprise/Colombia/03_tests_and_sensitivity.ipynb` | NB3 T1-T7 tests + 13-row forest plot (A1-A12 + S1-S7) + §9 anti-fishing halt + §10 gate aggregation + §11 README auto-render | 34 cells |
+| `notebooks/fx_vol_cpi_surprise/Colombia/estimates/gate_verdict.json` | machine-readable final verdict, 358 B sorted-keys | 358 B |
 
 Supporting artifacts:
 - `estimates/nb1_panel_fingerprint.json` (6.7 KB) — 12 decision cards + weekly+daily panel sha256 + sensitivity_preregistration_hash
@@ -100,7 +100,7 @@ Supporting artifacts:
 - `project_fx_vol_econ_reviewer_and_silent_test_pass_lessons.md` — agent-facing review discipline
 - `project_fx_vol_econ_phase4_complete_task33_closing.md` — resume state
 - `project_econ_notebook_handoff.md` — historical handoff note (pre-completion)
-- `contracts/.scratch/2026-04-19-fx-vol-econ-complete-findings-pre-task-33.md` — disk mirror
+- `scratch/2026-04-19-fx-vol-econ-complete-findings-pre-task-33.md` — disk mirror
 
 ## Ceremonial close
 

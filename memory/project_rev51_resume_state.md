@@ -23,7 +23,7 @@ originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
    - (c) If tests FAIL or test file doesn't exist: re-dispatch Task 11.M.5 Data Engineer agent with resume instructions (partial schema already in place; continue test + pipeline work).
    - (d) If decision-hash drift is detected (Rev-4 hash `6a5f9d1b05c18defd8b30c4b3cef6af896d6e45a2a26c1c60aa342da0a5a443c` must be preserved byte-exact per RC reviewer): git reset HEAD -- contracts/scripts/econ_schema.py econ_pipeline.py econ_query_api.py and re-dispatch with explicit hash-preservation emphasis.
 
-4. **Plan state is STABLE** — Rev-5.1 committed at `8c984ab56`; fix-log at `contracts/.scratch/2026-04-24-plan-rev5.1-fix-log.md`. No plan changes needed under this resume.
+4. **Plan state is STABLE** — Rev-5.1 committed at `8c984ab56`; fix-log at `scratch/2026-04-24-plan-rev5.1-fix-log.md`. No plan changes needed under this resume.
 
 5. **Upstream tasks completed on branch**:
    - Task 11.L literature review: `e832f4352` (arxiv corpus scan; top-3 papers = Lustig-Roussanov-Verdelhan 2011 + Akgün-Özsöğüt 2025 arxiv:2501.02371 + Campbell-Cochrane 1999; canonical functional-equation `E[Y_inequality_{t+1} | X_d_t] ≠ 0`; identification via VIX instrument for global slope + announcement dummies)
@@ -54,6 +54,6 @@ originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
 
 1. Check dirty state: `git status --short contracts/scripts/`
 2. Run 11.M.5 test: `source contracts/.venv/bin/activate && pytest contracts/scripts/tests/test_onchain_duckdb_migration.py -v`
-3. If test file missing or tests fail, re-dispatch Task 11.M.5 per plan `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md` @ `8c984ab56`; brief is in prior agent dispatch (9 CSVs; strict TDD; additive-only; scripts-only scope; functional-python; preserve Rev-4 decision-hash).
+3. If test file missing or tests fail, re-dispatch Task 11.M.5 per plan `docs/plans/2026-04-20-remittance-surprise-implementation.md` @ `8c984ab56`; brief is in prior agent dispatch (9 CSVs; strict TDD; additive-only; scripts-only scope; functional-python; preserve Rev-4 decision-hash).
 4. On green commit: `feat(abrigo): Rev-5.1 Task 11.M.5 — DuckDB migration for COPM/cCOP on-chain data`
 5. Proceed to Task 11.N X_d filter design (Data Engineer, consumes 11.M profile + 11.L lit insights + 11.M.5 DuckDB loaders).

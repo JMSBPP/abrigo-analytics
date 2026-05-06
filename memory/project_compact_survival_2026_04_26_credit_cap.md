@@ -9,7 +9,7 @@ Credit cap hit 2026-04-26 ~late evening EDT during NB-α sub-task 2 trio 2 dispa
 
 **Branch HEAD**: `9226344af` (NB-α sub-task 2 trio 1 NB1 §1 per-row diagnostics close); pushed to `dev/phase0-vb-mvp` (JMSBPP fork).
 
-**Major plan**: `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md` Rev-5.3.5 (latest CORRECTIONS at file end documenting β-disposition + 3-way trio + fix-up bundle outcomes).
+**Major plan**: `docs/plans/2026-04-20-remittance-surprise-implementation.md` Rev-5.3.5 (latest CORRECTIONS at file end documenting β-disposition + 3-way trio + fix-up bundle outcomes).
 
 ## What is closed (committed; do NOT re-do)
 
@@ -26,7 +26,7 @@ Credit cap hit 2026-04-26 ~late evening EDT during NB-α sub-task 2 trio 2 dispa
 
 NB-α sub-task 2 trio 2 (cross-row consistency aggregation + `panel_fingerprint.json` emission). AR got why + code cells in but missed the interpretation cell + nbconvert exec + JSON file write before credits hit cap. Per `feedback_pathological_halt_anti_fishing_checkpoint`: the partial uncommitted notebook change was reverted (`git restore`); HEAD is clean at `9226344af` (7 cells).
 
-**Resume note**: `contracts/.scratch/2026-04-26-nb-alpha-credit-cap-resume.md` (full state snapshot + path forward + hard constraints)
+**Resume note**: `scratch/2026-04-26-nb-alpha-credit-cap-resume.md` (full state snapshot + path forward + hard constraints)
 
 ## What is pending (post-credit-reset, in order)
 

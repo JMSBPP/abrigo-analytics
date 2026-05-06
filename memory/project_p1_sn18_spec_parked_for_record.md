@@ -9,8 +9,8 @@ originSessionId: d1cfac41-85eb-4cae-ae40-bddd97fffc23
 User directive after extensive slow-lane spec work: park P1 and refocus to fast-lane simple-β exercise. Stage goal restated: identify one *empirically-validated* microeconomic risk + simple positive-β confirmation → start protocol design. Behavioral equations + classic models come later. The slow-lane apparatus (3 spec revisions, 9-cell verdict cube, asymmetric placebo gate, robustness denominator decrement paths, multi-wave anti-fishing) was overkill for the stage goal.
 
 **Artifacts pinned for the record (re-activatable later):**
-- Plan: `contracts/docs/superpowers/plans/2026-04-27-p1-sn18-event-study-implementation.md`
-- Spec: `contracts/docs/superpowers/specs/2026-04-27-p1-sn18-event-study-design.md`
+- Plan: `docs/plans/2026-04-27-p1-sn18-event-study-implementation.md`
+- Spec: `docs/specs/2026-04-27-p1-sn18-event-study-design.md`
 - Spec sha256 = `f855e036d3c7807e2bef414a91a806caec1279a9d83575020bc2b3e82b47aeab` (computed against the file with `decision_hash` field set to the sentinel `<to-be-pinned-after-Task-0.3-v3>`; re-verify by replacing pinned hash with sentinel and recomputing)
 - Spec passed v1 (initial) → v2 (15 verifier defects integrated) → v3 (3 v2-blocking + 3 polish integrated); both v3 verifier waves PASS
 

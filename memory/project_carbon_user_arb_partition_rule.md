@@ -45,8 +45,8 @@ Even with the partition rule fixed, the Carbon `tokenstraded` signal is NOT Ment
 NB-α terminates at sub-task 12 (HEAD `2b46ef0f6`); β-track Rev-3 spec (Task 11.P.spec-β) pivots X_d to Mento Broker.
 
 **Audit trail:**
-- Rev-5.3.6 disposition: `contracts/.scratch/2026-04-27-x-d-partition-rule-staleness-disposition-beta.md`
-- Rev-5.3.7 disposition: `contracts/.scratch/2026-04-27-x-d-strategic-re-evaluation-disposition.md`
+- Rev-5.3.6 disposition: `scratch/2026-04-27-x-d-partition-rule-staleness-disposition-beta.md`
+- Rev-5.3.7 disposition: `scratch/2026-04-27-x-d-strategic-re-evaluation-disposition.md`
 - Dune queries: 7382618, 7382632, 7382639, 7382645, 7382647, 7382711
 
 ---
@@ -62,8 +62,8 @@ NB-α terminates at sub-task 12 (HEAD `2b46ef0f6`); β-track Rev-3 spec (Task 11
 1. Aggregate user volume per week as `Σ |source_amount_usd| WHERE trader != 0x8c05ea305235a67c7095a32ad4a2ee2688ade636` (basket-boundary filter applied separately).
 2. Aggregate arb volume per week as `Σ |source_amount_usd| WHERE trader = 0x8c05ea305235a67c7095a32ad4a2ee2688ade636`.
 3. Empirical 17%/83% split by USD volume (29%/71% by event count) on the 175,005-event basket-boundary panel — arb is a real but minority share.
-4. Source corrigendum: `contracts/.scratch/2026-04-25-carbon-basket-gate-memo-corrigendum.md` (supersedes §3.3 of `2026-04-25-carbon-basket-gate-decision-memo.md`).
-5. Plan task that fired this rule: 11.N.2b.2 Step 0 resume directive at `contracts/docs/superpowers/plans/2026-04-20-remittance-surprise-implementation.md`.
+4. Source corrigendum: `scratch/2026-04-25-carbon-basket-gate-memo-corrigendum.md` (supersedes §3.3 of `2026-04-25-carbon-basket-gate-decision-memo.md`).
+5. Plan task that fired this rule: 11.N.2b.2 Step 0 resume directive at `docs/plans/2026-04-20-remittance-surprise-implementation.md`.
 
 ## Related memory
 

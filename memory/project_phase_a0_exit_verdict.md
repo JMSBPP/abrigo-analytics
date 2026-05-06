@@ -9,7 +9,7 @@ originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
 **Why**: the unfiltered cCOP/COPM aggregate from Dune #7366593 does not measure Colombian household remittance — it measures a mixture of TRM-arbitrage, treasury ops, bot roundtripping, campaigns, and a thin retail tail. No post-hoc filter can reconstruct what was never captured upstream. Prior research (`CELO_ECOSYSTEM_USERS.md:157`, `2026-04-02-ccop-qa-audit.md:73`, `2026-04-02-ccop-cop-usd-flow-response.md:74`) had documented this failure mode; the Rev-4 plan's "non-stop filter iteration" risked forcing a spurious relationship. The EXIT criterion was added in Rev-4.1 specifically to preempt that.
 
 **How to apply**:
-1. For anyone resuming this thread: read `contracts/.scratch/2026-04-24-phase-a0-exit-disposition.md` first. It enumerates kill-criteria evaluations, preserved artifacts, retired artifacts, and pivot candidates.
+1. For anyone resuming this thread: read `scratch/2026-04-24-phase-a0-exit-disposition.md` first. It enumerates kill-criteria evaluations, preserved artifacts, retired artifacts, and pivot candidates.
 2. Rev-1, Rev-1.1, Rev-1.1.1 specs are all SUPERSEDED + RETIRED. Do not reference for methodology guidance.
 3. Task 11.G/H/I/J as written in Rev-4.1 are retired under this EXIT.
 4. Preserved infrastructure (reusable under any X-construction pivot that uses daily on-chain flow): `dune_onchain_flow_fetcher.py`, `weekly_onchain_flow_vector.py`, `cleaning.py` extensions, `surprise_constructor.py`, Phase-1.5.5 plan template.
@@ -27,10 +27,10 @@ originSessionId: 7b0cb94b-a263-4b06-8904-1f09af81cfd5
 
 ## Reviewer artifacts consulted
 
-- `contracts/.scratch/2026-04-24-ccop-peak-day-event-research.md` — Task 11.F Axis-1 findings (0/30 remittance fingerprints)
-- `contracts/.scratch/2026-04-24-tier1e-rev111-review-code-reviewer.md` — CR REJECT on Rev-1.1.1 spec
-- `contracts/.scratch/2026-04-24-tier1e-rev111-review-reality-checker.md` — RC NEEDS WORK (MDES arithmetic error)
-- `contracts/.scratch/2026-04-24-tier1e-rev111-review-technical-writer.md` — TW NEEDS FIXES
-- `contracts/.scratch/2026-04-24-plan-rev4-review-code-reviewer.md` — plan CR ACCEPT-WITH-FIXES
-- `contracts/.scratch/2026-04-24-plan-rev4-review-reality-checker.md` — plan RC NEEDS WORK (M mis-bounded, N-overstated, FWER unaddressed)
-- `contracts/.scratch/2026-04-24-plan-rev4-review-senior-pm.md` — plan PM ACCEPT-WITH-FIXES
+- `scratch/2026-04-24-ccop-peak-day-event-research.md` — Task 11.F Axis-1 findings (0/30 remittance fingerprints)
+- `scratch/2026-04-24-tier1e-rev111-review-code-reviewer.md` — CR REJECT on Rev-1.1.1 spec
+- `scratch/2026-04-24-tier1e-rev111-review-reality-checker.md` — RC NEEDS WORK (MDES arithmetic error)
+- `scratch/2026-04-24-tier1e-rev111-review-technical-writer.md` — TW NEEDS FIXES
+- `scratch/2026-04-24-plan-rev4-review-code-reviewer.md` — plan CR ACCEPT-WITH-FIXES
+- `scratch/2026-04-24-plan-rev4-review-reality-checker.md` — plan RC NEEDS WORK (M mis-bounded, N-overstated, FWER unaddressed)
+- `scratch/2026-04-24-plan-rev4-review-senior-pm.md` — plan PM ACCEPT-WITH-FIXES

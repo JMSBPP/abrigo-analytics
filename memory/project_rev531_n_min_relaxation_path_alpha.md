@@ -12,8 +12,8 @@ originSessionId: phase0-vb-mvp / Rev-5.3.1 Task 11.N.2c CORRECTIONS-Rev-2
 **How to apply**:
 1. Pattern for future thresholds-vs-empirics tension: pathological-HALT → disposition memo enumerating pivot options → user picks → CORRECTIONS-block discipline → 3-way review post-hoc audit. Never silently re-tune to pass.
 2. Rev-5.3.1 anchors:
-   - HALT verdict: commit `13cfe5f56`, memo `contracts/.scratch/2026-04-24-carbon-xd-pathological-disposition.md`.
-   - Relaxation: commit `7afcd2ad6`, memo `contracts/.scratch/2026-04-25-carbon-basket-calibration-result-rev2.md`.
+   - HALT verdict: commit `13cfe5f56`, memo `scratch/2026-04-24-carbon-xd-pathological-disposition.md`.
+   - Relaxation: commit `7afcd2ad6`, memo `scratch/2026-04-25-carbon-basket-calibration-result-rev2.md`.
    - Source change: `contracts/scripts/carbon_calibration.py` line 109+ (`Final[int] = 75` + 8-line docstring rationale).
    - Test: `contracts/scripts/tests/inequality/test_carbon_calibration.py` line 71+ (`test_n_min_is_75`).
 3. The PCA cross-validation diagnostic showed COPM loads at -0.3010 on PC1 (idiosyncratic vs |loading| ≥ 0.40 floor) — informational only, does NOT change primary X_d which remains basket-aggregate per design doc §1, §4.

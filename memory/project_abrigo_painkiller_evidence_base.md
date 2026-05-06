@@ -17,8 +17,8 @@ Every painkiller / "10x better" / "real pain" claim the brand agent writes must 
 
 **Secondary evidence:**
 - `/home/jmsbpp/apps/liq-soldk-dev/refs/macro-risk/` \u2014 primary-source papers and data.
-- The Tier 1 feasibility spec at `contracts/docs/superpowers/specs/2026-04-14-inflation-mirror-tier1-feasibility-design.md` \u2014 per-channel literature verdicts for \u03c0 and C_remittance.
-- `contracts/notebooks/ranPricing.ipynb` \u2014 instrument definition and CES basket application.
+- The Tier 1 feasibility spec at `docs/specs/2026-04-14-inflation-mirror-tier1-feasibility-design.md` \u2014 per-channel literature verdicts for \u03c0 and C_remittance.
+- `notebooks/ranPricing.ipynb` \u2014 instrument definition and CES basket application.
 
 **How the Reality Checker uses it:**
 - For every copy claim ("X loses Y% to inflation," "remittance corridors bleed Z% in value," "existing hedges fail because W"), cite a specific file and line range in the MACRO_RISKS folder.

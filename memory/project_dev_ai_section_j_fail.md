@@ -35,7 +35,7 @@ Per spec §9.16(c), formal resolution requires (G-T minus J) decomposition; R2 S
 - For any Pair-D-style structural-econometric iteration on DANE GEIH, account for empalme residual bias (β_regime should be informational diagnostic, NOT primary-spec rescue lever)
 - Spec §5.5/§9.6 reconciliation is deferred but should be addressed before another Pair-D-style §5.5 invocation (otherwise the same spec-internal contradiction recurs)
 
-**Iteration tree (post-migration)**: `contracts/notebooks/dev_ai_cost/` (canonical fx_vol pattern):
+**Iteration tree (post-migration)**: `notebooks/dev_ai_cost/` (canonical fx_vol pattern):
 - `01_data_eda.ipynb / 02_estimation.ipynb / 03_tests_and_sensitivity.ipynb` (15+16+22 cells)
 - `data/` panel_combined.parquet sha `451f4c61…740d` + Y_p Section J + Y_s2 Section M + X COP/USD lag + DATA_PROVENANCE
 - `estimates/` PRIMARY_RESULTS.md / ROBUSTNESS_RESULTS.md / ESCALATION_RESULTS.md / gate_verdict.json / EA_FRAMEWORK_APPLICATION.md / MEMO.md

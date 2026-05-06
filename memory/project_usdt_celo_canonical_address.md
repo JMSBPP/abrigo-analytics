@@ -13,7 +13,7 @@ originSessionId: phase0-vb-mvp / Rev-5.3 Task 11.N.2b.1
 1. For any Celo basket-membership work: hard-code USDT = `0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e`.
 2. Treat any `0x88eEC4…` USDT-named contract as scam; do not include in baskets, do not query.
 3. Pattern: when an address discrepancy survives review, do Celoscan deployer-trace + impersonation-flag check before accepting either side. The plan's HALT-VERIFY-MANDATORY gate (5-min timeboxed) is the canonical containment.
-4. Source: `contracts/.scratch/2026-04-25-carbon-basket-gate-decision-memo.md` §1 + §1.1.
+4. Source: `scratch/2026-04-25-carbon-basket-gate-decision-memo.md` §1 + §1.1.
 
 ## Related memory
 
