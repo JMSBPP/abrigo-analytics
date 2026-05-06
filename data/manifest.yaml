@@ -1,0 +1,78 @@
+# Canonical data sources for Abrigo Analytics
+#
+# This manifest is the single source of truth for where every data column
+# in every notebook ultimately comes from. Three tiers:
+#
+#   Tier 1 (processed panels)  — published on HuggingFace; pulled by `make data`
+#   Tier 2 (raw bytes)         — re-downloaded from canonical issuers; `make data-raw`
+#   Tier 3 (re-derivation)     — produced locally from Tier 2 by `make panels`
+#
+# Hash pins below are advisory: agents must verify Tier 3 matches Tier 1 before
+# treating a notebook run as reproducible (`make verify`).
+
+huggingface:
+  dataset: "JMSBPP/abrigo-analytics-panels"
+  revision: "main"
+  files:
+    - panels/cop_usd_panel.parquet
+    - panels/geih_young_workers_section_j_share.parquet
+    - panels/geih_young_workers_section_m_share.parquet
+    - panels/geih_young_workers_services_share.parquet
+    - panels/geih_young_workers_narrow_share.parquet
+    - panels/panel_combined.parquet
+
+raw_sources:
+
+  dane_geih:
+    description: >
+      Colombian DANE Gran Encuesta Integrada de Hogares (GEIH) micro-data.
+      Monthly Marco-2018 ZIPs covering 2015-01 → present. Used to compute
+      Y = young-worker (14-28) employment share in CIIU Rev. 4 sectors.
+    issuer: "DANE — Departamento Administrativo Nacional de Estadística (Colombia)"
+    portal: "https://microdatos.dane.gov.co/index.php/catalog/MICRODATOS/about_collection/8"
+    licence: "Free public access (DANE Términos y Condiciones)"
+    manifest: scratch/simple-beta-pair-d/data/dane_geih_manifest.json
+    fetcher: scripts/fetch_geih.py
+    expected_size_bytes: 5_300_000_000
+    expected_files: 74
+    pin_window: "2015-01 .. 2026-03"  # Pair D Option-α' canonical window
+
+  banrep_trm:
+    description: >
+      Banco de la República Tasa Representativa del Mercado (TRM): daily COP/USD
+      reference rate. Source variable for X = COP/USD lagged 6-12 months.
+    issuer: "Banco de la República (Colombia)"
+    portal: "https://www.banrep.gov.co/es/estadisticas/trm"
+    licence: "Public domain (Banrep open data)"
+    fetcher: scripts/fetch_banrep.py
+    pin_window: "2014-01 .. 2026-03"  # X back-extended for lag-12 alignment
+
+  onchain_celo:
+    description: >
+      Mento-native + Carbon DeFi attribution panels on Celo. Mento V2 stable-
+      tokens (USDm / EURm / BRLm / KESm / COPm), Carbon V1/V2, Bancor V1/V2,
+      Broker contract events for user-vs-arb partitioning.
+    issuer: "Celo blockchain (canonical)"
+    rpc_endpoint_env: "CELO_RPC_URL"
+    fetcher: scripts/fetch_onchain.py
+    addresses:
+      mento_v2_stable_token_cop: "0x8A567e2aE79CA692Bd748aB832081C45de4041eA"
+      carbon_v1_controller:      "0x6619871118D144c1c2EA8EE4851b75AfCe4ec9bd"
+      carbon_v2_arb:             "0x20216f30bED70F94d68559e4dB7CDDA84Ee65681"
+      bancor_v1_arb:             "0x8c05ea305558bdF73e69D38C0F0Bf1ad9A48b1a3"
+      broker:                    "0x777A8255cA72412f0d706dc03C9D1987306B4CaD"
+
+  bittensor_sn18:
+    description: >
+      Bittensor subnet 18 (Cortext) on-chain emissions + price proxy for the
+      AI-cost slow-lane spec (P1; currently parked).
+    issuer: "Bittensor mainnet"
+    fetcher: scripts/fetch_onchain.py
+    status: "parked"  # See project_p1_sn18_spec_parked_for_record memory.
+
+# Provenance pointers — full manifest hash + per-file SHA256s live alongside
+# the published Tier 1 dataset on HuggingFace.
+provenance:
+  pair_d_geih_manifest_pin: "scratch/simple-beta-pair-d/data/dane_geih_manifest.json"
+  pair_d_provenance_doc:    "scratch/simple-beta-pair-d/data/DATA_PROVENANCE.md"
+  dev_ai_provenance_doc:    "notebooks/dev_ai_cost/data/DATA_PROVENANCE.md"

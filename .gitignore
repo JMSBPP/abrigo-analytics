@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Data — populated by `make data` / `make data-raw` / `make panels`
+# The repo ships pointers (data/manifest.yaml) and scripts; the bytes are fetched.
+data/raw/
+data/processed/
+data/downloads/
+data/probes/
+data/extracted/
+data/*.duckdb
+data/*.duckdb.wal
+data/*.parquet
+!data/README.md
+!data/manifest.yaml
+
+# Notebook artifacts (binary outputs not under version control)
+notebooks/**/_nbconvert_template/**/*.aux
+notebooks/**/pdf/*.pdf
+notebooks/**/estimates/*.pkl
+!notebooks/**/estimates/.gitkeep
+!notebooks/**/figures/.gitkeep
+!notebooks/**/pdf/.gitkeep
+
+# Editor / OS
+.DS_Store
+*~
+\#*\#
+.\#*
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.envrc
