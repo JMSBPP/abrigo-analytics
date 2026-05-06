@@ -1,0 +1,78 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.13
+        run: uv python install 3.13
+
+      - name: Create venv + install
+        run: |
+          uv venv --python 3.13
+          uv pip install -r requirements.txt
+
+      - name: Lint scripts/
+        run: uv run ruff check scripts/ || true   # advisory until first lint pass
+
+      - name: Smoke-test ingest engine wiring (no network)
+        run: |
+          uv run python - <<'PY'
+          import sys, dataclasses
+          sys.path.insert(0, "scratch/simple-beta-pair-d/data/scripts")
+          import ingest_geih as engine
+          manifest = engine._load_manifest()
+          plans = [dataclasses.replace(p, cache_path=p.cache_path)
+                   for p in engine._build_plans(manifest)]
+          assert len(plans) >= 100, f"too few plans: {len(plans)}"
+          print(f"✓ {len(plans)} plans across {plans[0].year}-{plans[0].month:02d} → "
+                f"{plans[-1].year}-{plans[-1].month:02d}")
+          PY
+
+      - name: Smoke-test publish staging (no upload)
+        run: uv run python scripts/publish_to_hf.py --dry-run --stage-dir /tmp/hf-stage
+
+  notebooks:
+    # Notebook execution requires Tier 1 panels published on HuggingFace.
+    # Until `make publish` runs once, this job will fail at `make data` —
+    # that's the intended signal. Once published, this turns green.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: smoke
+    if: github.event_name == 'workflow_dispatch'   # manual trigger only until first publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.13
+        run: uv python install 3.13
+
+      - name: Create venv + install
+        run: |
+          uv venv --python 3.13
+          uv pip install -r requirements.txt
+
+      - name: Pull Tier 1 panels from HuggingFace
+        run: uv run make data
+
+      - name: Execute notebooks (headless)
+        run: uv run make notebooks
