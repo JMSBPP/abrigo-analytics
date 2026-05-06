@@ -31,6 +31,9 @@ def _load_canonical():
         sys.exit(f"Canonical ingest script missing: {CANONICAL}")
     spec = importlib.util.spec_from_file_location("ingest_geih", CANONICAL)
     mod = importlib.util.module_from_spec(spec)
+    # Register before exec_module: required so @dataclass(frozen=True) can
+    # resolve cls.__module__ via sys.modules (Python 3.13 strictness).
+    sys.modules["ingest_geih"] = mod
     assert spec.loader is not None
     spec.loader.exec_module(mod)
     return mod
