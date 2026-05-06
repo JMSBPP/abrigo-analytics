@@ -27,6 +27,25 @@ data/
 └── onchain/                                        # raw block ranges (Tier 2, gitignored)
 ```
 
+## What about the 5.3 GB of DANE ZIPs?
+
+Those are public bytes available from the canonical issuer:
+**https://microdatos.dane.gov.co/index.php/catalog/MICRODATOS** — free, no
+account required. The `dane_geih_manifest.json` pinned at
+`scratch/simple-beta-pair-d/data/dane_geih_manifest.json` records the exact
+download URL + file_id for every ZIP this project consumes.
+
+`make data-raw` reads that manifest and re-downloads each ZIP idempotently
+(~30 min on a residential link). The repo deliberately does **not** redistribute
+DANE's bytes — we ship the manifest + the ingest scripts, not a mirror. If
+DANE's portal becomes a reliability problem for cloners, a HuggingFace-hosted
+mirror can be added in a single commit by extending `data/manifest.yaml`.
+
+The 1.3 GB of probe outputs from earlier schema-detection passes are excluded
+on purpose: they're exploration debris, fully re-derivable from the raw ZIPs,
+and have no information not already encoded in the spec / disposition memos
+under `scratch/`.
+
 ## Why three tiers?
 
 - **Tier 1** lets a cloner reproduce notebook outputs in seconds without touching
