@@ -41,13 +41,13 @@ Each iteration proceeds through three stages with explicit exit criteria:
 
 \begin{enumerate}
   \item \textbf{Empirical risk validation.} Estimate
-    \(\hat{\beta}_{\text{composite}}\) of \(Y\) on lagged \(X\) under a
+    \(\hat{\beta}_{\mathrm{composite}}\) of \(Y\) on lagged \(X\) under a
     pre-registered specification. Exit on a positive-\(\hat{\beta}\)
     verdict at the pre-committed significance threshold. We treat this
     stage as the object of the supervisor's review.
   \item \textbf{Ideal-scenario M sketch.} Conditional on a Stage-1 PASS,
     propose an instrument geometry on the on-chain substrate that
-    \emph{would} settle the empirical \(\hat{\beta}_{\text{composite}}\) if
+    \emph{would} settle the empirical \(\hat{\beta}_{\mathrm{composite}}\) if
     deployed. Stage~2 does not require live counterparty capital. Exit on
     a settlement-feasible construction that hedges the validated
     correlation.

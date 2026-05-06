@@ -4,26 +4,36 @@ This appendix presents whatever per-iteration power derivation is
 feasible at writing time against the framework's pre-pinned
 \(\mathrm{MDES} = 0.40\) standard-deviation units of \(Y\) and
 \(\mathrm{Power}_{\min} = 0.80\) at one-sided \(\alpha = 0.05\). The
-method follows the standard one-sided power formula for an OLS
-coefficient under autocorrelated residuals \citep[\S 6.18]{hansen2022},
-with HAC-corrected effective sample size
-\(N_{\mathrm{eff}} = N \cdot (1 - \rho_1)/(1 + \rho_1)\) where
-\(\rho_1\) is the first-order residual autocorrelation. Cells where
-the derivation cannot be honestly produced from the artifacts available
-at writing time are flagged \emph{inherited} and cross-referenced to
-the supervisor-ask in Section~\ref{sec:7} (\(\S 7.4\)). We do not
-fabricate any number we cannot derive from a stable artifact.
+sample-size adjustment under autocorrelated residuals follows the
+classical AR(1) effective-sample-size correction
+\(N_{\mathrm{eff}} = N \cdot (1 - \rho_1)/(1 + \rho_1)\), where
+\(\rho_1\) is the first-order residual autocorrelation; this is the
+standard textbook adjustment for the variance of an AR(1) sample mean
+and is not specifically attributable to a single canonical reference
+(it predates the HAC literature). Project inference uses
+Newey-West HAC standard errors \citep{neweywest1987} at fixed lag
+truncation per \(\S\ref{sec:5.4}\); we report the realized HAC SE
+where it is recorded in the verdict pack so that the implied
+effective-sample-size adjustment is auditable from the realized SE
+itself rather than from a separately-recorded \(\rho_1\) diagnostic.
+Cells where the derivation cannot be honestly produced from the
+artifacts available at writing time are flagged \emph{inherited} and
+cross-referenced to the supervisor-ask in Section~\ref{sec:7}
+(\(\S 7.4\)). We do not fabricate any number we cannot derive from a
+stable artifact.
 
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{@{}p{3.0cm} p{1.4cm} p{1.6cm} p{1.4cm} p{1.6cm} p{4.0cm}@{}}
+\begin{tabular}{@{}p{2.7cm} p{1.3cm} p{1.5cm} p{1.4cm} p{1.6cm} p{4.2cm}@{}}
 \toprule
 Iteration & \(N\) & \(\hat{\rho}_1\) (resid.) & \(N_{\mathrm{eff}}\) & Implied power at MDES\(=0.40\) & Notes \\
 \midrule
-Pair D                & 134 & inherited       & inherited       & inherited & \(\hat{\rho}_1\) on the primary residuals not re-derived from a stable artifact at writing time; HAC \(L = 12\) was used in inference but the residual autocorrelation diagnostic is not recorded as a standalone number in the verdict pack. Inherited from Phase-A.0 Rev-5.3.1; re-derivation tabled for \(\S 7.4\). \\
+Pair D                & 134 & inherited       & inherited       & inherited & \(\hat{\rho}_1\) on the primary residuals not re-derived from a stable artifact at writing time; HAC \(L = 12\) was used in inference but the residual autocorrelation diagnostic is not recorded as a standalone number in the verdict pack. Realized HAC SE \(0.02465\) implies the AR(1) adjustment was material. Inherited from Phase-A.0 Rev-5.3.1; re-derivation tabled for \(\S 7.4\). \\
 \addlinespace
-dev-AI Stage-1        & 134 (expected) & not yet estimated & --- & not yet estimable & Phase~2 estimation not yet run; residual autocorrelation cannot be computed before estimation. \\
+dev-AI Stage-1        & 134 & inherited       & inherited       & inherited (FAIL closed) & Iteration closed FAIL 2026-05-06 with realized HAC(\(L = 12\)) SE \(0.0847\); the SE is approximately \(3.4\times\) the Pair~D HAC SE on identical \(N\) and lag panel, indicating substantially larger residual variance and/or autocorrelation at the Section-J-narrow stratum. The realized FAIL is sign-flipped, not underpowered, so the post-hoc power question is moot for the verdict; the SE is informative for the next-iteration prior on Section-M (which would inherit a similar autocorrelation structure). \\
+\addlinespace
+Section M (candidate next iteration) & 134 (R2 sample) & not yet estimated as primary & --- & not yet estimable as primary & R2 sensitivity arm in dev-AI Stage-1 returned \(\hat{\beta} = +0.455\) at \(t = +4.73\), one-sided \(p = 1.13 \times 10^{-6}\). \emph{Post-hoc identified candidate, NOT pre-registered as a primary in any iteration to date.} A Section-M iteration would require a fresh spec-pin; the tabulated row is informational and does not graduate the R2 finding. \\
 \addlinespace
 FX-vol-CPI primary    & 947 & inherited       & inherited       & inherited & Pre-registered HAC bandwidth \(L = 4\) at the weekly cadence; the residual autocorrelation diagnostic is recorded indirectly through the gate-aggregation reconciliation but not as a single-number artifact. Inherited from Phase-A.0 Rev-5.3.1; re-derivation tabled for \(\S 7.4\). \\
 \addlinespace
@@ -37,7 +47,10 @@ P1 SN18               & 8 events (target) & not applicable & not applicable & 0.
 \(N\) and residual autocorrelation; the framework currently inherits
 the \(N_{\min} = 75\), \(\mathrm{Power}_{\min} = 0.80\),
 \(\mathrm{MDES} = 0.40\)-SD invariants from the Phase-A.0 specification
-chain. Re-derivation per iteration is the dedicated supervisor ask in
+chain. The Section-M row is a post-hoc identified candidate-next-
+iteration entry sourced from the dev-AI Stage-1 R2 sensitivity arm and
+is \emph{not} a pre-registered primary in any iteration to date.
+Re-derivation per iteration is the dedicated supervisor ask in
 \(\S 7.4\).}\label{tab:powerD}
 \end{table}
 
@@ -47,7 +60,8 @@ defensible?'' from rhetorical to data-supported wherever the
 data are available, and it surfaces honestly the cells where the data
 are not available at writing time. The framework does not currently
 record a single-number residual-autocorrelation diagnostic in the
-verdict pack of either Pair~D or FX-vol-CPI; remediating that
-artifact gap is itself one of the methodological housekeeping tasks
-that any forward iteration would inherit, conditional on the
-supervisor's guidance.
+verdict pack of either Pair~D, dev-AI Stage-1, or FX-vol-CPI;
+remediating that artifact gap is itself one of the methodological
+housekeeping tasks that any forward iteration would inherit,
+conditional on the supervisor's guidance.
+

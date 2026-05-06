@@ -99,18 +99,24 @@ the iterated \(Y\) ranges (Pair D \([0.55,0.75]\); dev-AI Stage-1
 \([0.014,0.031]\) realized) are well-interior to \((0,1)\); a raw-share
 specification is preserved as a robustness arm rather than as the primary.
 
-\paragraph{Primary inference.} The primary standard error is the
-homoskedastic OLS standard error. We do not adopt HAC standard errors as
-the primary because the HAC bandwidth is itself a degree of freedom; we
-instead pre-pin a fixed lag-truncation HAC standard error as one of the
-robustness arms (see \(\S\ref{sec:5.4}\)). For each iteration we report
-the headline coefficient under the more conservative of the OLS and HAC
-standard errors whenever the verdict label is invariant under the two
-conventions; in the closed Pair~D iteration the HAC standard error
-produced a marginally smaller p-value than the OLS standard error, so
-the headline reports the HAC standard error as the more conservative
-anti-fishing convention. The verdict label has been invariant across the
-two standard-error conventions in every iteration that has closed to date.
+\paragraph{Primary inference convention.} The primary standard error is
+the homoskedastic OLS standard error per the project's anti-overclaim
+discipline: HAC bandwidth selection introduces a post-data degree of
+freedom that the pre-registration regime rules out from the primary tier.
+HAC inference is run as the pre-pinned R4 robustness arm (see
+\(\S\ref{sec:5.4}\)) at a fixed lag-truncation chosen at spec-authoring
+time. Where the verdict label is invariant under the OLS and HAC standard
+errors, headline numbers report the \emph{more conservative} of the two
+SE conventions; where the two would diverge across the verdict boundary,
+the OLS-primary SE governs the verdict and the HAC SE is reported as the
+R4 row. In the closed Pair~D iteration the HAC SE produced a marginally
+smaller p-value than the OLS SE, so the headline reports the larger HAC
+SE as the more-conservative anti-fishing convention without re-routing
+the verdict; in the closed dev-AI Stage-1 iteration, primary OLS and R4
+HAC standard errors agree on the FAIL verdict label and the headline
+reports the HAC SE on the same more-conservative-of-the-two convention.
+The verdict label has been invariant across the two SE conventions in
+every iteration that has closed to date.
 
 \subsection{Robustness inference (HAC)}\label{sec:5.4}
 
@@ -162,7 +168,45 @@ the primary), MIXED (one or two flips), or DISAGREE (three or four
 flips). DISAGREE triggers a special verdict label
 SUBSTRATE\_TOO\_NOISY, regardless of the primary's significance, and
 routes the iteration to a methodology-revision branch rather than to
-verdict assignment.
+verdict assignment. We additionally note that the R4 HAC arm is a
+serial-correlation hedge and not, in itself, a heteroskedasticity hedge:
+the OLS-primary inference assumes conditional homoskedasticity, and
+whether to add a White / sandwich heteroskedasticity-only diagnostic as
+a fifth pre-pinned arm is one of the methodology questions we put to the
+supervisor in Section~\ref{sec:7} (\(\S 7.4\)).
+
+\subsection{Persistent-regressor posture and Stambaugh
+bias}\label{sec:5.5b}
+
+The right-hand-side regressor in the monthly-cadence iterations is
+\(\log(\mathrm{COP\_USD}_{t-k})\), which is empirically near-unit-root
+at the monthly frequency on the realized 2014--2026 sample window. The
+project's identification posture is predictive-regression in the strict
+Granger-predictive sense (see \(\S\ref{sec:5.8}\)); the closed FX-vol-CPI
+iteration's pre-registered T1 exogeneity test rejected at
+\(F = 15.12\), \(p \approx 1.3 \times 10^{-9}\) and consequently the
+project does not interpret \(\hat{\beta}\) as an impulse-response.
+
+The predictive-regression posture, however, is known to suffer
+small-sample bias when the right-hand-side regressor is persistent and
+the residual is correlated with the regressor's innovation
+\citep{stambaugh1999}; the bias does not vanish in finite samples even
+under correct specification, and recent econometric work
+\citep{phillips2014} has extended the asymptotic theory to near-unit-root
+and mildly explosive regressors. The Pair~D and dev-AI Stage-1
+iterations realized \(N = 134\) monthly observations, which is
+modest-but-not-tiny on the conventional Stambaugh-bias scale; the
+bias-correction literature suggests the order-\(1/N\) bias is small
+relative to the realized HAC standard error in both iterations, but the
+project has \emph{not} formally implemented a Stambaugh-corrected
+estimator at writing time. This is one of the leading methodology
+open-questions we put to the supervisor in Section~\ref{sec:7}
+(\(\S 7.1\), identification ask, and \(\S 7.4\), invariants ask): whether
+the predictive-regression posture is sufficient as Stage-1 verdict
+machinery, or whether Stambaugh-correction (or equivalent
+near-unit-root-aware inference) should be elevated from a deferred
+methodology improvement to a pre-pinned R-arm before the next iteration
+spec-pin.
 
 \subsection{Verdict mapping}\label{sec:5.6}
 
@@ -185,9 +229,12 @@ R\text{-consistency})\) and the residual-moment tuple
         \(|\hat{\beta}_{\mathrm{composite}}/\widehat{\mathrm{SE}}| < 0.5\)
         \emph{and} either
         \(|\mathrm{skew}(\hat{\varepsilon})| > 1.0\) or
-        \(\mathrm{excess\ kurtosis}(\hat{\varepsilon}) > 3.0\). When
-        Clause~B fires the verdict is ESCALATE Clause~B; otherwise
-        FAIL.
+        \emph{Fisher excess kurtosis}
+        \(\hat{s}_4 \equiv \hat{\kappa}_4 - 3 > 3.0\) (i.e., raw fourth
+        standardized moment \(\hat{\kappa}_4 > 6\); a normal residual
+        has Fisher excess kurtosis \(0\) and the threshold flags
+        substantially leptokurtic tails). When Clause~B fires the
+        verdict is ESCALATE Clause~B; otherwise FAIL.
       \item \(\hat{\beta}_{\mathrm{composite}} \leq 0\) and
         \(\hat{p} \leq 0.05\) returns FAIL with no Clause~B evaluation:
         a wrong-signed significant estimate falsifies \(H_1\), and
@@ -196,7 +243,9 @@ R\text{-consistency})\) and the residual-moment tuple
     \end{itemize}
 \end{enumerate}
 The numerical thresholds \(0.5\), \(1.0\), and \(3.0\) in Clause~B are
-pinned at spec-authoring time and are not adjustable post-data. The
+pinned at spec-authoring time and are not adjustable post-data; the
+\(3.0\) threshold is on the \emph{Fisher} (excess-over-normal)
+convention, not on the Pearson raw-fourth-moment convention. The
 ESCALATE branches trigger a pre-authorized convex-payoff suite (a
 \(\tau = 0.90\) quantile regression on the central lag, a GARCH-X
 mean-equation regression, and a peaks-over-threshold extreme-value
@@ -236,5 +285,8 @@ distinction is the standard Granger-predictive versus structural-causal
 distinction; the document does not use \(\hat{\beta}\) as an
 impulse-response. Whether to move to instrumental-variable, event-study,
 or structural VAR identification before declaring a Stage-1 PASS
-sufficient for Stage-2 dispatch is the leading open question we put to
+sufficient for Stage-2 dispatch --- and whether the persistent-regressor
+posture noted in \(\S\ref{sec:5.5b}\) requires Stambaugh-bias-corrected
+inference at the primary tier --- is the leading open question we put to
 the supervisor in Section~\ref{sec:7}.
+

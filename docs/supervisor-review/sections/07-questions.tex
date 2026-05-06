@@ -13,7 +13,7 @@ the supervisor's response would unblock.
 
 \paragraph{Current posture.} The Stage-1 specification is OLS on lagged
 log-FX with HAC inference at fixed lag truncation \(L\) (see
-Section~\ref{sec:5}). The estimator \(\hat{\beta}_{\text{composite}}\) is
+Section~\ref{sec:5}). The estimator \(\hat{\beta}_{\mathrm{composite}}\) is
 a predictive-regression coefficient; we do not treat it as an
 impulse-response. The PASS-verdict iteration (Pair~D) flags identification
 non-uniqueness explicitly: the closure memorandum hedges the correlation
@@ -201,45 +201,104 @@ threshold triple should remain in force or be replaced.
 
 \subsection{Cross-iteration FWER and iteration-selection bias}\label{sec:7.5}
 
-\paragraph{Current posture.} The project has run five iterations: one
-PASS, one IN PROGRESS, one FAIL on the pre-registered weekly primary with
-two pre-registered sensitivities producing positive 90\,\% confidence
-intervals, one \texttt{EXIT}, and one PARKED. Each iteration's
-within-iteration pre-registration discipline is documented; the
-\emph{cross-iteration} structure is not. Iteration-selection decisions ---
-which \((Y, X)\) pairs enter the roster, which are dropped after
-\texttt{EXIT}, which are deepened after PASS --- are made at the project
-level and are not bound by an external pre-registration rule.
+\paragraph{Current posture.} The project has run five iterations and all
+five are closed or parked: one PASS (Pair~D), two FAIL (one
+pre-registered-weekly-primary FAIL with two sensitivity-positive arms in
+FX-vol-on-CPI-surprise; one sign-flipped FAIL on the dev-AI Stage-1
+narrow-ICT primary closed 2026-05-06), one \texttt{EXIT}
+(Phase-A.0 remittance), and one PARKED (P1 Bittensor SN18). No Stage-1
+work is in progress as of the memorandum date. Each iteration's
+within-iteration pre-registration discipline is documented in
+Section~\ref{sec:5}; the \emph{cross-iteration} structure is not
+pre-registered. Iteration-selection decisions --- which \((Y, X)\) pairs
+enter the roster, which are dropped after \texttt{EXIT}, which are
+deepened after PASS --- are made at the project level and are not bound
+by an external pre-registration rule.
 
-The numerical asymmetry across iterations matters here. The Pair~D
-closure verdict's headline \(p \approx 1.46 \times 10^{-8}\) is
-overwhelmingly significant against any reasonable Bonferroni correction
-across five iteration-level tests. The FX-vol-on-CPI-surprise
-sensitivities are far less robust to such a correction: the A1 monthly
-sensitivity reports a 90\,\% confidence interval of
-\([+0.0057,\ +0.0246]\); the A4 release-day-excluded sensitivity reports
-\([+0.0005,\ +0.0062]\). The A4 lower bound at \(0.0005\) is at the edge
-of significance even uncorrected, and would not survive a meaningful
-familywise-error-rate adjustment.
+The numerical mass at the two tails across the five tests is asymmetric
+in a way that matters for any FWER-style correction. On the positive
+tail, the Pair~D closure verdict's headline
+\(p \approx 1.46 \times 10^{-8}\) is overwhelmingly significant against
+any reasonable Bonferroni correction across five iteration-level tests;
+the FX-vol-on-CPI-surprise sensitivity arms are far less robust to such
+a correction (the A1 monthly sensitivity reports a 90\,\% confidence
+interval of \([+0.0057,\ +0.0246]\); the A4 release-day-excluded
+sensitivity reports \([+0.0005,\ +0.0062]\), and the A4 lower bound at
+\(0.0005\) would not survive a meaningful familywise-error-rate
+adjustment). On the \emph{negative} tail, the dev-AI Stage-1 primary
+delivered \(\hat{\beta} = -0.146\) at \(t = -1.726\), which we record as
+a high-information FAIL: the iteration was pre-registered with a
+positive-sign expectation, and the realisation is sign-flipped at the
+direction of the alternative rather than merely insignificant. A
+two-sided cross-iteration FWER procedure has different mass at the two
+tails of the iteration-result distribution, and the supervisor's
+preferred procedure should be specified to make the asymmetry explicit
+rather than letting a default Bonferroni argument flatten it.
 
 \paragraph{Question for the supervisor.} What familywise-error-rate or
 false-discovery-rate correction regime should be applied across the
-iteration history, and how should sensitivity-positive findings such as
-the FX-vol A1 and A4 results be weighed under such a correction?
+iteration history, given the directional asymmetry just described, and
+how should sensitivity-positive findings such as the FX-vol A1 and A4
+results be weighed under such a correction? In particular, should a
+sign-flipped FAIL at conventional significance be counted symmetrically
+with the PASS at the positive tail under the supervisor's preferred
+correction, or should the directional pre-registration on each iteration
+shift the mass allocation?
 
-A sub-question is methodologically prior. Iteration selection itself ---
-the decision of which \((Y, X)\) pair to specify, which to drop, which
-to deepen --- is a multiple-testing structure that within-iteration
-pre-registration does not address. What mitigations does the supervisor
-recommend? Candidate mitigations under consideration include
-pre-registered iteration-budget caps committed at project initiation,
-an iteration-level alpha-spending function in the spirit of group
-sequential designs, and pre-registered iteration-allocation rules that
-do not depend on prior verdicts. We have no current basis for choosing
-among these and are explicitly asking for the supervisor's preferred
-form.
+A second sub-question is methodologically prior. Iteration selection
+itself --- the decision of which \((Y, X)\) pair to specify, which to
+drop, which to deepen --- is a multiple-testing structure that
+within-iteration pre-registration does not address. What mitigations
+does the supervisor recommend? Candidate mitigations under consideration
+include pre-registered iteration-budget caps committed at project
+initiation, an iteration-level alpha-spending function in the spirit of
+group sequential designs, and pre-registered iteration-allocation rules
+that do not depend on prior verdicts. We have no current basis for
+choosing among these and are explicitly asking for the supervisor's
+preferred form.
+
+\paragraph{Sharpened sub-question --- is the Pair~D PASS one test, or one
+test conditional on a sub-aggregate selection?} The dev-AI Stage-1
+iteration's pre-specified Section-M sensitivity arm
+(professional/scientific/technical/admin services, CIIU Rev.~4 Sections
+\(\{69\text{--}75\}\)) produced \(\hat{\beta} = +0.455\) at
+\(p \approx 1.13 \times 10^{-6}\), while the iteration's pre-registered
+Section-J narrow-ICT primary failed sign-flipped at
+\(\hat{\beta} = -0.146\). The Section-M sensitivity was a sensitivity
+arm of the dev-AI iteration, not a pre-registered primary; we therefore
+do not present the Section-M finding as a free-standing positive
+verdict. We do, however, observe that the Section-M result is
+\emph{consistent with} a compositional reading of the Pair~D PASS under
+which the headline broad-services Section-G--T positive estimate
+reflected a Section-M-style transmission averaged across the broader
+G--T aggregate rather than a Section-J ICT-narrow signal. The internal
+specification \texttt{spec~\S 9.16} flagged precisely this compositional
+ambiguity at Pair~D's closure; the formal \texttt{\S 9.16(c)} (G--T
+minus J) decomposition is flagged-not-resolved per the dev-AI Stage-1
+verdict memorandum, and the Section-M sensitivity arm is consistent with
+but not equivalent to that decomposition.
+
+This sharpens the supervisor's FWER question rather than answering it.
+If the Pair~D PASS is read as the resolution of one pre-registered test,
+the cross-iteration tally is one PASS out of five tests at the positive
+tail. If the Pair~D PASS is read as one test conditional on a
+post-hoc-defensible-but-not-pre-registered choice of sub-aggregate
+within G--T (with the dev-AI Section-M sensitivity arm now suggesting
+that the sub-aggregate concentrating the signal is Section M rather
+than Section J), then the multiple-comparison ledger across the
+iteration history must additionally account for the implicit search
+across sub-aggregates of the broad-services panel. We flag this as a
+sharpened sub-question for the supervisor and do not litigate it here.
+The references for selection-on-observables and sample-selection
+correction in the spirit of \citet{heckman_1979} are noted as one
+candidate frame for the supervisor's response, alongside the FWER and
+false-discovery-rate frames already cited in this section.
 
 \paragraph{What the supervisor's answer unblocks.} The project-level
 multiple-testing discipline that supplements within-iteration
-pre-registration, and the appropriate weight to assign to the
-sensitivity-positive findings of the FAIL-primary iteration.
+pre-registration; the appropriate weight to assign to the
+sensitivity-positive findings of the FX-vol FAIL-primary iteration; the
+appropriate weight to assign to the sign-flipped FAIL primary of the
+dev-AI Stage-1 iteration under a directionally-aware correction; and
+the appropriate weight to assign to the Pair~D PASS once the
+sub-aggregate-selection question is taken into account.

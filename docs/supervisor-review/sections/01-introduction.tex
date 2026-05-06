@@ -63,35 +63,55 @@ keep specific target populations on the wrong side of this boundary.
 The unit of work is a triple \((Y, M, X)\) defined formally in
 Section~\ref{sec:2} and motivated by a hedge-target proposition in
 Section~\ref{sec:3}. The validation strategy estimates a composite slope
-\(\hat{\beta}_{\text{composite}}\) of \(Y\) on lagged \(X\), with sign
+\(\hat{\beta}_{\mathrm{composite}}\) of \(Y\) on lagged \(X\), with sign
 expectation, lag structure, primary specification, and verdict thresholds
 pre-registered before the panel is touched. Section~\ref{sec:5} (drafted by
 the data-methodology agent) presents the methodology in full; we mention it
 here only to fix the object the supervisor is being asked to review.
 
 \paragraph{Iteration count and the cross-iteration multiple-comparison
-posture.} The project has run five iterations to date: one PASS verdict
-(Pair~D, BPO offshoring against COP/USD lag, closed 2026-04-28); one
-in-progress (dev-AI Stage-1, Section~J ICT employment share against
-COP/USD lag, dispatched 2026-05-05); one closed FAIL on the pre-registered
-weekly primary with two pre-registered sensitivities producing positive
-confidence intervals (FX-vol-on-CPI-surprise); one closed
+posture.} As of the date of this memorandum, the project has run five
+iterations and \emph{all five are closed or parked}: no Stage-1 work is in
+progress. The five are: one PASS verdict (Pair~D, broad-services
+Section-G--T employment share against COP/USD lag, closed 2026-04-28); one
+closed FAIL on the pre-registered weekly primary with two pre-registered
+sensitivities producing positive 90\,\% confidence intervals
+(FX-vol-on-CPI-surprise, closed 2026-04-19); one closed
 \texttt{EXIT\_NON\_REMITTANCE} (Phase-A.0 remittance corridor, closed
-2026-04-24); and one parked-for-record (P1 Bittensor SN18 event-study
-apparatus). Each individual iteration was pre-registered, and the
-within-iteration anti-fishing discipline is documented in
-Section~\ref{sec:5}. The \emph{cross-iteration} multiple-comparison
-structure, however, is not addressed by within-iteration pre-registration:
-which \((Y, X)\) pairs entered the iteration roster in the first place,
-which were dropped after \texttt{EXIT}, and which were deepened after
-\texttt{PASS} are decisions made by the project team, not by a
-pre-registered iteration-allocation rule. We acknowledge that this
-constitutes an open methodological question and we treat it explicitly in
-Section~\ref{sec:7} (specifically Section~\ref{sec:7.5}) rather than
-presenting the five verdicts as if they were drawn from independent,
-pre-iteration-selected experiments. The supervisor's guidance on the
-appropriate cross-iteration familywise-error or selection-bias mitigation
-regime is one of the five asks in Section~\ref{sec:7}.
+2026-04-24); one parked-for-record (P1 Bittensor SN18 event-study
+apparatus); and --- closed within the past week, on 2026-05-06 --- one
+\emph{sign-flipped} FAIL (dev-AI Stage-1, Colombian young-worker Section-J
+narrow-ICT employment share against COP/USD lag), in which the
+pre-registered positive-sign expectation was rejected at conventional
+significance with \(\hat{\beta} = -0.146\). The dev-AI Stage-1 iteration
+also produced, on a pre-specified Section-M sensitivity arm
+(professional/scientific/technical/admin services, CIIU Rev.~4 Sections
+\(\{69\text{--}75\}\)), a strong positive estimate
+\(\hat{\beta} = +0.455\) at \(p \approx 1.13 \times 10^{-6}\). That
+sensitivity result is consistent with --- but does not formally resolve
+--- a compositional reading of the Pair~D PASS under which the headline
+Section-G--T positive estimate reflected Section-M-style transmission
+averaged across the broader G--T aggregate rather than a Section-J
+ICT-narrow signal. The Pair~D Section-J/Section-M decomposition is flagged
+here for reference and is not litigated in this section; the
+methodological consequences --- both for the Pair~D PASS interpretation
+and for the cross-iteration multiple-comparison posture --- are taken up
+in Sections~\ref{sec:6} and~\ref{sec:7.5}.
+
+Each individual iteration was pre-registered, and the within-iteration
+anti-fishing discipline is documented in Section~\ref{sec:5}. The
+\emph{cross-iteration} multiple-comparison structure, however, is not
+addressed by within-iteration pre-registration: which \((Y, X)\) pairs
+entered the iteration roster in the first place, which were dropped after
+\texttt{EXIT}, and which were deepened after \texttt{PASS} are decisions
+made by the project team, not by a pre-registered iteration-allocation
+rule. We acknowledge that this constitutes an open methodological question
+and we treat it explicitly in Section~\ref{sec:7} (specifically
+Section~\ref{sec:7.5}) rather than presenting the five verdicts as if they
+were drawn from independent, pre-iteration-selected experiments. The
+supervisor's guidance on the appropriate cross-iteration familywise-error
+or selection-bias mitigation regime is one of the five asks in
+Section~\ref{sec:7}.
 
 The remainder of the memorandum is organised as follows.
 Section~\ref{sec:2} defines the operating framework and the \((Y, M, X)\)

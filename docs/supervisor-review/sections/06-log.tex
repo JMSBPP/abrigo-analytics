@@ -58,7 +58,7 @@ one-sided \(p \approx 1.46 \times 10^{-8}\). Robustness rows R1--R4
 produced zero sign flips relative to the primary; the four-row classifier
 returned AGREE.
 
-\paragraph{Key caveats from independent review.} Four flags from the
+\paragraph{Key caveats from independent review.} Five flags from the
 Reality Checker review of the closed iteration are inherited as
 load-bearing constraints on any downstream framing:
 \begin{enumerate}
@@ -92,6 +92,33 @@ load-bearing constraints on any downstream framing:
     \texttt{off\_spec\_sensitivity\_orchestrator\_brief} for audit. The
     document carries this verdict-sensitivity record forward as part of
     the framework's decision log.
+  \item \emph{Compositional reframe surfaced by the dev-AI Stage-1
+    closed iteration (2026-05-06).} The Pair~D PASS was estimated on
+    the broad CIIU Sections G--T cut and was, at spec-pin time,
+    interpreted under a ``broad-services hedging the BPO transmission
+    chain'' reading consistent with either a Section-J ICT-narrow
+    mechanism or a Section-M-style consultancy / scientific R\&D /
+    administrative-services mechanism aggregated up. The dev-AI
+    Stage-1 iteration's Section-J primary closed
+    \(\hat{\beta}_{\mathrm{composite}} = -0.14613\)
+    (HAC(\(L=12\)) SE \(0.0847\); \(t = -1.726\); one-sided
+    \(p \approx 0.958\) on the pre-registered \(H_1: \beta > 0\)) ---
+    a sign-flipped FAIL --- and its R2 sensitivity arm on Section M
+    closed \(\hat{\beta}_{\mathrm{composite}} = +0.45482801\)
+    (\(t = +4.73\); \(p = 1.13 \times 10^{-6}\)) at the same monthly
+    cadence on the same lag panel. Read jointly with Pair~D, this
+    pattern strongly suggests Pair~D's PASS was carried by the
+    Section-M-style sub-aggregate (consultants, legal, accounting,
+    scientific R\&D, administrative services) rather than by Section-J
+    ICT-narrow tech offshoring. The spec~\(\S 9.16\) compositional-
+    accounting concern is therefore \emph{empirically resolved as
+    flagged-not-resolved}: a formal (Sections G--T \(\setminus\) J)
+    decomposition pre-registered as an R5 robustness row remains
+    deferred for a future iteration, and any Stage-2 dispatch off the
+    Pair~D PASS must inherit this compositional caveat. Pair~D's
+    headline numbers stand verbatim under the original spec; the
+    interpretation of the operative sub-aggregate is what has
+    sharpened.
 \end{enumerate}
 
 \paragraph{Pre-registration sha256 chain.}
@@ -119,69 +146,117 @@ same lag set \(k \in \{6, 9, 12\}\); the panel back-extends \(X\) to
 2014-01 to preserve \(Y\) starting at 2015-01.
 
 \paragraph{Sign expectation and literature anchor.} Positive. The
-mechanism is the same Baumol-arbitrage-offshoring chain as Pair~D
+mechanism was the same Baumol-arbitrage-offshoring chain as Pair~D
 narrowed from BPO-flavored services-broad to ICT-narrow
-tech-services offshoring; the same canonical references apply
+tech-services offshoring; the same canonical references applied
 \citep{mendietamunoz2017, beerepoothendriks2013, errighibodwell2017,
-rodrik2016}.
+rodrik2016}. As recorded below, the sign expectation was
+\emph{rejected at conventional significance} by the realized estimate.
 
 \paragraph{Primary specification.} Equation~(\ref{eq:primary-monthly})
 restated with the Section-J \(Y\); one-sided test at \(\alpha = 0.05\);
 OLS-homoskedastic inference primary, HAC(\(L = 12\)) inference as
 robustness arm R4.
 
-\paragraph{Sample.} Expected \(N \approx 134\) monthly observations,
-window 2015-01 through 2026-03 (one-month tolerance for end-of-window
-publication-lag drop). Phase~1 ingest closed at \(N = 134\) months
-schema-stable.
+\paragraph{Sample.} \(N = 134\) monthly observations, window
+2015-01-31 through 2026-03-31, well above the \(N_{\min} = 75\) floor.
 
-\paragraph{Verdict.} IN PROGRESS. Phase~1 (data ingest) closed
-2026-05-05 with two diagnostic flags surfaced before estimation;
-Phase~2 (estimation) is the next step. Verdict is open.
+\paragraph{Verdict.} CLOSED FAIL, 2026-05-06.
 
-\paragraph{Headline numbers.} Not yet estimated.
+\paragraph{Headline numbers.}
+\(\hat{\beta}_{\mathrm{composite}} = -0.14613\) (HAC(\(L=12\))
+standard error \(0.0847\)); \(t = -1.726\); one-sided
+\(p \approx 0.958\) against \(H_1: \beta > 0\). The estimated sign is
+the opposite of the pre-registered expectation: the FAIL is a
+\emph{sign-flipped} FAIL, not an underpowered failure-to-reject.
+The R-consistency classifier returned MIXED (three of four R-rows agree
+with the primary; only the R2 Section-M sensitivity sign-flips). The
+v1.0.2 pre-registered hardening (R1 \emph{and} R3 must individually
+agree on sign for the verdict to clear PASS independently of the
+four-row aggregate) is consistent with the FAIL verdict at the
+negative sign. The pre-authorized escalation suite (\(\S\ref{sec:5.6}\))
+returned: D-i and D-ii FAIL on the positive-sign criterion; D-iii
+literally returned \(\hat{\beta} = +0.113\), \(p = 0.012\) but is
+\emph{inadmissible} per the strict reading of \(\S\ref{sec:5.5}\)
+because the \(\S 3.3\)-trigger condition that would license escalation
+never fired. The user closed FAIL on 2026-05-06 per the strict
+\(\S\ref{sec:5.5}\) reading, with the D-iii literal positive preserved
+on the record as a Phase-3 artifact for a possible future Section-M
+iteration. (A spec-internal contradiction between
+\(\S 5.5\)~line~252 and \(\S 9.6\) on the question of whether the
+escalation suite must run conditional on a primary-trigger or
+unconditionally is acknowledged on the project's deferred-spec-
+reconciliation list as \emph{spec~v1.0.3 reconciliation flag},
+to be resolved unambiguously before another \(\S 5.5\) invocation.)
 
-\paragraph{Key caveats from independent review.} The diagnostic flags
-surfaced at Phase~1 ingest, recorded in the spec as the
-CORRECTIONS-\(\kappa\) block, materially tighten the spec's
-robustness-arm discipline before estimation. We report the gap in two
-distinct numbers, because the realized data missed the ex-ante
-expectation on two distinct dimensions:
+\paragraph{Key caveats from independent review.}
 \begin{enumerate}
-  \item \emph{Cell-count gap.} Realized monthly cell counts for the
-    Section-J young-worker stratum lie in \([94, 267]\) with median
-    \(145\); the ex-ante feasibility-memo baseline was \([700, 1200]\).
-    The realized range is a factor of roughly five-to-seven below
-    baseline. One month (2024-10-31) lies at \(\mathrm{cell\ count}
-    = 94\), inside a borderline rare-event regime under one hundred.
-    Seventy-four of the one hundred and thirty-four months
-    (approximately 55\%) lie below \(150\).
-  \item \emph{Share-magnitude gap.} Realized monthly raw shares lie in
-    \([0.014, 0.031]\); the ex-ante spec range was \([0.04, 0.10]\).
-    The realized range is a factor of roughly one-and-one-third to
-    three below baseline. Because the logit derivative
-    \(\mathrm{d}/\mathrm{d}Y\,\mathrm{logit}(Y) = 1/[Y(1-Y)]\) is
-    monotonically increasing in proximity to \(0\) and \(1\), the
-    realized range maps the logit derivative into \([33, 73]\), against
-    a v1.0.1-anticipated across-support amplification ratio of
-    \(2.34\). The realized derivative is a factor of three-to-seven
-    larger than the v1.0.1 baseline anticipated.
+  \item \emph{Cell-count and share-magnitude gap (CORRECTIONS-\(\kappa\)
+    block).} Realized monthly cell counts for the Section-J young-worker
+    stratum lay in \([94, 267]\) with median \(145\); the ex-ante
+    feasibility-memo baseline was \([700, 1200]\). Realized monthly raw
+    shares lay in \([0.014, 0.031]\) against an ex-ante range of
+    \([0.04, 0.10]\). The logit derivative
+    \(\mathrm{d}\,\mathrm{logit}(Y)/\mathrm{d}Y = 1/[Y(1-Y)]\) at the
+    realized share range maps to \([33, 73]\), against a v1.0.1
+    across-support amplification ratio of \(2.34\); the spec was
+    \(\kappa\)-tightened on this basis at v1.0.2 to require R1 and R3
+    individual sign agreement before any PASS verdict. The realized
+    estimate cleared the \(\kappa\)-tightened reading at the
+    \emph{negative} sign --- the substrate is not too noisy under the
+    DISAGREE classifier (only one R-row sign-flips), so the verdict is
+    routable rather than SUBSTRATE\_TOO\_NOISY.
+  \item \emph{R2 Section-M sensitivity --- compositional finding.}
+    The R2 sensitivity arm narrowed \(Y\) from Section J to Section M
+    (CIIU Rev.~4 Sections 69--75: professional, scientific, technical,
+    and administrative services) at the same lag panel and primary
+    functional form, and produced
+    \(\hat{\beta}_{\mathrm{composite}} = +0.45482801\) at
+    \(t = +4.73\), one-sided \(p = 1.13 \times 10^{-6}\). This is
+    a strong positive signal at a sister sub-aggregate to Section J
+    on the same FX-lag panel. The framework reads this as a
+    \emph{candidate-next-iteration finding}, not as a Pair~D rescue or
+    a dev-AI Stage-1 rescue: the Section-M coefficient was not
+    pre-registered as the primary at spec-pin time, and per the
+    project's anti-fishing discipline it cannot graduate to a
+    PASS-equivalent claim from a robustness-arm posture. What it
+    \emph{does} resolve, jointly with the Pair~D PASS and the dev-AI
+    Stage-1 FAIL, is the spec~\(\S 9.16\) compositional-accounting
+    ambiguity: Pair~D's broad-services PASS is \emph{empirically
+    consistent with} a Section-M-style consultancy-and-professional-
+    services transmission chain rather than a Section-J ICT-narrow
+    chain. A future iteration with Section M pre-registered as the
+    primary, on a fresh spec-pin and the canonical four-row R-arm
+    discipline, is the routed-forward path.
+  \item \emph{Empalme residual bias surfaced.} The Phase-1 ingest
+    diagnostic (Notebook 02 Trio 1 \texttt{boundary\_anomaly}) returned
+    TRUE: the logit-\(Y\) jump at the 2020-12 \(\to\) 2021-01 boundary
+    was \(+0.375\), against an envelope of \(\pm 0.335\) (three times
+    the historical month-to-month standard deviation). The R1
+    regime-dummy arm produced \(\hat{\beta}_{\mathrm{R1}} = +0.188\)
+    at \(t = +4.36\), reflecting an unexplained level shift in the
+    post-2021 era. The DANE Marco-2018 empalme correction was applied
+    to the primary as designed, but did \emph{not} fully neutralize the
+    methodology break at the Section-J narrow cut; the regime structure
+    is informational diagnostic and the project explicitly does not
+    use the \(\hat{\beta}_{\mathrm{R1}}\) sign as a primary-spec
+    rescue lever. The empalme-residual phenomenon is an inherited
+    methodology constraint for any future DANE-GEIH-based iteration.
+  \item \emph{Per-user instrument design implication.} The Stage-1
+    rejection of the positive-sign expectation falsifies the
+    transmission for which a per-user a\(_s\) instrument was the
+    candidate Stage-2 deployment: the rejected sign means the dev-AI-
+    paying population (Colombian young Section-J workers paying
+    USD-denominated AI APIs) does not, at Stage-1, exhibit the
+    FX-pass-through-to-employment pattern the convex hedge would
+    settle. A SHORT-FX-style instrument would be the opposite of what
+    that population needs given USD-denominated AI tooling costs;
+    consequently a per-user a\(_s\) construction on this transmission
+    is not designable. The Section-M finding does not change this
+    conclusion at Section-J granularity, and any Section-M follow-on
+    iteration must pre-pin its own population definition before the
+    Stage-2 instrument question reopens.
 \end{enumerate}
-The spec's pre-registered hedges against logit-derivative amplification
-(R1, the 2021 regime dummy on the logit-\(Y\); and R3, the raw-share
-specification that sidesteps the logit nonlinearity) become
-\emph{mandatory} ESCALATE triggers under realized
-\(\kappa\)-amplification: under the v1.0.2 hardening, sign-disagreement
-on either R1 or R3 individually re-routes the verdict from PASS to
-ESCALATE Clause~A regardless of the four-row aggregate consistency
-classification. The compositional-accounting concern is also
-load-bearing: a positive composite on Section J at Stage-1 PASS or
-ESCALATE-PASS is consistent with either an independent ICT-narrow
-mechanism or a re-discovery of the Pair~D broad-services PASS
-aggregated up to ICT, and the Stage-1 verdict cannot distinguish
-these two readings without a Section-(G--T-minus-J) decomposition
-that the spec does not pre-commit. Stage-2 dispatch on a Stage-1 PASS
-must inherit this caveat.
 
 \paragraph{Pre-registration sha256 chain.} v1.0 \(\to\) v1.0.1
 \(\to\) v1.0.2 \(\to\) governing hash
@@ -236,14 +311,18 @@ statistically detectable increase in COP/USD realized volatility
 across the sample window. We separately note that the pre-registered
 A1 monthly-cadence sensitivity returned
 \(\hat{\beta} = +0.0152\) with a \(90\%\) interval
-\([+0.0057,\,+0.0246]\) and the A4 release-day-excluded sensitivity
+\([+0.0057,\,+0.0246]\), and the A4 release-day-excluded sensitivity
 returned \(\hat{\beta} = +0.0033\) with a \(90\%\) interval
-\([+0.0005,\,+0.0062]\). Neither is the iteration's main finding ---
-the pre-registered primary is FAIL and the pre-registered primary
-\emph{is} the result. The two sensitivities are pre-registered
-robustness checks that returned positive significance at the
-\(90\%\) one-sided convention; they live in the iteration's
-pivot record as candidate inputs to a future
+\([+0.0005,\,+0.0062]\). The A4 \(90\%\) interval excludes zero
+uncorrected: the rejection at the one-sided \(\alpha = 0.05\)
+convention is clean before any multiple-testing correction, even
+though the lower bound (\(0.0005\)) is small in absolute magnitude;
+calling A4 ``edge-of-significance'' would be inaccurate. Neither A1
+nor A4 is the iteration's main finding: the pre-registered primary is
+FAIL and the pre-registered primary \emph{is} the result. The two
+sensitivities are pre-registered robustness checks that returned
+positive significance at the \(90\%\) one-sided convention; they live
+in the iteration's pivot record as candidate inputs to a future
 monthly-cadence-primary specification, not as a rescue of the
 weekly primary.
 
@@ -384,19 +463,27 @@ The five iterations above are pre-registered individually but the
 \emph{decisions} that produced them --- which target populations to
 pursue, which \((Y, X)\) pairs to spec-pin, which to drop after an
 EXIT, which to deepen --- are themselves a meta-multiple-comparison
-structure. Pair~D's one-sided \(p \approx 1.46 \times 10^{-8}\) is
-overwhelmingly significant against any reasonable
-\citet{benjaminihochberg1995} or \citet{romanowolf2005} correction
-applied across five iteration-level tests, but the FX-vol-CPI
-pre-registered sensitivities (A1 monthly with \(90\%\) interval
-\([+0.0057, +0.0246]\); A4 release-day-excluded with \(90\%\) interval
-\([+0.0005, +0.0062]\)) are far less robust to such a correction; the
-A4 lower bound at \(0.0005\) is at the edge of significance even
-uncorrected. We therefore decline to make any aggregate claim about
-``what the project has established across five iterations.'' What the
-project has established at the per-iteration level is recorded above,
-iteration by iteration, with the appropriate hedges. The framework's
-posture toward iteration-selection bias and the appropriate
-familywise-error-rate or false-discovery-rate correction regime is
-the dedicated open question we put to the supervisor in
+structure. As of 2026-05-06 all five iterations are closed or parked
+(Pair~D PASS; dev-AI Stage-1 FAIL; FX-vol-CPI FAIL; Phase-A.0
+EXIT\_NON\_REMITTANCE; P1 SN18 PARKED). Pair~D's one-sided
+\(p \approx 1.46 \times 10^{-8}\) is overwhelmingly significant against
+any reasonable \citet{benjaminihochberg1995} or \citet{romanowolf2005}
+correction applied across five iteration-level tests, but the
+FX-vol-CPI pre-registered sensitivities (A1 monthly with \(90\%\)
+interval \([+0.0057, +0.0246]\); A4 release-day-excluded with \(90\%\)
+interval \([+0.0005, +0.0062]\)) and the dev-AI Stage-1 R2 Section-M
+finding (\(\hat{\beta} = +0.455\), \(p = 1.13 \times 10^{-6}\), but
+not pre-registered as a primary) are differentially robust to such a
+correction; the A4 lower bound at \(0.0005\) is small in absolute
+magnitude though the rejection is clean uncorrected. The Section-M
+finding sits as a candidate-next-iteration object rather than a
+graduated PASS, precisely because it was not pre-pinned as a primary
+at spec-author time. We therefore decline to make any aggregate claim
+about ``what the project has established across five iterations.''
+What the project has established at the per-iteration level is
+recorded above, iteration by iteration, with the appropriate hedges.
+The framework's posture toward iteration-selection bias and the
+appropriate familywise-error-rate or false-discovery-rate correction
+regime is the dedicated open question we put to the supervisor in
 Section~\ref{sec:7} (\(\S 7.5\)).
+
