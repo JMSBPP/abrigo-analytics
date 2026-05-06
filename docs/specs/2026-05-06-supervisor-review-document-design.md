@@ -80,6 +80,25 @@ literature (Mendieta-Muñoz 2017; the Rodrik premature-deindustrialization
 canon). Project goal: identify macro risks `X` that block this transition
 for specific populations and validate them empirically.
 
+**Refined target-population framing (REVISION-A, 2026-05-06).** The economic
+motivation is sharpened from the post-Keynesian abstraction of
+inequality-as-aggregate to a **concrete financial-intermediation gap** for an
+identifiable underserved population — LATAM digital workers paying
+USD-denominated AI / API costs (the same population the dev-AI Stage-1
+iteration validates against, per §3.6, sub-section §6.2). These workers face
+FX-pass-through cost shocks on their monthly USD spend that cannot be hedged
+through any existing Colombian bank product; conventional FX-derivative
+venues require minimum notionals and counterparty-credit standing they
+cannot meet. The Abrigo framework's contribution is to identify the macro
+risks `X` that produce these shocks, validate them empirically, and design
+**parametric cost-insurance products** that close the intermediation gap.
+Inequality is, under this reading, the *consequence* of the missing
+intermediation rather than the framing primitive — which lets the
+supervisor evaluate the methodology against insurance-underwriting
+standards (parametric-index insurance literature: Carter et al. 2017 *World
+Development*; Mahul & Stutley 2010 *World Bank*) rather than a polemic
+about distribution.
+
 ### §3.2 Operating Framework — The (Y, M, X) Triple
 
 Definitions:
@@ -135,6 +154,19 @@ market existence (working-class LONG; capital-holders naturally SHORT
 through their existing positions, requiring no new counter-party); the
 continuous-time differential as a stochastic process whose calibration is
 deferred to §7.3 as an open question for supervisor input.
+
+**Insurance-framing sharpening (REVISION-A, 2026-05-06).** The lemma's
+mathematical content is unchanged; the economic interpretation is
+sharpened from "hedge target" to **parametric-cost-insurance underwriting
+target**. Under this reading, the differential `Y_inequality(t)` is the
+welfare-relevant index variable that an insurance product should settle
+on, with the working-class household as the policy-holder and the
+capital-holder as the natural counterparty (already-existing exposure to
+`R_a(t)` requires no new opt-in counterparty position). The two-sided
+market existence argument therefore reduces to the standard parametric-
+insurance counterparty matching of Carter et al. 2017; the implementation
+venue (Panoptic perpetual options) is settlement infrastructure, not the
+economic primitive.
 
 ### §3.4 On-Chain Settlement Substrate — Primer for the Non-Specialist Reader
 
@@ -382,6 +414,18 @@ methodologically cleaner than letting the supervisor introduce it):
   before declaring an iteration ready for Stage-2 M-design? Specifically:
   is variance-amplification evidence at the X-shock dates sufficient, or
   is full quantile-regression / EVT tail-index estimation required?
+  **Insurance-framing sharpening (REVISION-A, 2026-05-06).** The
+  question is operationalised as: *what empirical evidence does the
+  supervisor require before this β-validation is sufficient to underwrite
+  a parametric cost-insurance product?* The convex-payoff sufficiency
+  standard is grounded in the parametric-index-insurance pricing
+  literature (Carter et al. 2017; Mahul & Stutley 2010 *World Bank*;
+  Clarke 2016 *AEJ: Microeconomics* on basis risk), not generic
+  option-pricing literature. This reframing is methodologically
+  conservative: insurance-pricing literature requires *more* tail-risk
+  evidence than option-pricing literature (basis risk, adverse selection,
+  catastrophic-loss probability) and the supervisor is invited to apply
+  the stricter standard.
 - **§7.3 Multi-Y differential calibration.** The Abrigo Lemma's
   `Y_inequality = R_a − R_c` requires constructing each leg as a panel of
   observable variables. How to calibrate joint-leg correlation structure,
@@ -435,6 +479,13 @@ will adopt `N_MIN = X` based on the supervisor's recommendation; the
 identification strategy for the next iteration will be revised to
 `Y` per §7.1 guidance; the cross-iteration α-spending function will be
 parameterised per §7.5 guidance"). No implicit promises.
+
+**Insurance-framing closing (REVISION-A, 2026-05-06).** One sentence
+records the framing pin: the implementation venue is on-chain (Panoptic
+perpetual options; see §4), but the **economic primitive is parametric
+cost insurance, not a derivative product**. The supervisor's review
+applies insurance-econometrics standards to the empirical work; the
+on-chain settlement layer is implementation infrastructure, not pitch.
 
 ### §3.9 Appendices
 
