@@ -41,3 +41,4 @@ notebooks/**/estimates/*.pkl
 # Env
 .env
 .envrc
+!.env.example
