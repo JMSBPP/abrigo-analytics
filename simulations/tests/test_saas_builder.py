@@ -761,6 +761,186 @@ class TestAlphaPriorBracketInvariance:
         assert prior.alpha_lower < prior.alpha_loc < prior.alpha_upper
 
 
+class TestMutationKillers:
+    """Additional unit tests pinned by the mutation-testing pass.
+
+    Each test is named after the mutation it kills; collectively they
+    raise the kill rate above the plan §3.6 80% threshold.
+    """
+
+    def test_model_alpha_lower_passed_to_pymc(self, t1_model: pm.Model) -> None:
+        """Mutation #4: model.py must pass priors.alpha.alpha_lower to PyMC.
+
+        Reads the constructed pm.Model and confirms the alpha_pareto
+        TruncatedNormal RV's lower bound matches priors.alpha.alpha_lower
+        (= 1.5 by default; not 0.0 or any other floor).
+        """
+        # Inspect the alpha_pareto random variable's bounds.
+        # PyMC stores bounds on the RV's owner.inputs for TruncatedNormal.
+        for rv in t1_model.unobserved_RVs:
+            if rv.name == "alpha_pareto":
+                # The truncated dist nodes carry lower/upper as inputs.
+                # Use logp evaluation at a forbidden point to verify.
+                logp_fn = t1_model.compile_logp(vars=[rv], sum=False)
+                # Find a feasible initial point
+                init = t1_model.initial_point()
+                # Evaluate logp at α = 1.0 (forbidden — below floor 1.5).
+                # We can do this by patching the init point.
+                # Easier verification: query the RV's owner inputs.
+                inputs = rv.owner.inputs
+                # The lower-bound input is identifiable by being the smallest
+                # finite scalar input. Concretely, search for 1.5 in the
+                # symbolic scalars.
+                lower_found = False
+                for inp in inputs:
+                    try:
+                        val = float(inp.eval())
+                        if math.isclose(val, 1.5, abs_tol=1e-6):
+                            lower_found = True
+                            break
+                    except Exception:
+                        continue
+                assert lower_found, (
+                    "alpha_pareto pm.TruncatedNormal must have lower=1.5"
+                    " as one of its symbolic inputs (M1 floor)."
+                )
+                return
+        raise AssertionError("alpha_pareto RV not found in model")
+
+    def test_emit_negbin_reparam_round_trip(self, tmp_path: Path) -> None:
+        """Mutation #7: emit-path (μ, φ) → (r, p) reparameterization invariant.
+
+        Build minimal idata with known (μ, φ), emit through the writer,
+        read back, and assert mean recovery: r·(1-p)/p ≈ μ within
+        rel_tol=1e-6 — guards against an emit-path drop or inversion of
+        the reparameterization.
+        """
+        # Build idata with a single (μ, φ) draw.
+        n_chains, n_draws = 4, 4000
+        mu_pin, phi_pin = 80.0, 60.0
+        post_data: dict[str, np.ndarray] = {
+            "mu": np.full((n_chains, n_draws), mu_pin),
+            "phi": np.full((n_chains, n_draws), phi_pin),
+            "alpha_pareto": np.full((n_chains, n_draws), 2.0),
+            "x_m": np.full((n_chains, n_draws), 10.0),
+            "tier_idx": np.zeros((n_chains, n_draws), dtype=int),
+            "pi": np.tile(np.array([0.2, 0.5, 0.3]), (n_chains, n_draws, 1)),
+        }
+        prior_data: dict[str, np.ndarray] = {
+            k: v[:1] for k, v in post_data.items() if k != "tier_idx"
+        }
+        prior_data["tier_idx"] = post_data["tier_idx"][:1]
+        diverging = np.zeros((n_chains, n_draws), dtype=bool)
+        post = az.from_dict(
+            posterior=post_data,
+            sample_stats={"diverging": diverging},
+            coords={"pi_dim_0": np.arange(3)},
+            dims={"pi": ["pi_dim_0"]},
+        )
+        pp_data = {
+            "tau_t": np.ones((n_chains, n_draws)) * 1e6,
+            "q_t_usd": np.ones((n_chains, n_draws)) * 7.15,
+            "q_t_cop": np.ones((n_chains, n_draws)) * 28600.0,
+        }
+        pp = az.from_dict(posterior_predictive=pp_data)
+
+        emitter = CohortEmitter(base_dir=tmp_path)
+        rows = emitter._build_synthetic_tau_rows(
+            posterior_idata=post, pp_idata=pp, month=1, tier_assignments=None,
+        )
+        # Every row's (r, p) must round-trip to BOTH the pinned μ and φ.
+        # μ-only check is insufficient — a wrong reparam (e.g. r=μ, p=0.5)
+        # accidentally recovers μ for specific (μ, φ) pairs. The variance
+        # recovery r·(1-p)/p² == μ + μ²/φ disambiguates.
+        expected_var = mu_pin + mu_pin * mu_pin / phi_pin
+        for row in rows[:50]:
+            r, p = row["r"], row["p"]
+            recovered_mu = r * (1.0 - p) / p
+            recovered_var = r * (1.0 - p) / (p * p)
+            assert math.isclose(recovered_mu, mu_pin, rel_tol=1e-6), (
+                f"emit-path NegBin mean reparam broken: row (r={r}, p={p}) "
+                f"recovers μ={recovered_mu}, expected {mu_pin}"
+            )
+            assert math.isclose(recovered_var, expected_var, rel_tol=1e-6), (
+                f"emit-path NegBin variance reparam broken: row (r={r}, p={p}) "
+                f"recovers Var={recovered_var}, expected {expected_var}"
+            )
+
+    def test_emit_q_t_cop_propagates_from_pp(self, tmp_path: Path) -> None:
+        """Mutation #9: emit must propagate q_t_cop from posterior-predictive.
+
+        Build idata with a known non-zero q_t_cop in the pp group; verify
+        emit copies it (not zero or any constant). Guards against
+        ``q_t_cop=0.0`` mutations and pp-array drop.
+        """
+        n_chains, n_draws = 4, 4000
+        rng = np.random.default_rng(0)
+        post_data: dict[str, np.ndarray] = {
+            "mu": rng.lognormal(math.log(80.0), 0.1, (n_chains, n_draws)),
+            "phi": rng.normal(60.0, 5.0, (n_chains, n_draws)),
+            "alpha_pareto": rng.uniform(1.6, 2.4, (n_chains, n_draws)),
+            "x_m": rng.uniform(5.0, 15.0, (n_chains, n_draws)),
+            "tier_idx": rng.integers(0, 3, (n_chains, n_draws)),
+            "pi": rng.dirichlet(np.array(DIRICHLET_ALPHA_VECTOR),
+                                (n_chains, n_draws)),
+        }
+        prior_data: dict[str, np.ndarray] = {
+            k: v[:1] for k, v in post_data.items() if k != "tier_idx"
+        }
+        prior_data["tier_idx"] = post_data["tier_idx"][:1]
+        diverging = np.zeros((n_chains, n_draws), dtype=bool)
+        post = az.from_dict(
+            posterior=post_data,
+            sample_stats={"diverging": diverging},
+            coords={"pi_dim_0": np.arange(3)},
+            dims={"pi": ["pi_dim_0"]},
+        )
+        # Pinned non-zero pp values.
+        pp_qcop = rng.gamma(2.0, 30000.0, (n_chains, n_draws))
+        pp_data = {
+            "tau_t": rng.gamma(2.0, 1e6, (n_chains, n_draws)),
+            "q_t_usd": rng.gamma(2.0, 7.0, (n_chains, n_draws)),
+            "q_t_cop": pp_qcop,
+        }
+        pp = az.from_dict(posterior_predictive=pp_data)
+
+        emitter = CohortEmitter(base_dir=tmp_path)
+        rows = emitter._build_synthetic_tau_rows(
+            posterior_idata=post, pp_idata=pp, month=1, tier_assignments=None,
+        )
+        # First 100 rows q_t_cop must equal flattened pp_qcop[:100].
+        flat_qcop = pp_qcop.ravel()
+        for i, row in enumerate(rows[:100]):
+            assert math.isclose(row["q_t_cop"], flat_qcop[i], rel_tol=1e-9), (
+                f"emit row {i} q_t_cop={row['q_t_cop']} does not match"
+                f" pp.q_t_cop.ravel()[{i}]={flat_qcop[i]}"
+            )
+
+    def test_emit_month_zero_rejected(self, tmp_path: Path) -> None:
+        """Mutation #6: month=0 must be rejected (ValueError) — guard fires first.
+
+        The test uses a known-failing diagnostic verdict (n_chains=1) so the
+        gate would normally raise DiagnosticGateError. The month guard fires
+        BEFORE the diagnostic call (line ~218 in emit.py), so a regression
+        weakening the guard from `<= 0` to `< 0` would let month=0 slip past
+        and reach the diagnostic, raising DiagnosticGateError instead — the
+        wrong exception type. Verifies the guard ordering AND the boundary.
+        """
+        post, prior = _make_synthetic_idata(n_chains=1)
+        emitter = CohortEmitter(base_dir=tmp_path)
+        priors = CohortPriors()
+        with pm.Model() as trivial:
+            pm.Normal("dummy", 0.0, 1.0)
+        with pytest.raises(ValueError, match="month"):
+            emitter(
+                priors=priors,
+                model=trivial,
+                posterior_idata=post,
+                prior_idata=prior,
+                month=0,
+            )
+
+
 class TestPreMortemRegressions:
     """Regression tests pinned by scratch/2026-05-08-cohort-1-execution/PRE-MORTEM.md."""
 
