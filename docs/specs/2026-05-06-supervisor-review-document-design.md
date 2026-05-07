@@ -534,6 +534,67 @@ on-chain settlement layer is implementation infrastructure, not pitch.
   the most direct response to the §7.4 invitation; it converts the
   "is `N_MIN = 75` defensible?" question from rhetorical to data-supported.
 
+### §3.10 Entry-Point Letter — REVISION-C corrections (2026-05-06)
+
+This sub-section records four user-given corrections that apply to the
+8-page entry-point letter (`docs/supervisor-review/letter.tex` →
+`2026-05-06-supervisor-letter.pdf`), NOT to the 37-page technical
+companion. The companion remains unchanged and continues to host the
+full Lemma derivation, the on-chain primer, the methodology section,
+and all four appendices. The entry-point letter is what the supervisor
+reads first; the companion is referenced.
+
+**Correction C-1 (§2 Five Iterations — equation-block format).** The
+letter's §2 currently uses a `booktabs` table. Replace with a sequence
+of paragraph-blocks, one per iteration, each containing: (1) heading
+line (iteration name + verdict); (2) centered model equation in
+display math, with sub-/super-script discipline
+(`\hat{\beta}_{\mathrm{composite}}`, `\mathrm{logit}`); (3) data
+reference (repo path + sha256 + sample); (4) compact test result;
+(5) one-sentence interpretation; (6) why-it-fails (FAIL / EXIT) /
+caveats-on-PASS / why-parked. Target ~½ page per iteration → ~2.5 pp.
+
+**Correction C-2 (§3 Hedge-target Lemma — REMOVE for v1.2).** The
+letter's current §3 presents the abstract Abrigo Lemma in a `lemma`
+environment. Remove this section from the entry-point letter. Replace
+with a short framing paragraph (≤ ½ pp) stating the concrete risk
+target: FX-volatility exposure for LATAM digital workers paid in COP
+but carrying recurring USD-denominated professional-input obligations.
+The intermediation product target is a contract that compensates for
+the FX-pass-through cost shock, denominated in COP or a COP-pegged
+purchasing-parity stablecoin. The Lemma's abstract
+`Y_inequality(t) = R_a(t) − R_c(t)` framing is preserved in the
+37-page companion §3 for supervisor reference; the entry-point letter
+does not invoke it.
+
+**Correction C-3 (§1 — bulleted Motivation/Problem/Suggested-solution/
+Challenges/Bridge).** The letter's current §1 is prose (~1.5 pp).
+Replace with a 5-item `description` list in the order Motivation →
+Problem → Suggested solution → Challenges → Bridge to §2. The
+wage→capital citations (`mendieta_munoz_2017`, `rodrik_2016`,
+`mcmillan_rodrik_2011`) compress into the Motivation bullet.
+Challenges bullet is a sub-list of forward pointers to §4 sub-asks.
+NO ideology mentions. Target ~0.75–1 pp.
+
+**Correction C-4 (§4 — supervisor-asks reframe to four concrete
+asks).** The letter's current §4 ("Five methodological questions") is
+replaced with FOUR concrete asks: §4.1 Suggested specifications, §4.2
+Risks (which absorbs the prior five methodological questions as
+risks-the-project-has-flagged + adds Stambaugh-bias and empalme
+residual bias as further flagged risks), §4.3 Bibliography, §4.4
+Connections of interested people. Target ~½ pp per ask, ~2 pp total.
+The 37-page companion §7 retains the full methodological-question
+content unchanged for supervisor reference.
+
+**Out of scope for REVISION-C.** No changes to the §Purpose preamble
+or the Closing of `letter.tex`. No changes to the 37-page companion.
+No new bib entries. No changes to the spec's §5 anti-overclaim
+invariants — the concrete-risk-target framing (C-2), the bulleted §1
+restructure (C-3), and the four-ask reframe (C-4) strengthen rather
+than weaken the "no marketing register / no Abrigo as product"
+invariant by replacing abstract claims with plain-language exposure
+descriptions and concrete actionable asks.
+
 ## §4. Multi-agent authorship plan
 
 Three sub-agents dispatched in parallel from the main thread, each with a
