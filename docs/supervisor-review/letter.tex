@@ -13,27 +13,13 @@ Latin-American Digital Workers \\[0.3em]
 \maketitle
 \thispagestyle{empty}
 
-\section*{Purpose}
-
-This letter is the entry-point document for the supervisor's review of the
-analytics workstream. It records the five iterations that have been closed
-or parked to date, states the concrete risk target, and asks four
-practical questions whose answers we expect to bind the next iteration's
-pre-registration. A 37-page technical companion at
-\texttt{docs/supervisor-review/} \texttt{2026-05-06-empirical-record-letter.pdf}
-provides the per-iteration estimation detail, the verdict-mapping decision
-tree, and a sample artifact for any question the supervisor wishes to
-drill into. The implementation venue is on-chain (Panoptic on Uniswap v4)
-but the empirical work being reviewed here is off-chain econometrics; the
-on-chain primer and the full methodology are deferred to the companion.
-
 \section{Motivation, problem, suggested solution, challenges}\label{sec:1}
 
 \begin{description}
-  \item[Motivation.] We study Latin-American digital workers paid in Colombian pesos who carry recurring USD-denominated professional-input obligations (subscription AI services, API usage fees, cloud compute, software-as-a-service spend), a population for whom the path from wage income into productive-capital ownership has documented structural narrowing \citep{mendieta_munoz_2017,rodrik_2016,mcmillan_rodrik_2011}.
+  \item[Motivation.] We study Latin-American digital workers paid in Colombian pesos who carry recurring USD-denominated professional-input obligations (subscription AI services, API usage fees, cloud compute, software-as-a-service spend), a population whose macro-risk exposure is dominated by FX volatility: in emerging-market settings, exchange-rate movements are the primary transmission channel for inflation pass-through, interest-rate volatility, and capital-flow shocks \citep{calvo_reinhart_2002,rey_2015,bruno_shin_2015}.
   \item[Problem.] When the COP weakens against the USD, the USD-denominated cost line translates into unbudgeted COP expenditure, and no Colombian retail-bank product currently hedges the resulting FX-pass-through cost shock at the hundred-to-low-thousands-USD monthly notional these workers carry.
-  \item[Suggested solution.] We identify the macro risks \(X\) that quantitatively produce these cost shocks, validate them empirically, and design parametric cost-insurance products that compensate for the FX-pass-through exposure \citep{carter_etal_2017,mahul_stutley_2010,clarke_2016}. The intermediation product target is a contract that compensates the worker in a unit she actually spends (COP, or a COP-pegged purchasing-parity stablecoin); the implementation venue is on-chain settlement infrastructure (described in the 37-page technical companion \S4), not the economic primitive.
-  \item[Challenges.]
+  \item[Suggested solution.] We identify the macro risks \(X\) that quantitatively produce these cost shocks, validate them empirically, and design parametric cost-insurance products that compensate for the FX-pass-through exposure \citep{carter_etal_2017,mahul_stutley_2010,clarke_2016}. The demand pattern we target --- underserved-country households purchasing depreciation insurance in the form of a call option on the foreign-exchange rate --- is documented in recent practitioner discussion \citep{depreciation_insurance_talk}. The intermediation product compensates the worker in a unit she actually spends (COP, or a COP-pegged purchasing-parity stablecoin); the implementation venue is on-chain settlement infrastructure (described in the 37-page technical companion \S4), not the economic primitive.
+  \item[Challenges.]\hfill\\
   \begin{itemize}
     \item Identification posture --- predictive versus causal (see \S\ref{sec:4-risks}).
     \item Convex-payoff sufficiency under insurance-underwriting standard (see \S\ref{sec:4-risks}).
@@ -52,7 +38,7 @@ Colombian young workers (14--28) employed in the broad CIIU Rev.~4 services aggr
 where \(Y_t = \mathrm{logit}(\mathrm{share}_t^{\mathrm{GT}})\) and \(X_{t-k} = \log(\mathrm{COP}/\mathrm{USD}_{t-k})\) for \(k \in \{6, 9, 12\}\) months; the composite is \(\hat{\beta}_{\mathrm{composite}} = \hat{\beta}_6 + \hat{\beta}_9 + \hat{\beta}_{12}\).
 Data: \texttt{notebooks/bpo\_offshoring\_fx\_lag/} (governing spec sha \texttt{964c62cca0...ef659}, \(N = 134\) monthly, 2015-01-31 through 2026-02-28).
 Result: \(\hat{\beta}_{\mathrm{composite}} = +0.13670985\), HAC(\(L=12\)) standard error \(0.02465\), \(t = +5.5456\), one-sided \(p \approx 1.46 \times 10^{-8}\); robustness rows R1--R4 produced zero sign flips and the four-row consistency classifier returned AGREE.
-\textit{Interpretation.} The lagged COP/USD log-level positively predicts the broad-services young-worker share at the pre-registered horizons, clearing the gate.
+\textit{Interpretation.} Lagged-FX positively predicts broad-services young-worker share; gate cleared.
 \textit{Caveats inherited from independent review.} The estimate hedges a correlation, not a causal identification of the BPO transmission channel; the lag effect is concentrated at the six-month horizon (\(\hat{\beta}_6 \approx +0.109\), about 80\% of the composite) rather than spread across the 6--12-month window; the post-2014 window over-represents the oil-collapse, COVID, and 2022--2024 Fed-tightening regimes; the verdict is sensitive to a single off-spec design choice (an orchestrator-brief variant including a \texttt{marco2018\_dummy} in the primary returns \(\hat{\beta}_{\mathrm{composite}} = +0.0815\) at \(p \approx 0.080\)); and the dev-AI Stage-1 R2 Section-M reframe (below) suggests the operative sub-aggregate is consultancy/scientific/administrative services rather than Section-J ICT-narrow tech offshoring.
 
 \paragraph{dev-AI Stage-1 --- Section J ICT through COP/USD lag (FAIL).}
@@ -61,7 +47,7 @@ Colombian young workers (14--28) restricted to CIIU Rev.~4 Section J (Informatio
 where \(Y_t = \mathrm{logit}(\mathrm{share}_t^{\mathrm{J}})\) and \(X_{t-k} = \log(\mathrm{COP}/\mathrm{USD}_{t-k})\); pre-registered \(H_1: \beta_{\mathrm{composite}} > 0\).
 Data: \texttt{notebooks/dev\_ai\_cost/} (governing spec sha \texttt{7c72292516...751f5a}, \(N = 134\) monthly, 2015-01-31 through 2026-03-31).
 Result: \(\hat{\beta}_{\mathrm{composite}} = -0.14613\), HAC(\(L=12\)) standard error \(0.0847\), \(t = -1.726\), one-sided \(p \approx 0.958\) against \(H_1: \beta > 0\); R-consistency classifier MIXED with three of four R-rows agreeing on the negative primary sign.
-\textit{Interpretation.} The pre-registered positive-sign expectation is rejected at the Section-J narrow cut; this is a sign-flipped FAIL, not an underpowered failure-to-reject.
+\textit{Interpretation.} Sign-flipped FAIL: positive-sign expectation rejected at the Section-J narrow cut, not an underpowered null.
 \textit{Why it fails.} The Section-J substrate does not exhibit the lagged-FX-pass-through-to-employment pattern the BPO-offshoring narrative pre-supposed; an empalme-residual bias surfaced (the Phase-1 boundary diagnostic returned a \(+0.375\) logit-\(Y\) jump at the 2020-12 \(\to\) 2021-01 Marco-2018 boundary against a \(\pm 0.335\) envelope), so the post-2021 level shift is not fully neutralized at the Section-J cut. The R2 Section-M sensitivity arm (CIIU Sections 69--75) returned \(\hat{\beta}_{\mathrm{composite}} = +0.45482801\), \(t = +4.73\), \(p = 1.13 \times 10^{-6}\), but this is a not-pre-registered candidate-next-iteration object, not a graduated PASS, and the rejection at Section-J falsifies the per-user instrument design that the dev-AI-paying population would have hosted.
 
 \paragraph{FX-vol-CPI surprise --- Colombian CPI through TRM realised volatility (FAIL).}
@@ -70,7 +56,7 @@ Colombian corporates and remittance recipients with FX-volatility exposure on CO
 where \(\mathrm{RV}_w\) is realised volatility in week \(w\) and \(\mathrm{Surp}^{\mathrm{CPI}}_{w-1}\) is the lagged signed monthly CPI surprise mapped to weekly cadence (carried across the release week, zero otherwise), with a small set of macro-surprise controls in the primary.
 Data: \texttt{notebooks/fx\_vol\_cpi\_surprise/} (panel fingerprint \texttt{nb1\_panel\_fingerprint.json}, \(N = 947\) weekly, 2008-01-02 through 2026-02-23).
 Result: \(\hat{\beta}_{\mathrm{CPI}} = -0.000685\), HAC(4) standard error \(0.001794\), \(90\%\) HAC interval \([-0.003636,\, +0.002266]\) contains zero; the gate criterion \(\hat{\beta} - 1.28 \cdot \widehat{\mathrm{SE}} = -0.002981 < 0\) fires the FAIL.
-\textit{Interpretation.} Under the pre-committed weekly OLS specification, signed AR(1) CPI surprises do not produce a statistically detectable increase in COP/USD realised volatility across the sample window.
+\textit{Interpretation.} No detectable weekly-RV response to CPI surprises under the pre-committed primary.
 \textit{Why it fails and sensitivity caveat.} The pre-registered T1 exogeneity test rejects at \(F = 15.12\), \(p \approx 1.3 \times 10^{-9}\), so the iteration is a predictive regression rather than a structural-causal one and \(\hat{\beta}\) cannot be read as an impulse-response. Two pre-registered sensitivities returned positive significant \(90\%\) intervals at the one-sided \(\alpha = 0.05\) convention --- A1 monthly cadence \(\hat{\beta} = +0.0152\) on \([+0.0057,\, +0.0246]\); A4 release-day-excluded \(\hat{\beta} = +0.0033\) on \([+0.0005,\, +0.0062]\) --- but neither is the iteration's main finding: the pre-registered weekly primary is the result, and A1/A4 sit as candidate inputs to a possible future monthly-cadence-primary specification rather than as a rescue of the weekly primary.
 
 \paragraph{Phase-A.0 Remittance --- Colombian remittance corridor through FX (EXIT\_NON\_REMITTANCE).}
@@ -79,7 +65,7 @@ Colombian household remittance recipients indexed against the Colombian remittan
 where \(\Delta \mathrm{Remit}^{\mathrm{Col}}_{w-1}\) is the lagged Colombian household-remittance flow change as proxied on Celo on-chain activity, partitioned to attempt to isolate household remittance from third-party-DEX activity, treasury roundtripping, and bot arbitrage.
 Data: Phase-A.0 Rev~4.1 spec chain (kill-criterion-bearing); window 2024-09 through 2026-04, weekly cadence (panel construction did not reach final \(N\) before the EXIT verdict fired).
 Result: no empirical estimate produced --- exited on kill criteria pre-estimation.
-\textit{Interpretation.} The pre-registered remittance specification was \emph{never estimated}: kill criterion k1 (intent: an X-driver fingerprint must be present in remittance event-window data) and partial k2 (data-source: the X proxy must measure Colombian household remittance, not a generic on-chain volume aggregate) both fired before estimation, producing the EXIT\_NON\_REMITTANCE label on 2026-04-24.
+\textit{Interpretation.} Specification never estimated; killed pre-estimation by k1 + partial-k2 on 2026-04-24.
 \textit{Why it exits.} Task~11.F Axis-1 event research returned zero of thirty peak-day flows fingerprinting as remittance, with approximately 87\% of surveyed flow decomposing into TRM arbitrage, treasury roundtripping, campaigns, and bot activity; the cCOP/COPM aggregate user activity on Celo is third-party-DEX volume, not Colombian household remittance, so no post-hoc filter could reconstruct an X-driver that was never measured upstream. The exit is load-bearing on the kill-criterion discipline: absent the pre-registered EXIT, the rev-4 plan's non-stop filter iteration would have run to a filter that appeared to ``rescue'' a signal that was never captured.
 
 \paragraph{P1 Bittensor SN18 --- event-study apparatus (PARKED).}
@@ -88,7 +74,7 @@ The proprietary-AI policy-shock-exposed population (LATAM developers paying USD-
 where \(\mathrm{AR}_{i, \tau}\) is the event-window abnormal alpha indicator at relative time \(\tau\) for event \(i\), \(\mathcal{E}\) is the pre-pinned policy-event set, and the apparatus is evaluated over a nine-cell verdict cube (verdict-eligibility crossed with robustness-consistency), Bonferroni-corrected at \(\alpha_{\mathrm{primary}} = 0.0167\) over the conjunctive family P1+P2+P3 with \(N_{\min}^{\mathrm{events}} = 8\) and an asymmetric placebo gate.
 Data: spec sha \texttt{f855e036d3...b47aeab}; apparatus completed, data ingest deferred.
 Result: none --- apparatus parked for the record on 2026-04-27; no graduating empirical claim produced.
-\textit{Interpretation.} The slow-lane apparatus (three spec revisions, six verifier dispatches, a nine-cell verdict cube) was overkill relative to the project's stage goal of a single empirically validated risk before protocol design.
+\textit{Interpretation.} Slow-lane apparatus parked; no graduating empirical claim.
 \textit{Why parked.} Apparatus complete; no graduating empirical claim. The user pivoted to the simple-composite-\(\beta\) fast-lane track (Pair~D, dev-AI Stage-1) and parked P1 to preserve the intellectual capital of the spec work, with re-activation conditions documented in the parking memory.
 
 \section{Risk-target framing}\label{sec:3}
@@ -122,22 +108,6 @@ The current bibliography is documented in the 37-page companion's Appendix B and
 \subsection{Connections}\label{sec:4-connections}
 
 We invite the supervisor to introduce the project to other researchers, practitioners, or institutions whose work might complement this iteration roster --- including but not limited to parametric-insurance underwriters with LATAM exposure, FX-derivatives operators serving sub-corporate notionals, on-chain settlement engineers, and applied econometricians working on premature deindustrialization in Latin America. The framework's empirical work is open to collaboration; the supervisor's network is the most efficient channel for identifying complementary contributors.
-
-\section*{Closing and pointer to the companion}
-
-Five iterations are closed or parked; no Stage-1 work is in progress.
-The next iteration's pre-registration is held open pending the
-supervisor's response to the four asks above. The 37-page technical
-companion at
-\texttt{docs/supervisor-review/2026-05-06-empirical-record-letter.pdf}
-contains the full per-iteration record (companion \S6, nine-field schema
-per iteration), the on-chain settlement primer (\S4), the methodology in
-full (\S5, including the verdict-mapping decision tree), and four
-appendices: Glossary (A), Cited Literature (B), Pair~D Verdict Header
-sample artifact (C), and Power-Calculation Table (D). The supervisor is
-invited to drill into any iteration's per-iteration block in companion
-\S6 for the specification chain, the sha256 pre-registration governance,
-and the independent-review caveats inherited from the closure memoranda.
 
 \bibliography{refs}
 
