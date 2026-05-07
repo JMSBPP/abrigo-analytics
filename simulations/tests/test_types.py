@@ -37,6 +37,7 @@ from simulations.types.posterior import (
     MonthlyCDF,
     PosteriorDraws,
     ZCapPinned,
+    cdf_percentile_value,
     ci_95_width,
     n_total_draws,
     parameter_index,
@@ -176,7 +177,7 @@ class TestBlendedPriceParams:
     @pytest.mark.parametrize("w_in", [0.0, 1.0, -0.1, 1.1])
     def test_rejects_w_in_endpoints(self, w_in: float) -> None:
         """w_in must lie strictly inside (0, 1)."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"\(0, 1\)|w_in"):
             BlendedPriceParams(
                 w_in=w_in, w_out=1.0 - w_in, h_cache=0.5, p_in=3.0, p_out=15.0
             )
@@ -319,6 +320,41 @@ class TestMonthlyCDF:
         with pytest.raises(ValueError, match="non-decreasing"):
             MonthlyCDF(percentiles=(10.0, 50.0), values_usd=(5.0, 1.0))
 
+    def test_rejects_negative_values_usd(self) -> None:
+        """MonthlyCDF rejects any negative entry in values_usd (posterior.py:158)."""
+        with pytest.raises(ValueError, match="≥ 0"):
+            MonthlyCDF(percentiles=(50.0,), values_usd=(-1.0,))
+
+    @pytest.mark.parametrize("c", ["EUR", "usd", "", "BTC"])
+    def test_rejects_unknown_currency(self, c: str) -> None:
+        """MonthlyCDF rejects currencies not in the whitelist (posterior.py:167)."""
+        with pytest.raises(ValueError, match="currency"):
+            MonthlyCDF(percentiles=(50.0,), values_usd=(1.0,), currency=c)
+
+    def test_rejects_empty_percentiles(self) -> None:
+        """MonthlyCDF rejects empty percentiles tuple (posterior.py:145)."""
+        with pytest.raises(ValueError, match="non-empty"):
+            MonthlyCDF(percentiles=(), values_usd=())
+
+    def test_cdf_percentile_value_lookup_and_miss(self) -> None:
+        """cdf_percentile_value returns pinned percentile or raises ValueError."""
+        cdf = MonthlyCDF(percentiles=(10.0, 50.0), values_usd=(1.0, 5.0))
+        assert cdf_percentile_value(cdf, 50.0) == 5.0
+        with pytest.raises(ValueError, match="no pinned percentile"):
+            cdf_percentile_value(cdf, 90.0)
+
+
+@pytest.fixture
+def valid_zcap_kwargs() -> dict[str, Any]:
+    """Known-valid kwargs for ZCapPinned; tests mutate one field at a time."""
+    return {
+        "Z_cop_per_month": 100.0,
+        "ci_95_lo": 90.0,
+        "ci_95_hi": 110.0,
+        "audit_block": "0" * 64,
+        "tier_mix": {"pro": 0.2, "max_5x": 0.5, "max_20x": 0.3},
+    }
+
 
 class TestZCapPinned:
     def _valid_block(self) -> str:
@@ -399,6 +435,46 @@ class TestZCapPinned:
             audit_block=self._valid_block(),
         )
         assert math.isclose(ci_95_width(z), 20.0)
+
+    @pytest.mark.parametrize(
+        ("field", "bad"),
+        [
+            ("Z_cop_per_month", math.nan),
+            ("Z_cop_per_month", math.inf),
+            ("Z_cop_per_month", 0.0),
+            ("Z_cop_per_month", -1.0),
+            ("ci_95_lo", math.nan),
+            ("ci_95_lo", math.inf),
+            ("ci_95_lo", 0.0),
+            ("ci_95_lo", -1.0),
+            ("ci_95_hi", math.nan),
+            ("ci_95_hi", math.inf),
+            ("ci_95_hi", 0.0),
+            ("ci_95_hi", -1.0),
+        ],
+    )
+    def test_rejects_non_finite_or_non_positive_numeric_field(
+        self, field: str, bad: float, valid_zcap_kwargs: dict[str, Any]
+    ) -> None:
+        """ZCapPinned rejects non-finite/non-positive values per field independently.
+
+        The positivity / finiteness guard fires before the ci-inversion guard
+        for every (field, bad) combination listed, so a bare ``ValueError``
+        match suffices.
+        """
+        kwargs = dict(valid_zcap_kwargs)
+        kwargs[field] = bad
+        with pytest.raises(ValueError):
+            ZCapPinned(**kwargs)
+
+    def test_rejects_empty_schema_version(
+        self, valid_zcap_kwargs: dict[str, Any]
+    ) -> None:
+        """ZCapPinned rejects empty schema_version string (posterior.py:250)."""
+        kwargs = dict(valid_zcap_kwargs)
+        kwargs["schema_version"] = ""
+        with pytest.raises(ValueError, match="schema_version"):
+            ZCapPinned(**kwargs)
 
 
 # ─── Hypothesis sanity over strategies ────────────────────────────────────────

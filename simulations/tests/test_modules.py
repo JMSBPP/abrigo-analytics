@@ -112,6 +112,20 @@ class TestM2SoftplusTightness:
         x = np.zeros((3, 4), dtype=np.float64)
         assert reg(x).shape == (3, 4)
 
+    @pytest.mark.parametrize("beta_kappa", [100.0, 150.0, 200.0])
+    def test_softplus_boundary_regime(self, beta_kappa: float) -> None:
+        """β·κ in [100, 200] — thinnest part of M2 admissible region per CR I4.
+
+        50/κ is the documented edge per the regularizer docstring (deviation
+        ≈ 1e-3·κ). We probe at and above 100 to document that the admissible
+        region is robust at the boundary; β·κ=50 is intentionally excluded
+        because it sits exactly at the deviation threshold and may flip
+        depending on grid choice — see :func:`tight_softplus_params` for the
+        100/κ headroom rationale.
+        """
+        params = SoftplusParams(beta=beta_kappa, kappa=1.0)
+        SoftplusRegularizer(params=params)  # should not raise
+
 
 # ─── Pin M3 — Blended per-token price ─────────────────────────────────────────
 

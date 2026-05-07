@@ -12,8 +12,6 @@ on the Callable transforms.
 
 from __future__ import annotations
 
-from typing import Any
-
 import hypothesis.strategies as st
 import numpy as np
 
@@ -29,9 +27,39 @@ from simulations.types.posterior import MonthlyCDF, PosteriorDraws, ZCapPinned
 from simulations.types.tier import (
     SUBSCRIPTION_USD_PER_MONTH,
     TIER_IDS,
+    TierID,
     TierPricing,
     TierPrior,
 )
+
+
+# ─── Private helpers ──────────────────────────────────────────────────────────
+
+
+@st.composite
+def _dirichlet_tier_mix(draw: st.DrawFn) -> dict[TierID, float]:
+    """Draws a ``dict[TierID, float]`` summing to 1.0 within ``1e-9``.
+
+    Used by :func:`tier_prior` and :func:`zcap_pinned` to satisfy the
+    sum-to-one contract on tier-mass mappings. Private (not exported).
+    """
+    raw = [
+        draw(
+            st.floats(
+                min_value=0.05,
+                max_value=0.95,
+                allow_nan=False,
+                allow_infinity=False,
+            )
+        )
+        for _ in range(len(TIER_IDS))
+    ]
+    total = sum(raw)
+    pi: dict[TierID, float] = {tier: raw[i] / total for i, tier in enumerate(TIER_IDS)}
+    # Patch any rounding drift onto the last entry to clear the 1e-9 sum guard.
+    drift = 1.0 - sum(pi.values())
+    pi[TIER_IDS[-1]] += drift
+    return pi
 
 
 # ─── Distribution-parameter strategies ────────────────────────────────────────
@@ -117,18 +145,7 @@ def tight_softplus_params(draw: st.DrawFn) -> SoftplusParams:
 @st.composite
 def tier_prior(draw: st.DrawFn) -> TierPrior:
     """Draw a ``TierPrior`` whose π sums to 1 within ``1e-9``."""
-    weights = draw(
-        st.tuples(
-            st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
-            st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
-            st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
-        )
-    )
-    total = sum(weights)
-    pi = {tier: w / total for tier, w in zip(TIER_IDS, weights)}
-    # Patch any rounding drift onto the last entry to clear the 1e-9 sum guard.
-    drift = 1.0 - sum(pi.values())
-    pi[TIER_IDS[-1]] += drift
+    pi = draw(_dirichlet_tier_mix())
     alpha_0 = draw(st.floats(min_value=1.0, max_value=100.0, allow_nan=False))
     return TierPrior(pi=dict(pi), alpha_0=alpha_0)
 
@@ -234,18 +251,7 @@ def zcap_pinned(draw: st.DrawFn) -> ZCapPinned:
     half_width = draw(st.floats(min_value=0.01 * z, max_value=0.5 * z, allow_nan=False))
     audit_int = draw(st.integers(min_value=0, max_value=2**256 - 1))
     audit_block = f"{audit_int:064x}"
-    # Reuse the tier_prior strategy's π construction to satisfy sum-to-one.
-    weights: tuple[Any, ...] = draw(
-        st.tuples(
-            st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
-            st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
-            st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
-        )
-    )
-    total = sum(weights)
-    tier_mix = {tier: w / total for tier, w in zip(TIER_IDS, weights)}
-    drift = 1.0 - sum(tier_mix.values())
-    tier_mix[TIER_IDS[-1]] += drift
+    tier_mix = draw(_dirichlet_tier_mix())
     return ZCapPinned(
         Z_cop_per_month=z,
         ci_95_lo=z - half_width,
