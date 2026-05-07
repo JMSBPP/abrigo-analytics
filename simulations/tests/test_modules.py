@@ -290,3 +290,320 @@ class TestTierMixCategorical:
         sampler = TierMixCategorical(prior=TierPrior())
         with pytest.raises(ValueError, match="size"):
             sampler(size=-1, rng=np.random.default_rng(0))
+
+
+# ─── Phase 3.3 — Hypothesis property tests over Callable transforms ───────────
+#
+# Skill: hypothesis-tests. Strategies are imported from tests/strategies.py
+# (built in Task 2.4). Each test below states ONE property; the docstring
+# documents the expected behavior. If a counter-example shrinks to a tight
+# example that violates the property, that's a real finding, not a flake.
+
+from hypothesis import HealthCheck, given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
+
+from simulations.tests.strategies import (  # noqa: E402
+    blended_price_params,
+    fx_path_params,
+    negbin_params,
+    saas_truncpareto_params,
+    tight_softplus_params,
+)
+
+
+def _truncpareto_analytic_mean(alpha: float, x_m: float, x_max: float) -> float:
+    """Closed-form mean of the truncated Pareto on ``[x_m, x_max]`` (α ≠ 1).
+
+    E[X] = α · x_m^α · (x_m^{1-α} - x_max^{1-α}) / ((α-1) · (1 - (x_m/x_max)^α)).
+    """
+    tail = (x_m / x_max) ** alpha
+    num = alpha * (x_m ** alpha) * (x_m ** (1.0 - alpha) - x_max ** (1.0 - alpha))
+    den = (alpha - 1.0) * (1.0 - tail)
+    return float(num / den)
+
+
+class TestTruncParetoSamplerProperty:
+    """Property tests for :class:`TruncParetoSampler`."""
+
+    @given(params=saas_truncpareto_params(), seed=st.integers(min_value=0, max_value=2**31 - 1))
+    @settings(max_examples=50, deadline=None,
+              suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture])
+    def test_truncpareto_sampler_distributional_validity(
+        self, params: TruncParetoParams, seed: int
+    ) -> None:
+        """Sample mean of n=10_000 draws is within 5% of the analytic mean.
+
+        Property: for any α ≥ 1.5, x_m > 0, x_max > x_m, drawing 10_000 i.i.d.
+        TruncPareto variates yields a sample mean within 5% relative tolerance
+        of the closed-form ``E[X]``. Also confirms support: every sample lies
+        in ``[x_m, x_max]``.
+        """
+        sampler = TruncParetoSampler(params=params)
+        rng = np.random.default_rng(seed)
+        samples = sampler(size=10_000, rng=rng)
+        # Support property
+        assert np.all(samples >= params.x_m)
+        assert np.all(samples <= params.x_max)
+        # Distributional property: mean within 5% of analytic
+        analytic = _truncpareto_analytic_mean(
+            params.alpha, params.x_m, params.x_max
+        )
+        emp = float(samples.mean())
+        rel_err = abs(emp - analytic) / analytic
+        assert rel_err < 0.05, (
+            f"sample mean {emp} differs from analytic {analytic}"
+            f" by {rel_err:.3%} > 5% (α={params.alpha},"
+            f" x_m={params.x_m}, x_max={params.x_max})"
+        )
+
+    @given(
+        alpha_lo=st.floats(min_value=1.5, max_value=2.0,
+                            allow_nan=False, allow_infinity=False),
+        alpha_hi_offset=st.floats(min_value=0.3, max_value=1.0,
+                                   allow_nan=False, allow_infinity=False),
+        x_m=st.floats(min_value=0.5, max_value=5.0,
+                       allow_nan=False, allow_infinity=False),
+        seed=st.integers(min_value=0, max_value=2**31 - 1),
+    )
+    @settings(max_examples=30, deadline=None,
+              suppress_health_check=[HealthCheck.too_slow])
+    def test_truncpareto_joint_identifiability(
+        self, alpha_lo: float, alpha_hi_offset: float, x_m: float, seed: int
+    ) -> None:
+        """Joint identifiability of (α, x_m, x_max) — CORRECTIONS-α §15.3 / MQ-FLAG-J.
+
+        Holding two parameters fixed, varying the third must produce a MONOTONE
+        change in the sample mean of 10_000 i.i.d. draws (rng-seed-fixed):
+
+        - α↑ ⇒ E[X]↓ (heavier left mass).
+        - x_m↑ ⇒ E[X]↑ (lower-tail anchor lifted).
+        - x_max↑ ⇒ E[X]↑ (upper-tail extended).
+
+        If any monotonicity fails on a counterexample, that's either a sampler
+        bug or a strategy bug — surface it immediately.
+        """
+        x_max = 10.0 * x_m
+        alpha_hi = alpha_lo + alpha_hi_offset
+
+        # rng-seed-fixed: identical u-stream for both α
+        def _mean(alpha: float, xm: float, xM: float) -> float:
+            rng = np.random.default_rng(seed)
+            sampler = TruncParetoSampler(
+                params=TruncParetoParams(alpha=alpha, x_m=xm, x_max=xM)
+            )
+            return float(sampler(size=10_000, rng=rng).mean())
+
+        # (1) α↑ ⇒ E[X]↓
+        m_lo_alpha = _mean(alpha_lo, x_m, x_max)
+        m_hi_alpha = _mean(alpha_hi, x_m, x_max)
+        assert m_hi_alpha < m_lo_alpha, (
+            f"α-monotonicity FAILED: α={alpha_lo} → mean={m_lo_alpha},"
+            f" α={alpha_hi} → mean={m_hi_alpha}"
+        )
+
+        # (2) x_m↑ ⇒ E[X]↑
+        m_xm_lo = _mean(alpha_lo, x_m, x_max)
+        m_xm_hi = _mean(alpha_lo, 2.0 * x_m, 10.0 * (2.0 * x_m))
+        # Note: scaling x_m and x_max together is exactly a scale change ×2;
+        # we want to vary x_m holding x_max fixed instead:
+        m_xm_only_hi = _mean(alpha_lo, 1.5 * x_m, x_max)
+        assert m_xm_only_hi > m_xm_lo - 1e-9, (
+            f"x_m-monotonicity FAILED: x_m={x_m} → mean={m_xm_lo},"
+            f" x_m={1.5*x_m} → mean={m_xm_only_hi}"
+        )
+        # And the "scale-equivariant" sanity check stays as a documented
+        # observation but is not asserted strictly:
+        _ = m_xm_hi  # noqa: F841 — kept for clarity / debugging
+
+        # (3) x_max↑ ⇒ E[X]↑ (upper tail extended)
+        m_xM_lo = _mean(alpha_lo, x_m, x_max)
+        m_xM_hi = _mean(alpha_lo, x_m, 2.0 * x_max)
+        assert m_xM_hi > m_xM_lo - 1e-9, (
+            f"x_max-monotonicity FAILED: x_max={x_max} → mean={m_xM_lo},"
+            f" x_max={2*x_max} → mean={m_xM_hi}"
+        )
+
+
+class TestNegBinSamplerProperty:
+    """Property tests for :class:`NegBinSampler`."""
+
+    @given(params=negbin_params(),
+           seed=st.integers(min_value=0, max_value=2**31 - 1))
+    @settings(max_examples=50, deadline=None,
+              suppress_health_check=[HealthCheck.too_slow])
+    def test_negbin_sampler_distributional_validity(
+        self, params: NegBinParams, seed: int
+    ) -> None:
+        """Sample mean of 10_000 draws ≈ ``r·(1-p)/p`` within 5% (or 0.5 abs).
+
+        Property: NegBin(r, p) under the (n=r, p) numpy convention has mean
+        ``r·(1-p)/p``. Use both relative (5%) and absolute (0.5) tolerance
+        because, when the analytic mean is small (e.g. r=0.001, p=0.999 → ≈0),
+        relative error blows up while the integer sample mean is still tight.
+        """
+        sampler = NegBinSampler(params=params)
+        rng = np.random.default_rng(seed)
+        samples = sampler(size=10_000, rng=rng)
+        assert np.all(samples >= 0)
+        analytic = params.r * (1.0 - params.p) / params.p
+        emp = float(samples.mean())
+        # Tolerance: max(5% relative, 0.5 absolute) — the latter dominates for
+        # tiny analytic means where Monte Carlo SE is the limiting factor.
+        tol = max(0.05 * analytic, 0.5)
+        assert abs(emp - analytic) < tol, (
+            f"NegBin mean {emp} vs analytic {analytic} differs by"
+            f" {abs(emp - analytic)} > tol={tol} (r={params.r}, p={params.p})"
+        )
+
+
+class TestSoftplusRegularizerProperty:
+    """Property tests for :class:`SoftplusRegularizer`."""
+
+    @given(params=tight_softplus_params())
+    @settings(max_examples=50, deadline=None)
+    def test_softplus_regularizer_monotonic(self, params: SoftplusParams) -> None:
+        """softplus_β is monotonically non-decreasing on the real line.
+
+        Property: for x_1 < x_2 < … < x_n, softplus(x_i) ≤ softplus(x_{i+1}).
+        Evaluated on a deterministic grid of 256 points in [-100, 100].
+        """
+        reg = SoftplusRegularizer(params=params)
+        x = np.linspace(-100.0, 100.0, 256, dtype=np.float64)
+        y = reg(x)
+        diffs = np.diff(y)
+        # Allow tiny negative drift from float64 rounding near saturation.
+        assert np.all(diffs >= -1e-9), (
+            f"softplus not monotone: min diff = {diffs.min():.3e}"
+        )
+
+    @given(
+        params=tight_softplus_params(),
+        x=st.floats(min_value=-100.0, max_value=100.0,
+                    allow_nan=False, allow_infinity=False),
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_softplus_dominates_relu(
+        self, params: SoftplusParams, x: float
+    ) -> None:
+        """softplus_β(x) ≥ max(x, 0) − 1e-9 (numerical slack) for any real x.
+
+        Property (analytic): softplus(x) = β⁻¹·log(1+e^{βx}) ≥ max(x, 0)
+        because log(1+e^{βx}) ≥ max(βx, 0). Holds for any β > 0.
+        """
+        reg = SoftplusRegularizer(params=params)
+        x_arr = np.array([x], dtype=np.float64)
+        y = float(reg(x_arr)[0])
+        relu = max(x, 0.0)
+        assert y + 1e-9 >= relu, (
+            f"softplus({x})={y} < ReLU({x})={relu} (β={params.beta},"
+            f" κ={params.kappa})"
+        )
+
+
+class TestFXPathGenProperty:
+    """Property tests for :class:`FXPathGen`."""
+
+    @given(
+        params=fx_path_params(),
+        ts=st.lists(
+            st.floats(min_value=-1e3, max_value=1e3,
+                      allow_nan=False, allow_infinity=False),
+            min_size=1, max_size=64,
+        ),
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_fx_path_envelope(
+        self, params: FXPathParams, ts: list[float]
+    ) -> None:
+        """FX path stays in ``mean·[1 - ε/2, 1 + ε/2]`` for any t.
+
+        Closed form: ``(X/Y)_t = (1 + ε·(cos²(ωt) - 1/2)) · mean``. Since
+        ``cos²(ωt) ∈ [0, 1]`` ⇒ ``cos² - 1/2 ∈ [-1/2, 1/2]`` ⇒ multiplier
+        ``∈ [1 - ε/2, 1 + ε/2]``.
+        """
+        gen = FXPathGen(params=params)
+        out = gen(np.asarray(ts, dtype=np.float64))
+        lo = params.mean_x_over_y * (1.0 - params.epsilon / 2.0)
+        hi = params.mean_x_over_y * (1.0 + params.epsilon / 2.0)
+        # Numerical slack: relative 1e-12 of envelope half-width.
+        slack = 1e-12 * params.mean_x_over_y
+        assert np.all(out >= lo - slack)
+        assert np.all(out <= hi + slack)
+
+
+class TestBlendedPriceFnProperty:
+    """Property tests for :class:`BlendedPriceFn`."""
+
+    @given(
+        params=blended_price_params(),
+        bump=st.floats(min_value=0.01, max_value=10.0,
+                        allow_nan=False, allow_infinity=False),
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_blended_price_monotone_in_p_in(
+        self, params: BlendedPriceParams, bump: float
+    ) -> None:
+        """Holding (w_in, w_out, h_cache, p_out) fixed, p_in↑ ⇒ p_t↑.
+
+        Closed form: ``p_t = w_in · p_in · (1 - h + 0.1h) + w_out · p_out``
+        is linear in p_in with positive slope ``w_in · (1 - 0.9h_cache)``,
+        which is strictly positive for ``w_in > 0`` and ``h_cache ≤ 1``.
+        """
+        base = BlendedPriceFn(params=params)()
+        bumped_params = BlendedPriceParams(
+            w_in=params.w_in,
+            w_out=params.w_out,
+            h_cache=params.h_cache,
+            p_in=params.p_in + bump,
+            p_out=params.p_out,
+        )
+        bumped = BlendedPriceFn(params=bumped_params)()
+        assert bumped > base, (
+            f"BlendedPrice not monotone in p_in: base={base},"
+            f" bumped={bumped}, params={params}, bump={bump}"
+        )
+
+
+class TestEpsilonSigmaTRoundTripProperty:
+    """Property tests for ``epsilon_from_sigma_T`` ↔ closed/path forms."""
+
+    @given(params=fx_path_params())
+    @settings(max_examples=100, deadline=None)
+    def test_eps_sigma_T_round_trip_closed_form(
+        self, params: FXPathParams
+    ) -> None:
+        """Closed-form round trip: ``ε(σ_T_closed(ε)) ≈ ε`` within 1e-9.
+
+        From PRIMITIVES (8): ``σ_T_closed = ε² · mean² / 8``. Inverting yields
+        ``ε = sqrt(8 σ_T / mean²)``. Round trip is exact up to float64 ulp.
+        """
+        eps = params.epsilon
+        mean = params.mean_x_over_y
+        sigma_T_closed = (eps ** 2) * (mean ** 2) / 8.0
+        recovered = epsilon_from_sigma_T(sigma_T_closed, mean)
+        assert math.isclose(recovered, eps, abs_tol=1e-9, rel_tol=1e-9)
+
+    @given(params=fx_path_params())
+    @settings(max_examples=20, deadline=None,
+              suppress_health_check=[HealthCheck.too_slow])
+    def test_eps_sigma_T_round_trip_path_derived(
+        self, params: FXPathParams
+    ) -> None:
+        """Path-derived round trip: ε ≈ recovered ε within 1e-2.
+
+        Empirical σ_T over a length-4096 path spanning many periods
+        (rescaled by ω) converges to the closed-form ε² mean² / 8 with
+        bias O(1/T). Tolerance 1e-2 absolute holds for ε ≥ 1e-2; for
+        very small ε the absolute tolerance is the limiting factor.
+        """
+        # Span ~ many cycles regardless of ω: t-grid in units of period.
+        period = 2.0 * math.pi / params.omega
+        ts = np.linspace(0.0, 256.0 * period, 4096, dtype=np.float64)
+        gen = FXPathGen(params=params)
+        path = gen(ts)
+        sigma_T = RealizedVarianceCalc(
+            params=RealizedVarianceParams(horizon_T=ts.size),
+            mean_x_over_y=params.mean_x_over_y,
+        )(path)
+        recovered = epsilon_from_sigma_T(sigma_T, params.mean_x_over_y)
+        assert math.isclose(recovered, params.epsilon, abs_tol=1e-2)
