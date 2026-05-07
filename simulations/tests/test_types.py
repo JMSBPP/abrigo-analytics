@@ -156,6 +156,37 @@ class TestSoftplusParams:
         )
         assert 0.0156 < result < 0.0173, f"deviation {result} outside expected band"
 
+    def test_tightness_l1_deviation_default_n_grid_high_precision(self) -> None:
+        """tightness_l1_deviation default n_grid (4096) yields high-precision result.
+
+        Kills mutmut L1_13: dropping the ``n_grid`` argument from
+        ``np.linspace(0.0, 2.0 * kappa, n_grid)`` defaults the linspace
+        ``num`` to 50, producing ~6.9e-5 absolute drift versus the
+        4096-node grid at β=10, κ=1.
+
+        The expected value is pinned against an INDEPENDENT high-precision
+        reference (computed externally with n=8192: 0.016448430195608172).
+        We do NOT call ``tightness_l1_deviation`` with ``n_grid=8192`` to
+        derive the reference, because under the L1_13 mutation that call
+        also collapses to n=50 — masking the drift. The pinned literal
+        is the load-bearing kill condition.
+
+        Tolerance ±2e-5 is tight enough to surface the n=50 drift
+        (~6.9e-5) while remaining stable across numpy/BLAS variation.
+        """
+        params = SoftplusParams(beta=10.0, kappa=1.0)
+        result = tightness_l1_deviation(params)  # uses default n_grid (4096)
+        # Independent reference (computed offline at n=8192). Do NOT replace
+        # with a function call — the mutation we kill makes the function
+        # ignore n_grid, which would equate result and any "reference" call.
+        expected_8192 = 0.016448430195608172
+        assert abs(result - expected_8192) < 2e-5, (
+            f"default n_grid (4096) drifted from pinned 8192-node reference:"
+            f" {result=} vs {expected_8192=}; |Δ|={abs(result - expected_8192)}"
+            f" — likely L1_13 mutation (n_grid dropped, defaulting linspace"
+            f" to 50 nodes)."
+        )
+
     def test_tightness_l1_nonnegative(self) -> None:
         """L¹ deviation is non-negative — catches sign-flip mutations on softplus."""
         for beta in (1.0, 5.0, 50.0):

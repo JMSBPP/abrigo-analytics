@@ -755,6 +755,58 @@ class TestPreMortem:
 
 
 
+class TestIdempotentWrite:
+    """Defensive Pattern-4 mutation tests: writing the same payload twice
+    to the same target must not raise.
+
+    Catches mutmut Pattern-4 mutations that drop ``exist_ok=True`` from the
+    writers' ``mkdir`` (or otherwise make rewrites non-idempotent). The
+    first call creates the target; the second call must overwrite cleanly.
+    """
+
+    def test_synthetic_tau_writer_idempotent_rewrite(self, tmp_path: Path) -> None:
+        """SyntheticTauWriter overwrites an existing tier_id partition cleanly."""
+        writer = SyntheticTauWriter(base_dir=tmp_path)
+        rows = [
+            synthetic_tau_row(
+                month=1,
+                simulation_id=0,
+                tier_id="pro",
+                r=1.0,
+                p=0.5,
+                alpha=2.0,
+                x_m=1.0,
+                tau_t=10.0,
+                q_t_usd=1.0,
+                q_t_cop=4000.0,
+            )
+        ]
+        writer(rows)
+        # Second write of same data must succeed (idempotent), not raise.
+        writer(rows)
+        # Read-back sanity: the partition still resolves and contains the row.
+        recovered = SyntheticTauReader(base_dir=tmp_path)()
+        assert len(recovered) >= 1
+
+    def test_cohort_prior_writer_idempotent_rewrite(self, tmp_path: Path) -> None:
+        """CohortPriorWriter overwrites an existing cohort_prior.parquet cleanly."""
+        writer = CohortPriorWriter(base_dir=tmp_path)
+        rows = [
+            cohort_prior_row(
+                param="alpha",
+                percentile="p50",
+                value=2.0,
+                source="test",
+                fetched_at_utc="2026-01-01T00:00:00Z",
+            )
+        ]
+        writer(rows)
+        # Second write must succeed without raising (idempotent overwrite).
+        writer(rows)
+        recovered = CohortPriorReader(base_dir=tmp_path)()
+        assert len(recovered) == 1
+
+
 # ─── Static pricing fetcher (spec §5.2 frozen-table emitter) ──────────────────
 
 
