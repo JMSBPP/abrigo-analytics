@@ -70,12 +70,13 @@ class ZCapPinnedReader:
     """Read ``Z_cap_pinned.json`` (M4); return a ``ZCapPinned`` Value."""
 
     def __init__(self) -> None:
-        return None
+        pass
 
-    def __call__(self, path: Path) -> ZCapPinned:
-        if not path.is_file():
-            raise FileNotFoundError(f"ZCapPinnedReader: missing JSON at {path}")
-        raw_text = path.read_text(encoding="utf-8")
+    def __call__(self, path: str | Path) -> ZCapPinned:
+        target = Path(path)
+        if not target.is_file():
+            raise FileNotFoundError(f"ZCapPinnedReader: missing JSON at {target}")
+        raw_text = target.read_text(encoding="utf-8")
         # Pre-check the JSON's field set so consumers get a SchemaMismatchError
         # (rather than a Pydantic ValidationError) on column drift.
         parsed = json.loads(raw_text)
@@ -108,10 +109,11 @@ class ZCapPinnedWriter:
     """Write a ``ZCapPinned`` Value to a JSON file (M4)."""
 
     def __init__(self) -> None:
-        return None
+        pass
 
-    def __call__(self, z: ZCapPinned, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    def __call__(self, z: ZCapPinned, path: str | Path) -> None:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         payload: dict[str, object] = {
             "Z_cop_per_month": z.Z_cop_per_month,
             "ci_95_lo": z.ci_95_lo,
@@ -120,4 +122,6 @@ class ZCapPinnedWriter:
             "tier_mix": dict(z.tier_mix),
             "schema_version": z.schema_version,
         }
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        target.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )

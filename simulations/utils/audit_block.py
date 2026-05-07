@@ -22,7 +22,7 @@ from typing import Final
 _HASH_CHUNK_BYTES: Final[int] = 1 << 20  # 1 MiB
 
 
-def compute_audit_block(file_paths: Sequence[Path]) -> str:
+def compute_audit_block(file_paths: Sequence[str | Path]) -> str:
     """Return a 64-char lowercase hex sha256 over a list of file contents.
 
     The hash is taken in **path-sorted order** (lexicographic on the
@@ -45,7 +45,8 @@ def compute_audit_block(file_paths: Sequence[Path]) -> str:
     if len(file_paths) == 0:
         raise ValueError("compute_audit_block: file_paths must be non-empty")
 
-    sorted_paths: list[Path] = sorted(file_paths, key=lambda p: str(p))
+    coerced: list[Path] = [Path(p) for p in file_paths]
+    sorted_paths: list[Path] = sorted(coerced, key=lambda p: str(p))
     h = hashlib.sha256()
     for p in sorted_paths:
         if not p.is_file():
@@ -73,7 +74,7 @@ class AuditBlockHasher:
     def __init__(self) -> None:
         # No mutable state today; ``__init__`` exists to satisfy the IO
         # Boundary tier shape (class with __init__, not frozen-dc).
-        return None
+        pass
 
     def __call__(self, paths: tuple[Path, ...]) -> str:
         return compute_audit_block(paths)

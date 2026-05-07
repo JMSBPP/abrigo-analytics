@@ -17,7 +17,7 @@ typed Value containers.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Final, TypedDict
 
@@ -58,6 +58,37 @@ SYNTHETIC_TAU_COLUMNS: Final[tuple[str, ...]] = (
 #: Hive partition columns for ``synthetic_tau_t.parquet``
 #: (Phase 1 reconciliation §2.5).
 SYNTHETIC_TAU_PARTITION_COLS: Final[tuple[str, ...]] = ("tier_id", "month")
+
+#: Canonical pandas dtypes for ``cohort_prior.parquet`` columns (Pin M4).
+#: Applied at the writer boundary to detect dtype drift before parquet
+#: emission. A failed cast surfaces as a pandas ``ValueError``.
+COHORT_PRIOR_DTYPES: Final[Mapping[str, str]] = {
+    "param": "string",
+    "percentile": "string",
+    "value": "float64",
+    "source": "string",
+    "fetched_at_utc": "string",
+    "schema_version": "string",
+}
+
+#: Canonical pandas dtypes for ``synthetic_tau_t.parquet`` columns (Pin M4).
+#: Applied at the writer boundary so partition columns (``tier_id``,
+#: ``month``) land on disk with stable Hive directory names — e.g.
+#: ``month=4/`` rather than ``month=4.0/`` when a caller passes ``int``-
+#: shaped data through a structurally-typed (``TypedDict``) row.
+SYNTHETIC_TAU_DTYPES: Final[Mapping[str, str]] = {
+    "month": "int64",
+    "simulation_id": "int64",
+    "tier_id": "string",
+    "r": "float64",
+    "p": "float64",
+    "alpha": "float64",
+    "x_m": "float64",
+    "tau_t": "float64",
+    "q_t_usd": "float64",
+    "q_t_cop": "float64",
+    "schema_version": "string",
+}
 
 
 # ─── TypedDict row schemas (Phase 1 reconciliation §2.1) ──────────────────────
@@ -127,11 +158,15 @@ class CohortPriorWriter:
     ``simulations/saas_builder/data/`` when constructed without an
     argument; callers MAY override it (notably tests, which write under a
     ``tmp_path``).
+
+    Coerces columns to canonical dtypes (``COHORT_PRIOR_DTYPES``) before
+    parquet emission per Pin M4. Raises pandas ``ValueError`` if a value
+    cannot be cast (this is the dtype-mismatch detection).
     """
 
-    def __init__(self, base_dir: Path | None = None) -> None:
+    def __init__(self, base_dir: str | Path | None = None) -> None:
         self._base_dir: Path = (
-            base_dir
+            Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
         )
@@ -141,6 +176,7 @@ class CohortPriorWriter:
             raise ValueError("CohortPriorWriter: rows must be non-empty")
         df = pd.DataFrame(rows, columns=list(COHORT_PRIOR_COLUMNS))
         _check_columns(df.columns, COHORT_PRIOR_COLUMNS, "cohort_prior.parquet")
+        df = df.astype(dict(COHORT_PRIOR_DTYPES))
         self._base_dir.mkdir(parents=True, exist_ok=True)
         out = self._base_dir / "cohort_prior.parquet"
         df.to_parquet(out, index=False)
@@ -150,15 +186,17 @@ class CohortPriorWriter:
 class CohortPriorReader:
     """Read ``cohort_prior.parquet`` (M4); validate the M4 column set."""
 
-    def __init__(self, base_dir: Path | None = None) -> None:
+    def __init__(self, base_dir: str | Path | None = None) -> None:
         self._base_dir: Path = (
-            base_dir
+            Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
         )
 
-    def __call__(self, path: Path | None = None) -> list[CohortPriorRow]:
-        target = path if path is not None else self._base_dir / "cohort_prior.parquet"
+    def __call__(self, path: str | Path | None = None) -> list[CohortPriorRow]:
+        target = (
+            Path(path) if path is not None else self._base_dir / "cohort_prior.parquet"
+        )
         if not target.is_file():
             raise FileNotFoundError(f"CohortPriorReader: missing parquet at {target}")
         df = pd.read_parquet(target)
@@ -183,11 +221,20 @@ class SyntheticTauWriter:
 
     Output tree:
     ``<base_dir>/synthetic_tau_t/tier_id=*/month=*/*.parquet``.
+
+    Coerces columns to canonical dtypes (``SYNTHETIC_TAU_DTYPES``) before
+    parquet emission per Pin M4. This guarantees the partition column
+    ``month`` lands on disk as ``int64`` (so the Hive directory tree
+    contains ``month=4/`` and not ``month=4.0/``) even when callers pass
+    ``float``-typed values through the structurally-typed
+    ``SyntheticTauRow`` (``TypedDict`` is unchecked at runtime). Raises
+    pandas ``ValueError`` if a value cannot be cast (this is the
+    dtype-mismatch detection).
     """
 
-    def __init__(self, base_dir: Path | None = None) -> None:
+    def __init__(self, base_dir: str | Path | None = None) -> None:
         self._base_dir: Path = (
-            base_dir
+            Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
         )
@@ -197,6 +244,7 @@ class SyntheticTauWriter:
             raise ValueError("SyntheticTauWriter: rows must be non-empty")
         df = pd.DataFrame(rows, columns=list(SYNTHETIC_TAU_COLUMNS))
         _check_columns(df.columns, SYNTHETIC_TAU_COLUMNS, "synthetic_tau_t.parquet")
+        df = df.astype(dict(SYNTHETIC_TAU_DTYPES))
         out_root = self._base_dir / "synthetic_tau_t"
         out_root.mkdir(parents=True, exist_ok=True)
         # Use pyarrow's Hive-partition writer for deterministic layout.
@@ -216,18 +264,25 @@ class SyntheticTauReader:
     dicts so the returned ``SyntheticTauRow`` list is fully populated.
     """
 
-    def __init__(self, base_dir: Path | None = None) -> None:
+    def __init__(self, base_dir: str | Path | None = None) -> None:
         self._base_dir: Path = (
-            base_dir
+            Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
         )
 
-    def __call__(self, root: Path | None = None) -> list[SyntheticTauRow]:
-        target = root if root is not None else self._base_dir / "synthetic_tau_t"
+    def __call__(self, root: str | Path | None = None) -> list[SyntheticTauRow]:
+        target = (
+            Path(root) if root is not None else self._base_dir / "synthetic_tau_t"
+        )
         if not target.is_dir():
             raise FileNotFoundError(
                 f"SyntheticTauReader: missing dataset directory at {target}"
+            )
+        if not any(target.rglob("*.parquet")):
+            raise FileNotFoundError(
+                f"SyntheticTauReader: no parquet files under {target!r}; "
+                f"writer may not have run yet"
             )
         dataset = pq.ParquetDataset(str(target))
         table = dataset.read()
