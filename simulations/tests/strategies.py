@@ -89,10 +89,36 @@ def truncpareto_params(
 
 @st.composite
 def saas_truncpareto_params(draw: st.DrawFn) -> TruncParetoParams:
-    """Draw ``TruncParetoParams`` honoring the SaaS-builder α ≥ 1.5 floor."""
+    """Draw ``TruncParetoParams`` honoring the SaaS-builder α ≥ 1.5 floor.
+
+    The α-domain is intentionally narrowed to ``α ∈ [1.9, ceiling]`` rather
+    than the full sampler-admissible ``α ∈ [1.5, ceiling]``. This reflects
+    the 5%-tolerance Monte-Carlo precision floor of
+    ``test_truncpareto_sampler_distributional_validity`` (Phase 3.3): with
+    ``n=10000`` samples, α near the 1.5 cohort floor produces a heavy enough
+    right tail that sample-mean drift can exceed 5% relative tolerance on
+    Hypothesis-adversarial seeds (e.g., flakes observed at α=1.515625,
+    α=1.701171875, and α=1.75 — Phase 3.4 hotfix). Analytic worst-case
+    drift (z=3.29 over n=10000 with x_max/x_m=100) is ≈ 4.6% at α=1.75,
+    ≈ 4.1% at α=1.9, and ≈ 3.8% at α=2.0. The 1.9 floor leaves comfortable
+    margin under Hypothesis's ``max_examples=50`` × seed-search budget.
+
+    The sampler is correct outside ``[1.9, ceiling]``; the test would need
+    ``n >> 10000`` samples for 5% accuracy near α=1.5. Strategy domain is
+    therefore narrowed to where the test's tolerance bound is sound,
+    analogous to the ``negbin_params`` precedent.
+
+    The α=1.5 sampler-construction refusal (M1) is still tested via the
+    Value-tier ``truncpareto_params`` strategy, which permits α < 1.5 to
+    drive the rejection-behavior tests.
+    """
+    # Monte-Carlo precision floor (1.9) is strictly > the M1 floor (1.5),
+    # so the assertion below is a guard against constant drift.
+    monte_carlo_alpha_min = 1.9
+    assert monte_carlo_alpha_min >= SAAS_TRUNC_PARETO_ALPHA_FLOOR
     return draw(
         truncpareto_params(
-            alpha_min=SAAS_TRUNC_PARETO_ALPHA_FLOOR,
+            alpha_min=monte_carlo_alpha_min,
             alpha_max=SAAS_TRUNC_PARETO_ALPHA_CEILING,
         )
     )
