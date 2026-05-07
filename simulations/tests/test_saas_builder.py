@@ -75,6 +75,10 @@ from simulations.types.fx import (
     SONNET_PRICE_IN_USD_PER_MTOK,
     SONNET_PRICE_OUT_USD_PER_MTOK,
 )
+from simulations.tests.strategies import (
+    negbin_turns_prior,
+    truncpareto_alpha_prior,
+)
 from simulations.types.tier import TIER_IDS, DEFAULT_TIER_PI
 from simulations.utils.parquet_io import (
     SYNTHETIC_TAU_COLUMNS,
@@ -704,3 +708,70 @@ class TestHypothesisProperties:
         # Simpler: at a fixed simulation_id range, tau_t variance across rows > 0.
         tau = np.array([r["tau_t"] for r in rows])
         assert tau.var() > 0.0
+
+
+# ─── Stronger Hypothesis properties (cohort strategies) ─────────────────────
+
+
+class TestNegBinReparameterizationRoundtrip:
+    """Algebraic invariants of negbin_mu_phi_to_r_p across the prior surface."""
+
+    @_HYPOTHESIS_SETTINGS
+    @given(
+        st.floats(min_value=1.0, max_value=500.0, allow_nan=False),
+        st.floats(min_value=0.5, max_value=500.0, allow_nan=False),
+    )
+    def test_reparam_recovers_mean(self, mu: float, phi: float) -> None:
+        """For (μ, φ) ∈ admissible region, r·(1-p)/p == μ within rel_tol=1e-9."""
+        r, p = negbin_mu_phi_to_r_p(mu, phi)
+        assert math.isclose(r * (1.0 - p) / p, mu, rel_tol=1e-9)
+
+    @_HYPOTHESIS_SETTINGS
+    @given(
+        st.floats(min_value=1.0, max_value=500.0, allow_nan=False),
+        st.floats(min_value=0.5, max_value=500.0, allow_nan=False),
+    )
+    def test_reparam_recovers_variance(self, mu: float, phi: float) -> None:
+        """For (μ, φ) ∈ admissible region, r·(1-p)/p² == μ + μ²/φ."""
+        r, p = negbin_mu_phi_to_r_p(mu, phi)
+        var_from_rp = r * (1.0 - p) / (p * p)
+        var_from_mu_phi = mu + mu * mu / phi
+        assert math.isclose(var_from_rp, var_from_mu_phi, rel_tol=1e-9)
+
+
+class TestAlphaPriorBracketInvariance:
+    """For any draw of the cohort α-prior, the bracket [1.5, 2.5] is honored."""
+
+    @_HYPOTHESIS_SETTINGS
+    @given(truncpareto_alpha_prior())
+    def test_alpha_lower_above_floor(self, prior) -> None:
+        """spec §8(6) — alpha_lower ≥ 1.5 holds for any drawn prior."""
+        assert prior.alpha_lower >= SAAS_TRUNC_PARETO_ALPHA_FLOOR
+
+    @_HYPOTHESIS_SETTINGS
+    @given(truncpareto_alpha_prior())
+    def test_alpha_upper_below_ceiling(self, prior) -> None:
+        """spec §5.2 — alpha_upper ≤ 2.5 holds for any drawn prior."""
+        assert prior.alpha_upper <= SAAS_TRUNC_PARETO_ALPHA_CEILING
+
+    @_HYPOTHESIS_SETTINGS
+    @given(truncpareto_alpha_prior())
+    def test_alpha_loc_strictly_within_bracket(self, prior) -> None:
+        """Construction always yields alpha_loc ∈ (alpha_lower, alpha_upper)."""
+        assert prior.alpha_lower < prior.alpha_loc < prior.alpha_upper
+
+
+class TestNegBinTurnsPriorAlwaysValidForMuPhi:
+    """Any drawn cohort NegBinTurnsPrior produces a valid (r, p) under reparam."""
+
+    @_HYPOTHESIS_SETTINGS
+    @given(negbin_turns_prior())
+    def test_phi_loc_admits_negbin_params(self, prior) -> None:
+        """Reparameterizing prior modes (mu_loc, phi_loc) yields (r > 0, 0 < p < 1)."""
+        from simulations.types.distributions import NegBinParams
+
+        r, p = negbin_mu_phi_to_r_p(prior.mu_loc, prior.phi_loc)
+        assert r > 0.0 and 0.0 < p < 1.0
+        # Round-trip: NegBinParams construction must succeed.
+        nb = NegBinParams(r=r, p=p)
+        assert nb.r == r and nb.p == p

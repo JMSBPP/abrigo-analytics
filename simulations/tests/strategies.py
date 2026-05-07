@@ -298,6 +298,74 @@ def zcap_pinned(draw: st.DrawFn) -> ZCapPinned:
     )
 
 
+# ─── SAAS-COHORT-1 prior strategies ──────────────────────────────────────────
+#
+# These strategies generate cohort-1 prior hyperparameter Value containers
+# for the SAAS-COHORT-1 (T1 subscription-cap regime) PyMC fit. They model
+# the spec v1.1.1 §5.1 + §5.2 admissible region — narrowly so cohort
+# implementation tests can exercise the M1 / M3 / Dirichlet pins without
+# leaking out-of-spec parameters.
+
+
+@st.composite
+def negbin_turns_prior(draw: st.DrawFn):
+    """Draw a ``NegBinTurnsPrior`` (cohort-1) consistent with spec §5.2.
+
+    Constraints (read off priors.py:NegBinTurnsPrior.__post_init__):
+
+    - ``mu_loc`` strictly positive; constrained near μ ≈ 80.
+    - ``phi_loc`` strictly positive; pinned near φ ≈ 60 (over-disp 2.3×).
+    - ``mu_log_sigma`` and ``phi_sigma`` strictly positive.
+    """
+    from simulations.saas_builder.priors import NegBinTurnsPrior
+
+    mu_loc = draw(st.floats(min_value=20.0, max_value=200.0, allow_nan=False))
+    mu_log_sigma = draw(
+        st.floats(min_value=0.05, max_value=1.0, allow_nan=False)
+    )
+    phi_loc = draw(st.floats(min_value=10.0, max_value=200.0, allow_nan=False))
+    phi_sigma = draw(
+        st.floats(min_value=1.0, max_value=50.0, allow_nan=False)
+    )
+    return NegBinTurnsPrior(
+        mu_loc=mu_loc,
+        mu_log_sigma=mu_log_sigma,
+        phi_loc=phi_loc,
+        phi_sigma=phi_sigma,
+    )
+
+
+@st.composite
+def truncpareto_alpha_prior(draw: st.DrawFn):
+    """Draw a ``TruncParetoAlphaPrior`` honoring the M1 floor [1.5, 2.5].
+
+    Constraints (read off priors.py:TruncParetoAlphaPrior.__post_init__):
+
+    - ``alpha_lower`` ≥ 1.5 and ``alpha_upper`` ≤ 2.5.
+    - ``alpha_lower < alpha_upper``.
+    - ``alpha_loc`` ∈ ``(alpha_lower, alpha_upper)``.
+    - ``alpha_scale`` strictly positive.
+    """
+    from simulations.saas_builder.priors import TruncParetoAlphaPrior
+
+    lower = draw(st.floats(min_value=1.5, max_value=1.7, allow_nan=False))
+    upper = draw(st.floats(min_value=2.3, max_value=2.5, allow_nan=False))
+    loc = draw(
+        st.floats(
+            min_value=lower + 0.01,
+            max_value=upper - 0.01,
+            allow_nan=False,
+        )
+    )
+    scale = draw(st.floats(min_value=0.05, max_value=0.5, allow_nan=False))
+    return TruncParetoAlphaPrior(
+        alpha_loc=loc,
+        alpha_scale=scale,
+        alpha_lower=lower,
+        alpha_upper=upper,
+    )
+
+
 __all__ = [
     "truncpareto_params",
     "saas_truncpareto_params",
@@ -312,4 +380,6 @@ __all__ = [
     "posterior_draws",
     "monthly_cdf",
     "zcap_pinned",
+    "negbin_turns_prior",
+    "truncpareto_alpha_prior",
 ]
