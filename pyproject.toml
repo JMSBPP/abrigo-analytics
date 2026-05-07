@@ -63,3 +63,15 @@ target-version = "py313"
 testpaths = ["tests", "simulations/tests"]
 pythonpath = ["."]
 addopts = "-ra -q"
+
+[tool.mutmut]
+paths_to_mutate = [
+    "simulations/types/",
+    "simulations/modules/",
+    "simulations/utils/",
+]
+tests_dir = ["simulations/tests/"]
+do_not_mutate = [
+    "simulations/**/__init__.py",
+    "simulations/tests/**",
+]

@@ -135,6 +135,63 @@ class TestSoftplusParams:
         with pytest.raises(ValueError, match="n_grid"):
             tightness_l1_deviation(SoftplusParams(beta=10.0, kappa=1.0), n_grid=1)
 
+    def test_tightness_l1_grid_floor_accepts_two(self) -> None:
+        """``n_grid == 2`` is the boundary case — must be accepted, not rejected."""
+        # Boundary: predicate is ``n_grid < 2``; n_grid=2 must pass.
+        result = tightness_l1_deviation(SoftplusParams(beta=10.0, kappa=1.0), n_grid=2)
+        assert math.isfinite(result)
+        assert result >= 0.0
+
+    def test_tightness_l1_known_value(self) -> None:
+        """Pinned numerical value at β=10, κ=1, n_grid=257.
+
+        Catches mutations to the integration grid bounds (``np.linspace``
+        endpoints), the shift offset (``xs - κ`` vs ``xs + κ``), the
+        softplus formula sign, and the ``2*κ`` upper bound. The trapezoid
+        integral over [0, 2κ]=[0,2] with β=10 is ≈ 0.01645 (verified against
+        unmutated implementation; pinned with ±5% tolerance).
+        """
+        result = tightness_l1_deviation(
+            SoftplusParams(beta=10.0, kappa=1.0), n_grid=257
+        )
+        assert 0.0156 < result < 0.0173, f"deviation {result} outside expected band"
+
+    def test_tightness_l1_nonnegative(self) -> None:
+        """L¹ deviation is non-negative — catches sign-flip mutations on softplus."""
+        for beta in (1.0, 5.0, 50.0):
+            d = tightness_l1_deviation(SoftplusParams(beta=beta, kappa=1.0))
+            assert d >= 0.0, f"negative deviation {d} at β={beta}"
+
+    def test_tightness_l1_scales_linearly_with_kappa_at_fixed_beta(self) -> None:
+        """L¹ deviation scales linearly with κ when β is fixed.
+
+        Substituting u = x - κ in ∫₀^{2κ}|softplus_β(x−κ) − (x−κ)^+|dx gives
+        ∫_{-κ}^{κ}|softplus_β(u) − u^+|du. For β·κ ≫ 1 the integrand is
+        concentrated near u=0 and the integral saturates, but for moderate
+        β·κ the integral roughly doubles when κ doubles at fixed β. Catches
+        mutations that drop κ from the integration bounds (e.g.
+        ``np.linspace(0.0, 2.0, n)`` vs ``np.linspace(0.0, 2.0*κ, n)``) by
+        checking the LARGER-κ deviation strictly exceeds the smaller.
+        """
+        # Use β=1 (loose regime) where integrand spans the full [-κ, κ] window.
+        d1 = tightness_l1_deviation(SoftplusParams(beta=1.0, kappa=1.0))
+        d2 = tightness_l1_deviation(SoftplusParams(beta=1.0, kappa=2.0))
+        # Doubling κ widens the integration window — d2 strictly exceeds d1.
+        assert d2 > d1, f"d2 ({d2}) should exceed d1 ({d1}) when κ doubles"
+        # Substantial growth: catches mutations that drop κ from the bounds.
+        assert d2 > 1.3 * d1, f"d2/d1 = {d2/d1} is suspiciously low; κ scaling broken?"
+
+    def test_tightness_l1_decreases_to_zero_at_high_beta(self) -> None:
+        """As β → ∞ the L¹ deviation → 0 (softplus_β → ReLU).
+
+        At β=50/κ the deviation must be well below 1e-3·κ (the spec
+        criterion). Catches mutations that prevent convergence (wrong
+        shift sign, wrong upper bound).
+        """
+        d = tightness_l1_deviation(SoftplusParams(beta=50.0, kappa=1.0))
+        # Spec criterion: deviation < SOFTPLUS_TIGHTNESS_EPS·κ = 1e-3·1.0
+        assert d < 1e-3, f"β=50, κ=1: deviation {d} should be < 1e-3"
+
 
 # ─── FX types ─────────────────────────────────────────────────────────────────
 
@@ -359,6 +416,23 @@ def valid_zcap_kwargs() -> dict[str, Any]:
 class TestZCapPinned:
     def _valid_block(self) -> str:
         return "0" * 64
+
+    def test_accepts_small_positive_values(self) -> None:
+        """Values in (0, 1] are valid — predicate is ``> 0``, not ``> 1``.
+
+        Catches mutations that change ``x > 0.0`` to ``x > 1.0`` in the
+        ``_is_finite_positive`` predicate.
+        """
+        # All three Z fields strictly between 0 and 1 — must construct cleanly.
+        z = ZCapPinned(
+            Z_cop_per_month=0.5,
+            ci_95_lo=0.4,
+            ci_95_hi=0.6,
+            audit_block="0" * 64,
+        )
+        assert z.Z_cop_per_month == 0.5
+        assert z.ci_95_lo == 0.4
+        assert z.ci_95_hi == 0.6
 
     def test_rejects_audit_block_wrong_length(self) -> None:
         """audit_block must be exactly 64 chars."""

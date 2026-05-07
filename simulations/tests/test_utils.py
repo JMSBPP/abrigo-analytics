@@ -19,7 +19,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from simulations.types.posterior import ZCapPinned
+from simulations.types.posterior import DEFAULT_SCHEMA_VERSION, ZCapPinned
 from simulations.utils.audit_block import AuditBlockHasher, compute_audit_block
 from simulations.utils.errors import SchemaMismatchError
 from simulations.utils.json_io import ZCapPinnedReader, ZCapPinnedWriter
@@ -34,6 +34,7 @@ from simulations.utils.parquet_io import (
     cohort_prior_row,
     synthetic_tau_row,
 )
+from simulations.utils.pricing_fetcher import StaticPricingFetcher
 
 
 # ─── Cohort prior parquet round-trip ──────────────────────────────────────────
@@ -65,6 +66,73 @@ class TestCohortPriorIO:
         original_sorted = sorted(rows, key=lambda r: (r["param"], r["percentile"]))
         for got, want in zip(recovered_sorted, original_sorted):
             assert got == want
+
+    def test_cohort_prior_default_base_dir_is_constructible(self) -> None:
+        """Default ``base_dir`` resolves to the canonical M4 data path.
+
+        Catches mutations like ``Path(None)`` (would raise) or path-string
+        mutations that would relocate the default. We don't write here —
+        just verify the constructor builds and the resolved path matches the
+        documented Spec §M4 location.
+        """
+        w = CohortPriorWriter()
+        r = CohortPriorReader()
+        # Internal default path is documented as ``simulations/saas_builder/data``.
+        assert w._base_dir == Path("simulations/saas_builder/data")
+        assert r._base_dir == Path("simulations/saas_builder/data")
+
+    def test_synthetic_tau_default_base_dir_is_constructible(self) -> None:
+        """Default ``base_dir`` resolves to the canonical M4 data path."""
+        w = SyntheticTauWriter()
+        r = SyntheticTauReader()
+        assert w._base_dir == Path("simulations/saas_builder/data")
+        assert r._base_dir == Path("simulations/saas_builder/data")
+
+    def test_cohort_prior_writer_creates_missing_parents(self, tmp_path: Path) -> None:
+        """Writer auto-creates the full base_dir parent chain.
+
+        Catches mutations dropping ``parents=True`` from the writer's ``mkdir``.
+        """
+        deep = tmp_path / "a" / "b" / "c"
+        rows: list[CohortPriorRow] = [
+            cohort_prior_row(
+                param="alpha",
+                percentile="p50",
+                value=2.0,
+                source="spec",
+                fetched_at_utc="2026-05-07T00:00:00Z",
+            )
+        ]
+        CohortPriorWriter(base_dir=deep)(rows)
+        assert (deep / "cohort_prior.parquet").is_file()
+
+    def test_cohort_prior_writer_does_not_emit_pandas_index(
+        self, tmp_path: Path
+    ) -> None:
+        """Writer must call ``index=False`` on ``to_parquet`` — no row-index col.
+
+        Catches mutations like ``index=True`` (would add a numeric index column
+        and break the column-set check on read).
+        """
+        rows: list[CohortPriorRow] = [
+            cohort_prior_row(
+                param="alpha",
+                percentile="p50",
+                value=2.0,
+                source="spec",
+                fetched_at_utc="2026-05-07T00:00:00Z",
+            )
+        ]
+        CohortPriorWriter(base_dir=tmp_path)(rows)
+        out = tmp_path / "cohort_prior.parquet"
+        df = pd.read_parquet(out)
+        assert not any(c.startswith("__index_level") for c in df.columns), (
+            f"index column leaked into parquet: {list(df.columns)}"
+        )
+        # Stricter: the column set on disk must be exactly the declared schema.
+        assert set(df.columns) == set(COHORT_PRIOR_COLUMNS), (
+            f"unexpected columns on disk: {set(df.columns) - set(COHORT_PRIOR_COLUMNS)}"
+        )
 
     def test_cohort_prior_writer_empty_raises(self, tmp_path: Path) -> None:
         """Empty rows list rejected."""
@@ -157,6 +225,91 @@ class TestSyntheticTauIO:
         assert tiers == {"pro", "max_5x", "max_20x"}
         assert months == {1, 2, 3, 4}
 
+    def test_synthetic_tau_round_trip_field_fidelity(self, tmp_path: Path) -> None:
+        """Each numeric field round-trips with distinct values — catches field-swap bugs.
+
+        Uses prime-distinct values for r/p/alpha/x_m/tau_t/q_t_usd/q_t_cop so that
+        a mutation that swaps two field assignments in ``synthetic_tau_row`` or
+        re-orders the row constructor surfaces as a value mismatch on read.
+        """
+        # Distinct primes/decimals — no two fields share a value.
+        row = synthetic_tau_row(
+            month=7,
+            simulation_id=42,
+            tier_id="pro",
+            r=3.14,
+            p=0.59,
+            alpha=2.71,
+            x_m=1.41,
+            tau_t=1729.0,
+            q_t_usd=23.0,
+            q_t_cop=89897.0,
+        )
+        SyntheticTauWriter(base_dir=tmp_path)([row])
+        recovered = SyntheticTauReader(base_dir=tmp_path)()
+        assert len(recovered) == 1
+        got = recovered[0]
+        # Field-by-field equality — distinct values prevent silent swap survival.
+        assert got["month"] == 7
+        assert got["simulation_id"] == 42
+        assert got["tier_id"] == "pro"
+        assert got["r"] == 3.14
+        assert got["p"] == 0.59
+        assert got["alpha"] == 2.71
+        assert got["x_m"] == 1.41
+        assert got["tau_t"] == 1729.0
+        assert got["q_t_usd"] == 23.0
+        assert got["q_t_cop"] == 89897.0
+        assert got["schema_version"] == DEFAULT_SCHEMA_VERSION
+
+    def test_synthetic_tau_row_helper_field_assignment(self) -> None:
+        """``synthetic_tau_row`` assigns each kwarg to the correctly-named field.
+
+        Direct test of the row-builder — independent of parquet I/O — so each
+        keyword argument's destination is checked. Catches mutations that
+        delete/swap field assignments inside the constructor.
+        """
+        row = synthetic_tau_row(
+            month=11,
+            simulation_id=99,
+            tier_id="max_20x",
+            r=5.0,
+            p=0.6,
+            alpha=3.0,
+            x_m=2.0,
+            tau_t=4242.0,
+            q_t_usd=11.0,
+            q_t_cop=44440.0,
+        )
+        assert row["month"] == 11
+        assert row["simulation_id"] == 99
+        assert row["tier_id"] == "max_20x"
+        assert row["r"] == 5.0
+        assert row["p"] == 0.6
+        assert row["alpha"] == 3.0
+        assert row["x_m"] == 2.0
+        assert row["tau_t"] == 4242.0
+        assert row["q_t_usd"] == 11.0
+        assert row["q_t_cop"] == 44440.0
+        assert row["schema_version"] == DEFAULT_SCHEMA_VERSION
+
+    def test_synthetic_tau_row_helper_custom_schema_version(self) -> None:
+        """Non-default ``schema_version`` flows through unchanged."""
+        row = synthetic_tau_row(
+            month=1,
+            simulation_id=0,
+            tier_id="pro",
+            r=1.0,
+            p=0.1,
+            alpha=1.0,
+            x_m=1.0,
+            tau_t=1.0,
+            q_t_usd=1.0,
+            q_t_cop=1.0,
+            schema_version="v9.9-test",
+        )
+        assert row["schema_version"] == "v9.9-test"
+
     def test_synthetic_tau_dtype_enforcement(self, tmp_path: Path) -> None:
         """Float-typed `month=4.0` input lands on disk as int (Hive dir `month=4/`)."""
         # SyntheticTauRow is a TypedDict; runtime ignores the int annotation.
@@ -185,6 +338,51 @@ class TestSyntheticTauIO:
         recovered = SyntheticTauReader(base_dir=tmp_path)()
         assert recovered[0]["month"] == 4
         assert isinstance(recovered[0]["month"], int)
+
+    def test_synthetic_tau_writer_creates_missing_parents(self, tmp_path: Path) -> None:
+        """Writer auto-creates the full output-root parent chain.
+
+        Catches mutations dropping ``parents=True`` from ``mkdir``.
+        """
+        deep = tmp_path / "a" / "b" / "c"
+        # Parent chain "a/b/c" does not exist yet.
+        SyntheticTauWriter(base_dir=deep)(_make_tau_rows(n_per_combo=1))
+        assert (deep / "synthetic_tau_t").is_dir()
+
+    def test_synthetic_tau_writer_does_not_emit_pandas_index(
+        self, tmp_path: Path
+    ) -> None:
+        """Writer must call ``preserve_index=False`` so no index column lands on disk.
+
+        Build a DataFrame with a non-default index and ensure the round-trip
+        still produces a clean column set (no ``__index_level_0__`` leak).
+        Catches mutations like ``preserve_index=True``.
+        """
+        rows = _make_tau_rows(n_per_combo=1)
+        SyntheticTauWriter(base_dir=tmp_path)(rows)
+        # Inspect any one parquet file for the absence of an index column.
+        any_parquet = next(
+            (tmp_path / "synthetic_tau_t").rglob("*.parquet")
+        )
+        df = pd.read_parquet(any_parquet)
+        assert not any(c.startswith("__index_level") for c in df.columns), (
+            f"index column leaked into parquet: {list(df.columns)}"
+        )
+
+    def test_synthetic_tau_writer_empty_rows_raises(self, tmp_path: Path) -> None:
+        """Empty rows list rejected with explicit error mentioning 'non-empty'."""
+        with pytest.raises(ValueError, match="non-empty"):
+            SyntheticTauWriter(base_dir=tmp_path)([])
+
+    def test_synthetic_tau_writer_error_identifies_class(self, tmp_path: Path) -> None:
+        """Empty-rows error message names the writer class for diagnosability."""
+        with pytest.raises(ValueError, match=r"SyntheticTauWriter"):
+            SyntheticTauWriter(base_dir=tmp_path)([])
+
+    def test_synthetic_tau_reader_error_identifies_class(self, tmp_path: Path) -> None:
+        """Missing-dataset error message names the reader class for diagnosability."""
+        with pytest.raises(FileNotFoundError, match=r"SyntheticTauReader"):
+            SyntheticTauReader(base_dir=tmp_path)()
 
     def test_synthetic_tau_reader_empty_dir_raises(self, tmp_path: Path) -> None:
         """Reading a missing dataset directory raises FileNotFoundError."""
@@ -245,6 +443,66 @@ class TestZCapPinnedJsonIO:
         ZCapPinnedWriter()(z, target)
         recovered = ZCapPinnedReader()(target)
         assert recovered == z
+
+    def test_zcap_pinned_round_trip_non_default_schema_version(
+        self, tmp_path: Path
+    ) -> None:
+        """schema_version flows through reader unchanged when non-default.
+
+        Catches mutations that drop ``schema_version`` from the reader's
+        constructor (which would silently substitute the dataclass default).
+        """
+        target = tmp_path / "Z_cap_pinned.json"
+        z = ZCapPinned(
+            Z_cop_per_month=120_000.0,
+            ci_95_lo=110_000.0,
+            ci_95_hi=130_000.0,
+            audit_block="b" * 64,
+            tier_mix={"pro": 0.20, "max_5x": 0.50, "max_20x": 0.30},
+            schema_version="v9.9-test",  # non-default
+        )
+        ZCapPinnedWriter()(z, target)
+        recovered = ZCapPinnedReader()(target)
+        assert recovered.schema_version == "v9.9-test"
+        assert recovered == z
+
+    def test_zcap_pinned_writer_creates_missing_parents(self, tmp_path: Path) -> None:
+        """Writer auto-creates the full parent directory chain.
+
+        Catches mutations that drop ``parents=True`` from the ``mkdir`` call
+        (e.g. ``parents=False`` would raise ``FileNotFoundError`` here).
+        """
+        deep = tmp_path / "a" / "b" / "c" / "Z_cap_pinned.json"
+        # Parent chain "a/b/c" does not exist yet.
+        ZCapPinnedWriter()(_zcap_sample(), deep)
+        assert deep.is_file()
+
+    def test_zcap_pinned_writer_output_is_indented_and_sorted(
+        self, tmp_path: Path
+    ) -> None:
+        """ZCap JSON output is human-readable: indent=2 + sort_keys=True.
+
+        Catches mutations that drop ``indent``, ``sort_keys``, or change the
+        ``encoding`` argument away from utf-8 (audit-relevant byte fidelity).
+        """
+        target = tmp_path / "Z_cap_pinned.json"
+        ZCapPinnedWriter()(_zcap_sample(), target)
+        text = target.read_text(encoding="utf-8")
+        # indent=2 ⇒ output spans multiple lines, with two-space indent.
+        assert "\n" in text, "output not indented (single-line JSON)"
+        assert "\n  " in text, "output indent depth not 2 spaces"
+        # sort_keys=True ⇒ keys appear alphabetically.
+        # Z_cop_per_month < audit_block < ci_95_hi < ci_95_lo (alphabetical, capital Z first).
+        # Find positions of known keys; sorted order must hold.
+        idx_audit = text.index('"audit_block"')
+        idx_ci_hi = text.index('"ci_95_hi"')
+        idx_ci_lo = text.index('"ci_95_lo"')
+        idx_schema = text.index('"schema_version"')
+        idx_tier = text.index('"tier_mix"')
+        # Alphabetical: audit_block < ci_95_hi < ci_95_lo < schema_version < tier_mix
+        assert idx_audit < idx_ci_hi < idx_ci_lo < idx_schema < idx_tier, (
+            "sort_keys=True ordering broken"
+        )
 
     def test_zcap_pinned_reader_missing_file(self, tmp_path: Path) -> None:
         """Reading a missing JSON raises FileNotFoundError."""
@@ -494,3 +752,90 @@ class TestPreMortem:
             " a change to canonicalize via Path.resolve() requires"
             " explicit contract review per pre-mortem #5."
         )
+
+
+
+# ─── Static pricing fetcher (spec §5.2 frozen-table emitter) ──────────────────
+
+
+class TestStaticPricingFetcher:
+    """Cover the pricing-table emitter: row count, schema-shape, and timestamp pinning."""
+
+    def test_emits_six_rows(self) -> None:
+        """Spec §5.2 declares 6 prices: in/out × {Sonnet, Opus, Haiku}."""
+        rows = StaticPricingFetcher()()
+        assert len(rows) == 6
+
+    def test_emits_distinct_param_names(self) -> None:
+        """Each row has a distinct ``param`` — no accidental key collisions."""
+        rows = StaticPricingFetcher()()
+        params = [r["param"] for r in rows]
+        assert len(set(params)) == 6
+        # Spot-check that all six expected names are present.
+        expected = {
+            "sonnet_price_in_usd_per_mtok",
+            "sonnet_price_out_usd_per_mtok",
+            "opus_price_in_usd_per_mtok",
+            "opus_price_out_usd_per_mtok",
+            "haiku_price_in_usd_per_mtok",
+            "haiku_price_out_usd_per_mtok",
+        }
+        assert set(params) == expected
+
+    def test_emits_positive_finite_prices(self) -> None:
+        """All emitted prices must be positive finite floats."""
+        rows = StaticPricingFetcher()()
+        for r in rows:
+            assert r["value"] > 0.0
+            assert r["value"] < 1e6  # sanity ceiling
+
+    def test_pricing_source_is_pinned(self) -> None:
+        """Emitted ``source`` cites spec §5.2 — catches mutations to the citation string."""
+        rows = StaticPricingFetcher()()
+        for r in rows:
+            src = r["source"]
+            assert "5.2" in src, f"source citation drift: {src!r}"
+
+    def test_percentile_label_is_p50(self) -> None:
+        """Emitted ``percentile`` is the median label."""
+        rows = StaticPricingFetcher()()
+        for r in rows:
+            assert r["percentile"] == "P50"
+
+    def test_explicit_timestamp_round_trips(self) -> None:
+        """Constructor-supplied ``fetched_at_utc`` flows through unchanged."""
+        ts = "2026-05-08T12:34:56+00:00"
+        rows = StaticPricingFetcher(fetched_at_utc=ts)()
+        for r in rows:
+            assert r["fetched_at_utc"] == ts
+
+    def test_default_timestamp_is_iso_utc(self) -> None:
+        """Default-constructed fetcher emits an ISO-8601 second-precision UTC stamp."""
+        rows = StaticPricingFetcher()()
+        # All rows share the same construction-time stamp.
+        stamps = {r["fetched_at_utc"] for r in rows}
+        assert len(stamps) == 1
+        ts = stamps.pop()
+        # Second-precision: no microseconds.
+        assert "." not in ts
+        # UTC offset present.
+        assert ts.endswith("+00:00") or ts.endswith("Z")
+
+    def test_schema_version_is_default(self) -> None:
+        """Emitted ``schema_version`` equals the canonical default."""
+        rows = StaticPricingFetcher()()
+        for r in rows:
+            assert r["schema_version"] == DEFAULT_SCHEMA_VERSION
+
+    def test_round_trip_via_cohort_prior_writer(self, tmp_path: Path) -> None:
+        """Emitted rows survive a write-and-read round-trip through CohortPriorIO."""
+        rows = StaticPricingFetcher()()
+        CohortPriorWriter(base_dir=tmp_path)(rows)
+        recovered = CohortPriorReader(base_dir=tmp_path)()
+        assert len(recovered) == 6
+        # Sort both sides by param to compare.
+        rows_sorted = sorted(rows, key=lambda r: r["param"])
+        recovered_sorted = sorted(recovered, key=lambda r: r["param"])
+        for got, want in zip(recovered_sorted, rows_sorted):
+            assert got == want
+

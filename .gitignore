@@ -42,3 +42,9 @@ notebooks/**/estimates/*.pkl
 .env
 .envrc
 !.env.example
+
+# Mutation testing artifacts (mutmut)
+mutants/
+.mutmut-cache/
+.hypothesis/
+.coverage
