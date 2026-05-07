@@ -208,8 +208,28 @@ class TestM5FXPath:
             params=RealizedVarianceParams(horizon_T=100),
             mean_x_over_y=4000.0,
         )
-        flat_path = np.full(100, 4000.0, dtype=np.float64)
+        # PRIMITIVES (7) horizon contract: path length = horizon_T + 1 = 101.
+        flat_path = np.full(101, 4000.0, dtype=np.float64)
         assert rv(flat_path) == 0.0
+
+    def test_realized_variance_divisor_is_T_not_T_plus_one(self) -> None:
+        """PRIMITIVES.md (7) divisor is T (NOT T+1). Pin (CR I-1).
+
+        Sum of T+1 squared deviations divided by T — not by len(path).
+        """
+        # T = 4, path length = 5.
+        path = np.array([4200.0, 3800.0, 4200.0, 3800.0, 4200.0], dtype=np.float64)
+        mean = 4000.0
+        rv = RealizedVarianceCalc(
+            params=RealizedVarianceParams(horizon_T=4),
+            mean_x_over_y=mean,
+        )
+        diffs = path - mean
+        expected = float(np.sum(diffs * diffs) / 4)  # divide by T=4, not 5
+        # Sanity: divide-by-5 (the bug) would give a different number.
+        wrong = float(np.sum(diffs * diffs) / 5)
+        assert rv(path) == expected
+        assert expected != wrong
 
     def test_epsilon_from_sigma_T_inverts_within_tolerance(self) -> None:
         """Round-trip: given ε, compute σ_T over a long path, invert; recover ε.
@@ -242,8 +262,9 @@ class TestM5FXPath:
         gen = FXPathGen(params=params)
         ts = np.linspace(0.0, 4096.0, 4096, dtype=np.float64)
         path = gen(ts)
+        # PRIMITIVES (7) horizon contract: T = len(path) - 1.
         sigma_T = RealizedVarianceCalc(
-            params=RealizedVarianceParams(horizon_T=ts.size),
+            params=RealizedVarianceParams(horizon_T=ts.size - 1),
             mean_x_over_y=mean,
         )(path)
         recovered = epsilon_from_sigma_T(sigma_T, mean)
@@ -601,8 +622,9 @@ class TestEpsilonSigmaTRoundTripProperty:
         ts = np.linspace(0.0, 256.0 * period, 4096, dtype=np.float64)
         gen = FXPathGen(params=params)
         path = gen(ts)
+        # PRIMITIVES (7) horizon contract: T = len(path) - 1.
         sigma_T = RealizedVarianceCalc(
-            params=RealizedVarianceParams(horizon_T=ts.size),
+            params=RealizedVarianceParams(horizon_T=ts.size - 1),
             mean_x_over_y=params.mean_x_over_y,
         )(path)
         recovered = epsilon_from_sigma_T(sigma_T, params.mean_x_over_y)
@@ -621,25 +643,28 @@ class TestEpsilonSigmaTRoundTripProperty:
 class TestPreMortem:
     """Pre-mortem regression tests pinning documented silent behaviors."""
 
-    def test_realized_variance_documented_no_horizon_cross_check(self) -> None:
-        """RealizedVarianceCalc does NOT cross-check ``len(path)`` vs ``horizon_T``.
+    def test_realized_variance_enforces_length_guard(self) -> None:
+        """RealizedVarianceCalc enforces ``len(path) == horizon_T + 1`` (CR I-1).
 
-        Pre-mortem #1 (fx_path.py docstring lines 110–115). A future change
-        adding a length-cross-check would deliberately break this test,
-        forcing the maintainer to confront the spec §7 horizon contract
-        choice (``len(path) == horizon_T + 1`` is documentary, not enforced).
+        Replaces the prior pre-mortem #1 (which DOCUMENTED the missing
+        cross-check). PRIMITIVES.md (7) defines σ_T over t ∈ {0,…,T} —
+        i.e. T+1 samples. A length mismatch is now a hard ValueError.
         """
-        # horizon_T = 100 declared, but feed a path of length 50 — must NOT raise.
         rv = RealizedVarianceCalc(
             params=RealizedVarianceParams(horizon_T=100),
             mean_x_over_y=4000.0,
         )
+        # Length 50 (instead of 101) — must raise.
         short_path = np.full(50, 4000.0, dtype=np.float64)
-        # Documented behavior: returns 0.0 (mean of zeros), no error.
-        assert rv(short_path) == 0.0
-        # And a length-T+2 path also passes silently.
+        with pytest.raises(ValueError, match="path length must be horizon_T \\+ 1"):
+            rv(short_path)
+        # Length 102 (T+2) — must also raise.
         long_path = np.full(102, 4000.0, dtype=np.float64)
-        assert rv(long_path) == 0.0
+        with pytest.raises(ValueError, match="path length must be horizon_T \\+ 1"):
+            rv(long_path)
+        # Length 101 (= T+1) — passes.
+        ok_path = np.full(101, 4000.0, dtype=np.float64)
+        assert rv(ok_path) == 0.0
 
     def test_fx_path_gen_propagates_nan_silently(self) -> None:
         """FXPathGen.__call__ propagates NaN in t to NaN in output.

@@ -74,14 +74,17 @@ class FXPathGen:
 class RealizedVarianceCalc:
     """Realized-variance proxy σ_T (PRIMITIVES.md (7)).
 
-    Implements verbatim::
+    Implements PRIMITIVES.md (7) verbatim::
 
-        σ_T = T⁻¹ · Σ_{t=0}^{T} ((X/Y)_t - mean_X_over_Y)².
+        σ_T ≡ (1/T) · Σ_{t=0}^{T} ((X/Y)_t - mean_X_over_Y)².
 
-    The Callable consumes a path *array* (not an :class:`FXPathGen`
-    instance), so no Callable-tier sibling import is needed. ``params``
-    carries only the integer horizon ``T`` for documentation; the actual
-    sample count is derived from ``len(path)``.
+    Note the (T+1)/T arithmetic: the sum runs over ``t ∈ {0, 1, …, T}``
+    (T+1 terms), but the divisor is ``T`` (NOT ``T+1``). PRIMITIVES (7)
+    is honored literally; the divisor is ``params.horizon_T``.
+
+    The Callable consumes a path *array*. The path length is required to
+    equal ``params.horizon_T + 1`` exactly — mismatch raises
+    ``ValueError`` (cross-check enforced as of CR I-1).
     """
 
     params: RealizedVarianceParams
@@ -99,29 +102,32 @@ class RealizedVarianceCalc:
 
         Args:
             path: 1-D array of FX values ``(X/Y)_t`` for ``t ∈ {0, …, T}``.
+                Length MUST equal ``params.horizon_T + 1``.
 
         Returns:
-            Mean-squared deviation from ``mean_x_over_y`` (PRIMITIVES.md (7)).
+            ``Σ_{t=0}^{T} ((X/Y)_t - mean_X_over_Y)² / T``
+            (PRIMITIVES.md (7) divisor is T, not T+1; honor literally).
 
         Contract:
             Preconditions:
-                - ``path`` must be a non-empty numeric array (empty array
-                  yields ``NaN`` from ``np.mean`` with a runtime warning,
-                  NOT an explicit error — silent wrong-result case).
-                - ``len(path)`` SHOULD equal ``params.horizon_T + 1`` for
-                  the spec §7 horizon contract; this is documentary —
-                  the function uses ``len(path)`` directly without
-                  cross-checking ``params.horizon_T``. Mismatch silently
-                  produces a different sample-count denominator.
+                - ``len(path) == params.horizon_T + 1`` (enforced;
+                  mismatch raises ``ValueError``).
                 - ``path`` should contain finite values; ``NaN``/``inf``
                   propagate (implicit).
 
             Raises:
+                ValueError: if ``len(path) != params.horizon_T + 1``.
                 TypeError: if ``path`` is not subtractable from a float
                     (implicit, from ``path - self.mean_x_over_y``).
         """
+        expected_len = self.params.horizon_T + 1
+        if len(path) != expected_len:
+            raise ValueError(
+                "RealizedVarianceCalc: path length must be horizon_T + 1 ="
+                f" {expected_len}; got {len(path)}"
+            )
         diffs = path - self.mean_x_over_y
-        return float(np.mean(diffs * diffs))
+        return float(np.sum(diffs * diffs) / self.params.horizon_T)
 
 
 def epsilon_from_sigma_T(sigma_T: float, mean_x_over_y: float) -> float:
