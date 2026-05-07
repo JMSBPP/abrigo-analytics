@@ -11,8 +11,15 @@ parameter material consumed by the SAAS-COHORT-1 sampler in ``modules/``.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from typing import Final, Literal, Mapping, TypeAlias
+
+
+def _is_finite_positive(x: float) -> bool:
+    """Return True iff x is a finite (non-inf, non-NaN) strictly-positive float."""
+    return math.isfinite(x) and x > 0.0
 
 # ─── TypeAliases ──────────────────────────────────────────────────────────────
 
@@ -69,12 +76,17 @@ class TierPrior:
     alpha_0: float = DEFAULT_TIER_DIRICHLET_ALPHA
 
     def __post_init__(self) -> None:
+        if not isinstance(self.pi, MappingABC):
+            raise TypeError(
+                f"TierPrior.pi must be a Mapping (got {type(self.pi).__name__})"
+            )
         keys = set(self.pi.keys())
         admissible = set(TIER_IDS)
         if keys != admissible:
             raise ValueError(
                 f"TierPrior.pi must have exactly keys {admissible}; got {keys}"
             )
+        # Bounded-interval check (NaN and ±inf both fail the comparison; rejected as intended).
         for k, v in self.pi.items():
             if not (0.0 < v <= 1.0):
                 raise ValueError(
@@ -85,9 +97,9 @@ class TierPrior:
             raise ValueError(
                 f"TierPrior.pi must sum to 1.0 (got {total!r}, |Δ| > 1e-9)"
             )
-        if self.alpha_0 <= 0.0:
+        if not _is_finite_positive(self.alpha_0):
             raise ValueError(
-                f"TierPrior.alpha_0 = {self.alpha_0} must be > 0"
+                f"TierPrior.alpha_0 = {self.alpha_0} must be a finite float > 0"
             )
 
 
@@ -109,6 +121,11 @@ class TierPricing:
     )
 
     def __post_init__(self) -> None:
+        if not isinstance(self.usd_per_month, MappingABC):
+            raise TypeError(
+                f"TierPricing.usd_per_month must be a Mapping"
+                f" (got {type(self.usd_per_month).__name__})"
+            )
         keys = set(self.usd_per_month.keys())
         admissible = set(TIER_IDS)
         if keys != admissible:
@@ -117,9 +134,10 @@ class TierPricing:
                 f" got {keys}"
             )
         for k, v in self.usd_per_month.items():
-            if v <= 0.0:
+            if not _is_finite_positive(v):
                 raise ValueError(
-                    f"TierPricing.usd_per_month[{k!r}] = {v} must be > 0"
+                    f"TierPricing.usd_per_month[{k!r}] = {v}"
+                    f" must be a finite float > 0"
                 )
 
 

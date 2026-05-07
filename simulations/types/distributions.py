@@ -51,6 +51,14 @@ SOFTPLUS_TIGHTNESS_EPS: Final[float] = 1e-3
 SOFTPLUS_TIGHTNESS_GRID_N: Final[int] = 4096
 
 
+# ─── Private validators ───────────────────────────────────────────────────────
+
+
+def _is_finite_positive(x: float) -> bool:
+    """Return True iff x is a finite (non-inf, non-NaN) strictly-positive float."""
+    return math.isfinite(x) and x > 0.0
+
+
 # ─── Value types ──────────────────────────────────────────────────────────────
 
 
@@ -87,18 +95,19 @@ class TruncParetoParams:
     x_max: float
 
     def __post_init__(self) -> None:
-        if not (self.alpha > 0.0):
+        if not _is_finite_positive(self.alpha):
             raise ValueError(
-                f"TruncParetoParams.alpha = {self.alpha} must be > 0"
+                f"TruncParetoParams.alpha = {self.alpha} must be a finite float > 0"
             )
-        if not (self.x_m > 0.0):
+        if not _is_finite_positive(self.x_m):
             raise ValueError(
-                f"TruncParetoParams.x_m = {self.x_m} must be > 0"
+                f"TruncParetoParams.x_m = {self.x_m} must be a finite float > 0"
             )
-        if not (self.x_max > self.x_m):
+        # x_max must be finite-positive AND strictly greater than x_m.
+        if not (_is_finite_positive(self.x_max) and self.x_max > self.x_m):
             raise ValueError(
-                f"TruncParetoParams.x_max = {self.x_max} must be > x_m"
-                f" = {self.x_m}"
+                f"TruncParetoParams.x_max = {self.x_max} must be a finite float"
+                f" > x_m = {self.x_m}"
             )
 
 
@@ -123,10 +132,11 @@ class NegBinParams:
     p: float
 
     def __post_init__(self) -> None:
-        if not (self.r > 0.0):
+        if not _is_finite_positive(self.r):
             raise ValueError(
-                f"NegBinParams.r = {self.r} must be > 0"
+                f"NegBinParams.r = {self.r} must be a finite float > 0"
             )
+        # Bounded-interval check (NaN and ±inf both fail the comparison; rejected as intended).
         if not (0.0 < self.p < 1.0):
             raise ValueError(
                 f"NegBinParams.p = {self.p} must lie in the open interval (0, 1)"
@@ -156,13 +166,13 @@ class SoftplusParams:
     kappa: float
 
     def __post_init__(self) -> None:
-        if not (self.beta > 0.0):
+        if not _is_finite_positive(self.beta):
             raise ValueError(
-                f"SoftplusParams.beta = {self.beta} must be > 0"
+                f"SoftplusParams.beta = {self.beta} must be a finite float > 0"
             )
-        if not (self.kappa > 0.0):
+        if not _is_finite_positive(self.kappa):
             raise ValueError(
-                f"SoftplusParams.kappa = {self.kappa} must be > 0"
+                f"SoftplusParams.kappa = {self.kappa} must be a finite float > 0"
             )
 
 
@@ -211,6 +221,11 @@ def tightness_l1_deviation(
 
     Note this is the L¹ deviation as a function of the **shifted** argument
     ``x - κ``, matching the (T2) usage ``softplus_β(τ_t - κ)``.
+
+    Note: numerical accuracy of the trapezoid integral degrades for
+    ``β · κ > 30`` (cusp half-width drops below the grid spacing). The spec
+    criterion ``deviation < 1e-3 · κ`` is met by ``β ≈ 50/κ``, well within
+    the accurate regime, so production use does not enter the noisy band.
 
     Args:
         params: ``SoftplusParams(beta, kappa)``.

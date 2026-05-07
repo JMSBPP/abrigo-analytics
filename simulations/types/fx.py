@@ -6,7 +6,8 @@ Covers spec §6 functional-form rows + PRIMITIVES.md §5 / §6:
   spec §3) — ``FXPathParams``;
 - Realized variance ``σ_T = T⁻¹ Σ_{t=0}^T ((X/Y)_t - X̄/Ȳ)²`` (PRIMITIVES (7))
   — ``RealizedVarianceParams`` (just the horizon ``T``);
-- Blended per-token price ``p_t = w_in p_in (1 - h + 0.10 h) + w_out p_out``
+- Blended per-token price
+  ``p_t = w_in · p_in · (1 - h_cache + h_cache · 0.10) + w_out · p_out``
   (spec §5.1) — ``BlendedPriceParams`` (constraint ``w_in + w_out = 1``).
 
 Math pin enforcement (per Phase 1 reconciliation + plan Phase 2 prelude):
@@ -25,8 +26,14 @@ per million tokens.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Final
+
+
+def _is_finite_positive(x: float) -> bool:
+    """Return True iff x is a finite (non-inf, non-NaN) strictly-positive float."""
+    return math.isfinite(x) and x > 0.0
 
 # ─── Module-level constants — spec §5.2 pricing pins ──────────────────────────
 
@@ -85,17 +92,19 @@ class FXPathParams:
     omega: float
 
     def __post_init__(self) -> None:
-        if not (self.mean_x_over_y > 0.0):
+        if not _is_finite_positive(self.mean_x_over_y):
             raise ValueError(
-                f"FXPathParams.mean_x_over_y = {self.mean_x_over_y} must be > 0"
+                f"FXPathParams.mean_x_over_y = {self.mean_x_over_y}"
+                f" must be a finite float > 0"
             )
+        # Bounded-interval check (NaN and ±inf both fail the comparison; rejected as intended).
         if not (0.0 < self.epsilon < 1.0):
             raise ValueError(
                 f"FXPathParams.epsilon = {self.epsilon} must lie in (0, 1)"
             )
-        if not (self.omega > 0.0):
+        if not _is_finite_positive(self.omega):
             raise ValueError(
-                f"FXPathParams.omega = {self.omega} must be > 0"
+                f"FXPathParams.omega = {self.omega} must be a finite float > 0"
             )
 
 
@@ -168,17 +177,18 @@ class BlendedPriceParams:
                 f"BlendedPriceParams: w_in + w_out must equal 1 within 1e-12"
                 f" (got {self.w_in + self.w_out!r})"
             )
+        # Bounded-interval check (NaN and ±inf both fail the comparison; rejected as intended).
         if not (0.0 <= self.h_cache <= 1.0):
             raise ValueError(
                 f"BlendedPriceParams.h_cache = {self.h_cache} must lie in [0, 1]"
             )
-        if not (self.p_in > 0.0):
+        if not _is_finite_positive(self.p_in):
             raise ValueError(
-                f"BlendedPriceParams.p_in = {self.p_in} must be > 0"
+                f"BlendedPriceParams.p_in = {self.p_in} must be a finite float > 0"
             )
-        if not (self.p_out > 0.0):
+        if not _is_finite_positive(self.p_out):
             raise ValueError(
-                f"BlendedPriceParams.p_out = {self.p_out} must be > 0"
+                f"BlendedPriceParams.p_out = {self.p_out} must be a finite float > 0"
             )
 
 

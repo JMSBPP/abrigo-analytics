@@ -19,6 +19,9 @@ that the IO boundary returns to consumers.
 
 from __future__ import annotations
 
+import math
+import re
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from typing import Final, Mapping
 
@@ -26,6 +29,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 from simulations.types.tier import TIER_IDS, TierID
+
+
+def _is_finite_positive(x: float) -> bool:
+    """Return True iff x is a finite (non-inf, non-NaN) strictly-positive float."""
+    return math.isfinite(x) and x > 0.0
+
+
+#: Compiled regex matching exactly 64 lowercase hex characters (sha256 hex form).
+_AUDIT_BLOCK_RE: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
 
 # ─── Module-level constants ───────────────────────────────────────────────────
 
@@ -191,13 +203,18 @@ class ZCapPinned:
     schema_version: str = DEFAULT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if not (self.Z_cop_per_month > 0.0):
+        if not _is_finite_positive(self.Z_cop_per_month):
             raise ValueError(
-                f"ZCapPinned.Z_cop_per_month = {self.Z_cop_per_month} must be > 0"
+                f"ZCapPinned.Z_cop_per_month = {self.Z_cop_per_month}"
+                f" must be a finite float > 0"
             )
-        if not (self.ci_95_lo > 0.0):
+        if not _is_finite_positive(self.ci_95_lo):
             raise ValueError(
-                f"ZCapPinned.ci_95_lo = {self.ci_95_lo} must be > 0"
+                f"ZCapPinned.ci_95_lo = {self.ci_95_lo} must be a finite float > 0"
+            )
+        if not _is_finite_positive(self.ci_95_hi):
+            raise ValueError(
+                f"ZCapPinned.ci_95_hi = {self.ci_95_hi} must be a finite float > 0"
             )
         if not (self.ci_95_lo <= self.Z_cop_per_month <= self.ci_95_hi):
             raise ValueError(
@@ -205,12 +222,15 @@ class ZCapPinned:
                 f" ≤ Z_cop_per_month ({self.Z_cop_per_month})"
                 f" ≤ ci_95_hi ({self.ci_95_hi})"
             )
-        if len(self.audit_block) != 64 or not all(
-            c in "0123456789abcdef" for c in self.audit_block
-        ):
+        if not _AUDIT_BLOCK_RE.fullmatch(self.audit_block):
             raise ValueError(
-                f"ZCapPinned.audit_block must be a 64-char lowercase hex sha256"
-                f" (got len={len(self.audit_block)!r})"
+                f"ZCapPinned.audit_block must be exactly 64 lowercase hex chars;"
+                f" got {self.audit_block!r} (len={len(self.audit_block)})"
+            )
+        if not isinstance(self.tier_mix, MappingABC):
+            raise TypeError(
+                f"ZCapPinned.tier_mix must be a Mapping"
+                f" (got {type(self.tier_mix).__name__})"
             )
         if set(self.tier_mix.keys()) != set(TIER_IDS):
             raise ValueError(
