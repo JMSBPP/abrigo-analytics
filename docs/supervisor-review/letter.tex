@@ -1,0 +1,361 @@
+\input{preamble}
+
+% Override title for the short letter
+\makeatletter
+\renewcommand{\@title}{On-Chain Parametric Cost Insurance for Underserved
+Latin-American Digital Workers \\[0.3em]
+\large Record of Closed Iterations and Request for Methodological Guidance}
+\renewcommand{\@author}{[author block --- fill at composition time]}
+\renewcommand{\@date}{2026-05-06}
+\makeatother
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section*{Purpose}
+
+This letter is the entry-point document for the supervisor's review of the
+analytics workstream. It records the five iterations that have been closed
+or parked to date, states the proposition motivating the iteration design,
+and asks five methodological questions in priority order whose answers we
+expect to bind the next iteration's pre-registration. A 37-page technical
+companion at \texttt{docs/supervisor-review/} \texttt{2026-05-06-empirical-record-letter.pdf}
+provides the per-iteration estimation detail, the verdict-mapping decision
+tree, and a sample artifact for any question the supervisor wishes to
+drill into. The implementation venue is on-chain (Panoptic on Uniswap v4)
+but the empirical work being reviewed here is off-chain econometrics; the
+on-chain primer and the full methodology are deferred to the companion.
+
+\section{The empirical question and the iteration roster}
+
+The project's economic motivation is best stated as a financial-intermediation
+gap for an identifiable underserved population rather than as an abstract
+claim about aggregate inequality. The population the iteration roster
+currently centres on is Latin-American digital workers paid in local
+currency (Colombian pesos, in the dev-AI Stage-1 iteration) who carry a
+recurring USD-denominated cost burden through their professional inputs ---
+subscription AI services, application programming interface usage fees,
+cloud compute, and adjacent software-as-a-service spend. These workers are
+exposed to FX-pass-through cost shocks on their monthly USD spend that no
+Colombian retail-bank product currently hedges. Conventional FX-derivative
+venues are inaccessible: minimum notional sizes, counterparty credit
+standing, and intermediating-broker requirements are calibrated for
+corporate treasury clients, not for an individual digital worker carrying a
+hundred-to-low-thousands USD monthly cost line. The intermediation gap is
+the operative phenomenon; aggregate distributional inequality is, under
+this reading, the cumulative consequence of many such uninsured
+intermediation gaps rather than the framing primitive.
+
+The wage-to-capital boundary remains a documented empirical phenomenon and
+is preserved as the analytical object of the iteration roster.
+\citet{mendieta_munoz_2017} documents premature deindustrialization in
+Colombia and the corresponding reallocation of labor away from
+productivity-rising sectors; \citet{rodrik_2016} establishes the
+cross-country pattern; \citet{mcmillan_rodrik_2011} formalises the
+structural-change-and-productivity decomposition that underlies the
+pattern. Together these references establish that for a substantial subset
+of developing-economy populations, the path from wage income into
+productive-capital ownership has become structurally narrower over the
+past three decades, and that the populations on the wrong side of that
+narrowing are exactly those that an absent intermediation layer fails to
+insure. The project's empirical question is which macro risks \(X\) are
+quantitatively responsible for the recurring uninsured cost shocks that
+keep specific target populations on the wrong side of this boundary.
+
+The unit of work is a triple \((Y, M, X)\). \(Y\) is the welfare-relevant
+outcome variable on which a target population's exposure to the
+wage-to-capital transition is measured (operationalised per population:
+the Section-J information-and-communication employment share for young
+Colombian workers, in the dev-AI Stage-1 iteration). \(X\) is the macro
+risk hypothesised to block the transition for that population, identified
+empirically and entered as a lag-distributed right-hand-side variable
+under a pre-pinned lag structure. \(M\) is the settlement geometry of the
+candidate hedging instrument on the on-chain substrate; it is declared
+out of scope for empirical validation and deferred to Stage~2 of each
+iteration. The validation strategy estimates a composite slope
+\(\hat{\beta}_{\mathrm{composite}}\) of \(Y\) on lagged \(X\), with sign
+expectation, lag structure, primary specification, and verdict thresholds
+pre-registered before the panel is touched. The methodology is a
+pre-registered composite-\(\beta\) OLS+HAC validation; full detail in the
+companion.
+
+As of the date of this letter, the project has run five iterations and
+\emph{all five are closed or parked}: no Stage-1 work is in progress.
+This letter therefore presents a complete log rather than a snapshot.
+
+\section{Five iterations: a compact record}
+
+\begin{table}[!htbp]
+\centering
+\small
+\begin{tabular}{@{}p{2.6cm}p{3.4cm}p{1.7cm}p{3.0cm}p{3.4cm}@{}}
+\toprule
+\textbf{Population} & \textbf{(Y, X) pair} & \textbf{Verdict} &
+\textbf{Headline number} & \textbf{One-line caveat} \\
+\midrule
+Colombian young workers (14--28), broad services & Sections G--T youth
+share (logit) on \(\log(\mathrm{COP/USD})_{t-k}\), \(k \in \{6,9,12\}\)
+& PASS (2026-04-28) & \(\hat{\beta}_{\mathrm{composite}} = +0.13670985\);
+HAC SE \(0.0247\); \(p \approx 1.46 \times 10^{-8}\); \(N = 134\) &
+Hedges correlation, not causal channel; effect concentrated at
+six-month lag; sub-aggregate may be Section M, not Section J (see below).
+\\ \addlinespace
+Colombian young workers (14--28), Section J ICT (dev-AI Stage-1) &
+Section-J youth share (logit) on \(\log(\mathrm{COP/USD})_{t-k}\),
+\(k \in \{6,9,12\}\) & FAIL, sign-flipped (2026-05-06) &
+\(\hat{\beta}_{\mathrm{composite}} = -0.146\); HAC SE \(0.0847\);
+\(t = -1.726\); \(N = 134\) &
+High-information FAIL: pre-registered \(H_1: \beta > 0\) rejected at
+the negative sign. Pre-specified Section-M sensitivity arm returned
+\(\hat{\beta} = +0.455\), \(p = 1.13 \times 10^{-6}\) (not
+pre-registered as primary; candidate next iteration). \\ \addlinespace
+Colombian corporates and remittance recipients & Weekly TRM realised
+volatility on signed AR(1) CPI surprise & FAIL on weekly primary
+(2026-04-19) &
+\(\hat{\beta}_{\mathrm{CPI}} = -0.000685\); HAC(4) 90\,\% interval
+\([-0.0036, +0.0023]\); \(N = 947\) weekly &
+A1 monthly cadence and A4 release-day-excluded sensitivities both
+pre-registered, both with \(90\%\) intervals strictly above zero;
+A4 lower bound \(0.0005\) is small in absolute magnitude.
+T1 exogeneity rejected (\(F = 15.12\)): predictive, not structural. \\
+\addlinespace
+Colombian household remittance recipients & Weekly TRM realised vol on
+candidate on-chain remittance-flow proxy (cCOP/COPm) & EXIT\_NON\_REMITTANCE
+(2026-04-24) &
+No point estimates; kill-criterion exit at panel-construction stage &
+0/30 peak-day flows fingerprinted as remittance; \(\sim 87\%\) of surveyed
+flow decomposed into TRM arbitrage, treasury roundtripping, campaigns,
+and bot activity. Kill criterion k1 fired (intent non-remittance dominant).
+\\ \addlinespace
+LATAM AI-policy-shock-exposed (downstream) & Bittensor SN18 (Cortex.t)
+event-study apparatus on policy-event dates & PARKED (2026-04-27) &
+None: apparatus complete, data ingest deferred &
+Slow-lane apparatus parked to preserve intellectual capital after pivot
+to fast-lane simple-\(\beta\) track (Pair~D, dev-AI Stage-1).
+Re-activation conditions documented in parking memory. \\
+\bottomrule
+\end{tabular}
+\caption{The five iterations. All numerical claims trace to \S6 of the
+companion document. Pair~D, dev-AI Stage-1, and FX-vol-CPI-surprise are
+econometric estimations; Phase-A.0 remittance and P1 Bittensor SN18 are
+non-estimation closures. \(N_{\min} = 75\), \(\mathrm{POWER}_{\min} =
+0.80\), \(\mathrm{MDES}_{\mathrm{SD}} = 0.40\) are within-iteration
+pre-registration anti-fishing invariants applied uniformly across
+the roster.}
+\end{table}
+
+The dev-AI Stage-1 Section-M sensitivity arm result deserves a sentence
+of cross-iteration framing rather than only a per-row caveat. Read
+jointly with the Pair~D PASS, the pattern --- Section J narrow-ICT
+sign-flipped negative, Section M
+(professional/scientific/technical/administrative services) strongly
+positive on the same FX-lag panel and same monthly cadence --- suggests
+that the Pair~D PASS on the broad Section-G--T cut was carried by the
+Section-M-style sub-aggregate rather than by Section-J ICT-narrow tech
+offshoring. The Pair~D headline numbers stand verbatim under the
+original spec; what has sharpened is the interpretation of the operative
+sub-aggregate. The compositional reframe is recorded in the companion
+(\S6.2) and is one of the inputs to the cross-iteration multiple-comparison
+question in \S\ref{sec:l5}.
+
+The cross-iteration multiple-comparison structure is itself an open
+methodological concern. Each iteration was pre-registered individually;
+the project-level decisions that produced the roster (which \((Y, X)\)
+pairs to spec-pin, which to drop after EXIT, which to deepen after PASS)
+are not bound by an external pre-registration rule. The numerical mass at
+the two tails across the five tests is asymmetric in a way that matters
+for any FWER-style correction: Pair~D's one-sided
+\(p \approx 1.46 \times 10^{-8}\) is overwhelmingly significant against
+any reasonable \citet{benjaminihochberg1995}- or
+\citet{romanowolf2005}-style correction across five iteration-level
+tests; the FX-vol-CPI sensitivity arms (A4 lower bound \(0.0005\)) are
+not. The full treatment is the subject of \S\ref{sec:l5}.
+
+\section{The hedge-target proposition}
+
+\begin{lemma}[Inequality-Differential Hedge Target]\label{lem:abrigo}
+Let \(R_a(t)\) denote the return process of an asset basket representative
+of capital-holding households' wealth, and let \(R_c(t)\) denote the
+return process of a consumption basket representative of working-class
+households' purchasing power. Define the inequality-differential process
+\[
+  Y_{\mathrm{inequality}}(t) \;=\; R_a(t) - R_c(t).
+\]
+A hedging instrument settled on \(Y_{\mathrm{inequality}}(t)\) is
+welfare-relevant for working-class wealth in a way that no instrument
+settled on \(R_a(t)\) alone or \(R_c(t)\) alone is, because the
+differential directly indexes the relative-wealth gap that determines the
+working-class household's purchasing-power decline relative to
+capital-holding households.
+\end{lemma}
+
+Lemma~\ref{lem:abrigo} is stated as a proposition motivating the
+iteration design, not as a proven theorem; the calibration of the
+joint-leg structure remains Stage-2 work and is the subject of
+\S\ref{sec:l3} below. The lemma is read here under the
+parametric-cost-insurance underwriting standard
+\citep{carter_etal_2017,mahul_stutley_2010,clarke_2016} rather than under
+generic option-pricing standards: the working-class household holds the
+policy and the differential serves as the welfare-relevant index variable
+on which payouts settle.
+
+\section{Five methodological questions}\label{sec:questions}
+
+\subsection{Identification strategy}\label{sec:l1}
+
+The Stage-1 specification is OLS on lagged log-FX with HAC inference.
+\(\hat{\beta}_{\mathrm{composite}}\) is a predictive-regression coefficient
+and we do not treat it as an impulse-response. The Pair~D closure
+explicitly hedges the correlation rather than asserting a BPO causal
+channel; the FX-vol-CPI iteration's T1 exogeneity test rejected at
+\(F = 15.12\), confirming that exercise is also predictive rather than
+structural. \emph{Question.} Should subsequent iterations move from a
+predictive-regression posture to a causally-identified one --- and if so,
+what identification standard does the supervisor require before declaring
+a Stage-1 PASS sufficient for Stage-2 dispatch? Candidate strategies under
+consideration are (i) instrumental variables, with central-bank policy-rate
+decisions, oil-price shocks, or US-side AI-API price changes as candidate
+instruments \citep[per][Chs.~6, 12]{hansen2022}; (ii) event-study
+formulations leveraging the apparatus already developed for Phase-A.0
+remittance and parked P1 Bittensor SN18; (iii) structural VAR per
+\citet{kilian_lutkepohl_2017}, for which we do not currently have a
+defensible identification scheme. \emph{Action we will take.} We will
+adopt the supervisor's preferred standard as the binding identification
+specification for the next iteration's pre-registration.
+
+\subsection{Convex-payoff sufficiency under the
+insurance-underwriting standard}\label{sec:l2}
+
+Stage-1 estimates a mean slope. Mean-\(\hat{\beta}\) identification is
+necessary but not sufficient for pricing payoffs that transmit through the
+upper or lower tail of the conditional distribution rather than through
+the conditional mean: this is the basis-risk question of
+\citet{clarke_2016}. \emph{Question.} What empirical evidence does the
+supervisor require before this \(\hat{\beta}\)-validation is sufficient to
+underwrite a parametric cost-insurance product on the validated \(X\)?
+Specific sub-questions: (i) is variance-amplification evidence at
+\(X\)-shock dates sufficient (e.g.\ a GARCH-X specification with the
+validated \(X\) entering the conditional-variance equation); (ii) is full
+quantile-regression coverage of \(Y \mid X_{t-k}\) required so that the
+basis-risk envelope of \citet{clarke_2016} is directly observable; (iii)
+is extreme-value-theory peaks-over-threshold tail-index estimation
+\citep{embrechts_kluppelberg_mikosch_1997} required to bound the
+catastrophic-loss probability that
+\citet{carter_etal_2017} and \citet{mahul_stutley_2010} treat as a
+first-order underwriting input; (iv) should the dynamic
+conditional-correlation MGARCH of \citet{engle_2002} be the standard
+joint-distribution model for the differential's two legs. \emph{Action we
+will take.} We will adopt the supervisor's chosen subset as the Stage-1
+exit criterion for Stage-2 dispatch.
+
+\subsection{Multi-Y differential calibration}\label{sec:l3}
+
+Lemma~\ref{lem:abrigo}'s differential \(Y_{\mathrm{inequality}} = R_a - R_c\)
+requires constructing each leg as a panel of observable component
+variables. Closed iterations estimate single-\(Y\), single-\(X\)
+responses; the joint-leg structure has not been calibrated and the
+within-iteration thresholds were derived under a single-\(Y\) assumption.
+\emph{Question.} How should the joint-leg structure be calibrated?
+Specifically: (i) joint-leg correlation --- constant-correlation GARCH,
+the dynamic conditional-correlation specification of \citet{engle_2002},
+or a regime-switching extension; (ii) within-leg weighting ---
+fixed welfare-anchored weights, principal-components weights, or
+panel-estimated weights; (iii) regime-switching ---
+Markov-switching mean-and-variance to accommodate the documented regime mix
+(post-2014 oil collapse, COVID, Fed-tightening) noted in the Pair~D
+closure, or regime indicators as exogenous covariates only; (iv) familywise
+error under the multi-\(Y\) panel --- Bonferroni-Holm versus
+false-discovery-rate, given that within-leg components are expected to be
+highly pairwise correlated and Bonferroni is therefore likely conservative.
+\emph{Action we will take.} We will adopt the supervisor's chosen joint
+specification as the prerequisite for promoting Lemma~\ref{lem:abrigo}
+from a motivating proposition to a calibrated estimation target.
+
+\subsection{Anti-fishing protocol defensibility}\label{sec:l4}
+
+The within-iteration anti-fishing invariants are
+\(N_{\min} = 75\), \(\mathrm{POWER}_{\min} = 0.80\), and
+\(\mathrm{MDES}_{\mathrm{SD}} = 0.40\) standard-deviation units of \(Y\).
+These three thresholds were inherited from the Phase-A.0 Rev-5.3.1
+specification and have not been re-derived under each subsequent
+iteration's actual \(N\) and observed first-order autocorrelation
+structure of the residuals. \emph{Question.} Are these three thresholds
+defensible from the supervisor's standpoint, and what additional
+pre-registration discipline does the supervisor require? Specifically:
+(i) should the project register pre-analysis plans in a public registry
+in the spirit of \citet{olken_2015} on pre-analysis plans in development
+economics and \citet{christensen_miguel_2018} on transparency and
+reproducibility in economics; (ii) should the project adopt the AEA
+RCT-registry analogue for observational pre-registration (current
+discipline pins spec-text by sha256 hash inside the project repository,
+auditable internally but not externally registered); (iii) should the
+three thresholds be re-derived per iteration, taking each iteration's
+observed \(N\) and HAC-corrected effective sample size as inputs to the
+power calculation \citep[in the spirit of][\S6.18]{hansen2022}.
+\emph{Action we will take.} We will adopt the supervisor's preferred
+pre-registration infrastructure for subsequent iterations, including
+whether the inherited threshold triple should remain in force or be
+replaced.
+
+\subsection{Cross-iteration FWER and iteration-selection
+bias}\label{sec:l5}
+
+The five-iteration roster is closed; the cross-iteration structure is not
+pre-registered. The mass at the two tails of the iteration-result
+distribution is asymmetric: Pair~D's one-sided
+\(p \approx 1.46 \times 10^{-8}\) survives any reasonable Bonferroni
+correction across five iteration-level tests; the FX-vol-CPI-surprise
+sensitivity arms (A1 monthly: \(90\%\) interval \([+0.0057, +0.0246]\);
+A4 release-day-excluded: \([+0.0005, +0.0062]\)) are differentially
+robust to such a correction; the dev-AI Stage-1 primary
+delivered \(\hat{\beta} = -0.146\) at \(t = -1.726\), recorded as a
+\emph{sign-flipped} FAIL with the realised sign at the direction of the
+alternative rather than merely insignificant. \emph{Question.} What FWER
+or false-discovery-rate correction regime should be applied across the
+iteration history given the directional asymmetry, and how should
+sensitivity-positive findings such as the FX-vol A1 and A4 results be
+weighed under such a correction? In particular, should a sign-flipped
+FAIL at conventional significance be counted symmetrically with the PASS
+at the positive tail, or should the directional pre-registration on each
+iteration shift the mass allocation? A second sub-question is
+methodologically prior: iteration selection itself --- which \((Y, X)\)
+pair to specify, which to drop, which to deepen --- is a multiple-testing
+structure that within-iteration pre-registration does not address.
+Candidate mitigations include pre-registered iteration-budget caps
+committed at project initiation, an iteration-level alpha-spending
+function in the spirit of group sequential designs, and pre-registered
+iteration-allocation rules that do not depend on prior verdicts. A third,
+sharpened sub-question: is the Pair~D PASS one test, or one test
+conditional on a sub-aggregate selection? The dev-AI Stage-1 Section-M
+sensitivity arm's positive estimate now suggests that the sub-aggregate
+concentrating the broad-services signal is Section M rather than Section
+J; if the Pair~D PASS is read with this in mind, the multiple-comparison
+ledger must additionally account for an implicit search across
+sub-aggregates of the broad-services panel
+\citep[the selection-on-observables frame of][is one candidate
+reference]{heckman_1979}. \emph{Action we will take.} We will adopt the
+supervisor's preferred FWER/FDR regime, the supervisor's preferred
+iteration-selection mitigation, and the supervisor's reading of the
+Pair~D-conditional-on-sub-aggregate question as binding constraints on
+the next iteration's design.
+
+\section*{Closing and pointer to the companion}
+
+Five iterations are closed or parked; no Stage-1 work is in progress.
+The next iteration's pre-registration is held open pending the
+supervisor's response to the five questions above. The 37-page technical
+companion at
+\texttt{docs/supervisor-review/2026-05-06-empirical-record-letter.pdf}
+contains the full per-iteration record (companion \S6, nine-field schema
+per iteration), the on-chain settlement primer (\S4), the methodology in
+full (\S5, including the verdict-mapping decision tree), and four
+appendices: Glossary (A), Cited Literature (B), Pair~D Verdict Header
+sample artifact (C), and Power-Calculation Table (D). The supervisor is
+invited to drill into any iteration's per-iteration block in companion
+\S6 for the specification chain, the sha256 pre-registration governance,
+and the independent-review caveats inherited from the closure memoranda.
+
+\bibliography{refs}
+
+\end{document}
