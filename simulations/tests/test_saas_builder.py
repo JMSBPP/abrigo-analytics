@@ -21,6 +21,7 @@ threshold drift is a Phase-4 BLOCK (see plan §4.1 Reality Checker brief).
 
 from __future__ import annotations
 
+import json
 import math
 import warnings
 from pathlib import Path
@@ -779,14 +780,8 @@ class TestMutationKillers:
         # PyMC stores bounds on the RV's owner.inputs for TruncatedNormal.
         for rv in t1_model.unobserved_RVs:
             if rv.name == "alpha_pareto":
-                # The truncated dist nodes carry lower/upper as inputs.
-                # Use logp evaluation at a forbidden point to verify.
-                logp_fn = t1_model.compile_logp(vars=[rv], sum=False)
-                # Find a feasible initial point
-                init = t1_model.initial_point()
-                # Evaluate logp at α = 1.0 (forbidden — below floor 1.5).
-                # We can do this by patching the init point.
-                # Easier verification: query the RV's owner inputs.
+                # The truncated dist nodes carry lower/upper as symbolic
+                # inputs on rv.owner.inputs; verify 1.5 is among them.
                 inputs = rv.owner.inputs
                 # The lower-bound input is identifiable by being the smallest
                 # finite scalar input. Concretely, search for 1.5 in the
@@ -939,6 +934,66 @@ class TestMutationKillers:
                 prior_idata=prior,
                 month=0,
             )
+
+
+class TestEmitterCoverage:
+    """Coverage tests for emit.py helpers + happy-path orchestration."""
+
+    def test_build_cohort_prior_rows_covers_all_params(
+        self, tmp_path: Path,
+    ) -> None:
+        """_build_cohort_prior_rows emits 5 percentiles × 4 params + 3
+        Dirichlet rows + 1 active-days row = 24 rows."""
+        post, prior, _ = _build_minimal_idata_for_emit()
+        priors = CohortPriors()
+        emitter = CohortEmitter(base_dir=tmp_path)
+        rows = emitter._build_cohort_prior_rows(
+            priors=priors, prior_idata=prior,
+        )
+        assert len(rows) == 5 * 4 + 3 + 1
+        # All rows have the spec source tag.
+        for row in rows:
+            assert row["source"] == "spec-v1.1.1-§5.1-§5.2"
+            assert row["schema_version"] == "v1.0"
+
+    def test_full_emit_happy_path(self, tmp_path: Path) -> None:
+        """End-to-end: build T1 model, sample tiny posterior, emit, read back.
+
+        Smoke-level integration test. Bypasses the §8(8) sim-count floor by
+        injecting a hand-crafted clean posterior idata + prior idata that
+        pass the gate. Uses the real T1ModelFactory model for
+        pm.sample_posterior_predictive resolution.
+        """
+        # Real model.
+        priors = CohortPriors()
+        factory = T1ModelFactory(priors=priors)
+        model = factory()
+
+        # Build clean idata that passes the gate (n_chains=4, n_draws=4000).
+        post, prior, _ = _build_minimal_idata_for_emit()
+
+        # Custom emitter with the real model.
+        emitter = CohortEmitter(base_dir=tmp_path)
+        result = emitter(
+            priors=priors,
+            model=model,
+            posterior_idata=post,
+            prior_idata=prior,
+            month=4,
+        )
+        # Verify result shape.
+        assert result["verdict"].passed is True
+        assert result["audit_path"].exists()
+        assert result["synthetic_tau_path"].exists()
+        assert result["cohort_prior_path"].exists()
+        assert isinstance(result["audit_block"], str)
+        assert len(result["audit_block"]) == 64  # sha256 hex
+
+        # Verify _AUDIT.json sidecar contents.
+        audit = json.loads(result["audit_path"].read_text())
+        assert audit["audit_block"] == result["audit_block"]
+        assert audit["month"] == 4
+        assert "verdict" in audit
 
 
 class TestPreMortemRegressions:

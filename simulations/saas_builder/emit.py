@@ -294,9 +294,13 @@ class CohortEmitter:
         writer_prior = CohortPriorWriter(base_dir=self.base_dir)
         cohort_prior_path = writer_prior(prior_rows)
 
-        # 5) Audit block sidecar.
+        # 5) Audit block sidecar. Hash the cohort_prior parquet file plus
+        # every parquet leaf under the synthetic_tau Hive tree (the
+        # synthetic_tau_path is a directory; compute_audit_block requires
+        # regular files only).
+        synthetic_tau_files = sorted(synthetic_tau_path.rglob("*.parquet"))
         audit_block = compute_audit_block(
-            [synthetic_tau_path, cohort_prior_path]
+            [cohort_prior_path, *synthetic_tau_files]
         )
         audit_path = self.base_dir / "_AUDIT.json"
         audit_payload: dict[str, object] = {
