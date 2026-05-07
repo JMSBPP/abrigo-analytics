@@ -48,3 +48,7 @@ mutants/
 .mutmut-cache/
 .hypothesis/
 .coverage
+
+# SAAS-COHORT-1 emission outputs (Hive-partitioned + JSON sidecar)
+simulations/saas_builder/data/
+
