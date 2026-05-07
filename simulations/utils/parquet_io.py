@@ -164,8 +164,10 @@ class CohortPriorWriter:
     cannot be cast (this is the dtype-mismatch detection).
     """
 
+    _base_dir: Path
+
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self._base_dir: Path = (
+        self._base_dir = (
             Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
@@ -186,8 +188,10 @@ class CohortPriorWriter:
 class CohortPriorReader:
     """Read ``cohort_prior.parquet`` (M4); validate the M4 column set."""
 
+    _base_dir: Path
+
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self._base_dir: Path = (
+        self._base_dir = (
             Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
@@ -232,8 +236,10 @@ class SyntheticTauWriter:
     dtype-mismatch detection).
     """
 
+    _base_dir: Path
+
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self._base_dir: Path = (
+        self._base_dir = (
             Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")
@@ -264,8 +270,10 @@ class SyntheticTauReader:
     dicts so the returned ``SyntheticTauRow`` list is fully populated.
     """
 
+    _base_dir: Path
+
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self._base_dir: Path = (
+        self._base_dir = (
             Path(base_dir)
             if base_dir is not None
             else Path("simulations/saas_builder/data")

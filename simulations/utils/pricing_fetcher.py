@@ -42,8 +42,10 @@ class StaticPricingFetcher:
     construction-time UTC timestamp.
     """
 
+    _fetched_at_utc: str
+
     def __init__(self, fetched_at_utc: str | None = None) -> None:
-        self._fetched_at_utc: str = (
+        self._fetched_at_utc = (
             fetched_at_utc
             if fetched_at_utc is not None
             else datetime.now(timezone.utc).isoformat(timespec="seconds")
