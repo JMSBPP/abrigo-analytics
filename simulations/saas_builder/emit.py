@@ -27,6 +27,7 @@ by the writer per ``SYNTHETIC_TAU_PARTITION_COLS``.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,13 +73,21 @@ _PRIOR_SOURCE_TAG: str = "spec-v1.1.1-§5.1-§5.2"
 
 #: Names of model.py parameters to emit cohort priors for. The TruncPareto
 #: ``alpha_pareto`` is renamed to ``alpha`` at emission time so its column
-#: name matches the synthetic_tau_t schema.
+#: name matches the synthetic_tau_t schema (see _PARAM_NAME_RENAME_MAP).
 _PRIOR_PARAM_EMISSION_NAMES: tuple[str, ...] = (
     "mu",
     "phi",
     "alpha_pareto",
     "x_m",
 )
+
+#: Cohort-prior `param` column rename map: PyMC RV name → emission name
+#: (per Phase-5 Code-Reviewer N-2). COHORT-2 readers filter by `alpha`,
+#: not `alpha_pareto`, so we emit the spec §10 / synthetic_tau_t-aligned
+#: column label.
+_PARAM_NAME_RENAME_MAP: Mapping[str, str] = {
+    "alpha_pareto": "alpha",
+}
 
 
 # ─── Emission summary TypedDict ───────────────────────────────────────────────
@@ -418,13 +427,14 @@ class CohortEmitter:
             finite = samples[np.isfinite(samples)]
             if finite.size == 0:
                 continue
+            emission_name = _PARAM_NAME_RENAME_MAP.get(param, param)
             for pct_str, q in zip(
                 COHORT_PRIOR_PERCENTILES, _COHORT_PRIOR_QUANTILES
             ):
                 value = float(np.quantile(finite, q))
                 rows.append(
                     cohort_prior_row(
-                        param=param,
+                        param=emission_name,
                         percentile=pct_str,
                         value=value,
                         source=_PRIOR_SOURCE_TAG,

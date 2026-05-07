@@ -116,6 +116,7 @@ abrigo-analytics/
 │   ├── types/             # Value tier — frozen-dataclass parameter containers + Protocols
 │   ├── modules/           # Callable tier — frozen-dc + __call__ stateless transforms
 │   ├── utils/             # IO Boundary tier — class-with-__init__; mutable state lives ONLY here
+│   ├── saas_builder/      # COHORT-1: T1 PyMC posterior + emission (priors/model/diagnostics/emit)
 │   └── tests/             # pytest + Hypothesis strategies + math-pin verification
 ├── docs/specs/            # 14 specs (econ/analytics relevant)
 ├── docs/plans/            # 11 implementation plans (SIM-INFRA-0 added)
