@@ -46,11 +46,7 @@ from simulations.saas_builder.diagnostics import (
     DiagnosticVerdict,
     PosteriorDiagnostic,
 )
-from simulations.saas_builder.emit import (
-    COHORT_PRIOR_PERCENTILES,
-    CohortEmitter,
-    run_posterior_predictive,
-)
+from simulations.saas_builder.emit import CohortEmitter
 from simulations.saas_builder.model import (
     M3_BLENDED_PRICE_ABS_TOL,
     M3_SONNET_BLENDED_PRICE_EXPECTED,
@@ -62,10 +58,8 @@ from simulations.saas_builder.priors import (
     PHI_TARGET_MEAN,
     NEGBIN_OVERDISPERSION_RATIO_TARGET,
     CohortPriors,
-    NegBinTurnsPrior,
     TierDirichletPrior,
     TruncParetoAlphaPrior,
-    TruncParetoXmPrior,
     negbin_mu_phi_to_r_p,
 )
 from simulations.types.distributions import (
@@ -289,10 +283,10 @@ def _make_synthetic_idata(
     rng = np.random.default_rng(seed)
     posterior_sigma = 1.0 + ci_inflate
     prior_sigma = 5.0
-    monitored = ["mu", "phi", "alpha_pareto", "x_m"]
-    post_data = {}
-    prior_data = {}
-    for name in monitored:
+    monitored_scalar: tuple[str, ...] = ("mu", "phi", "alpha_pareto", "x_m")
+    post_data: dict[str, np.ndarray] = {}
+    prior_data: dict[str, np.ndarray] = {}
+    for name in monitored_scalar:
         # Posterior: rhat_inflate adds a per-chain mean shift to chain-0.
         chain_means = np.zeros(n_chains)
         if rhat_inflate > 0.0:
@@ -440,8 +434,7 @@ def _build_minimal_idata_for_emit(
     q_t_cop with non-zero within-row variance.
     """
     rng = np.random.default_rng(seed)
-    monitored = ["mu", "phi", "alpha_pareto", "x_m"]
-    post_data = {
+    post_data: dict[str, np.ndarray] = {
         "mu": rng.lognormal(mean=math.log(80.0), sigma=0.1,
                             size=(n_chains, n_draws)),
         "phi": rng.normal(loc=60.0, scale=5.0, size=(n_chains, n_draws)),
@@ -451,7 +444,9 @@ def _build_minimal_idata_for_emit(
         "pi": rng.dirichlet(np.array(DIRICHLET_ALPHA_VECTOR),
                             size=(n_chains, n_draws)),
     }
-    prior_data = {k: v[:1] * 1.5 for k, v in post_data.items() if k != "tier_idx"}
+    prior_data: dict[str, np.ndarray] = {
+        k: v[:1] * 1.5 for k, v in post_data.items() if k != "tier_idx"
+    }
     prior_data["tier_idx"] = post_data["tier_idx"][:1]
 
     diverging = np.zeros((n_chains, n_draws), dtype=bool)
@@ -534,7 +529,6 @@ class TestEmitterEndToEnd:
         # Bypass pm.sample_posterior_predictive by injecting our pp idata
         # via monkey-patching is complex — instead, build a minimal pm.Model
         # context and short-circuit with a wrapper.
-        priors = CohortPriors()
         emitter = CohortEmitter(base_dir=tmp_path)
         # Skip the model-driven posterior_predictive call by overriding
         # the helper. We'll instead inspect emitter._build_synthetic_tau_rows

@@ -30,13 +30,17 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TypedDict
 
 import arviz as az
 import numpy as np
 import pymc as pm
 
 from simulations.saas_builder._errors import DiagnosticGateError
-from simulations.saas_builder.diagnostics import PosteriorDiagnostic
+from simulations.saas_builder.diagnostics import (
+    DiagnosticVerdict,
+    PosteriorDiagnostic,
+)
 from simulations.saas_builder.priors import (
     CohortPriors,
     negbin_mu_phi_to_r_p,
@@ -46,7 +50,9 @@ from simulations.types.posterior import DEFAULT_SCHEMA_VERSION
 from simulations.types.tier import TIER_IDS, TierID
 from simulations.utils.audit_block import compute_audit_block
 from simulations.utils.parquet_io import (
+    CohortPriorRow,
     CohortPriorWriter,
+    SyntheticTauRow,
     SyntheticTauWriter,
     cohort_prior_row,
     synthetic_tau_row,
@@ -73,6 +79,25 @@ _PRIOR_PARAM_EMISSION_NAMES: tuple[str, ...] = (
     "alpha_pareto",
     "x_m",
 )
+
+
+# ─── Emission summary TypedDict ───────────────────────────────────────────────
+
+
+class EmissionSummary(TypedDict):
+    """Return shape of :meth:`CohortEmitter.__call__`.
+
+    Pinned at the IO Boundary (consumed by callers as a documentation
+    surface for what an emission produced). NOT a Pydantic model — this
+    structure does not cross a system boundary requiring validation.
+    """
+
+    verdict: "DiagnosticVerdict"
+    synthetic_tau_path: Path
+    cohort_prior_path: Path
+    audit_path: Path
+    audit_block: str
+    n_rows_synthetic: int
 
 
 # ─── Posterior-predictive driver ──────────────────────────────────────────────
@@ -163,7 +188,7 @@ class CohortEmitter:
         month: int,
         tier_assignments: np.ndarray | None = None,
         random_seed: int | None = 42,
-    ) -> dict[str, object]:
+    ) -> EmissionSummary:
         """Run the gate, posterior-predictive, and parquet emission.
 
         Args:
@@ -253,14 +278,14 @@ class CohortEmitter:
         }
         audit_path.write_text(json.dumps(audit_payload, indent=2))
 
-        return {
-            "verdict": verdict,
-            "synthetic_tau_path": synthetic_tau_path,
-            "cohort_prior_path": cohort_prior_path,
-            "audit_path": audit_path,
-            "audit_block": audit_block,
-            "n_rows_synthetic": len(rows),
-        }
+        return EmissionSummary(
+            verdict=verdict,
+            synthetic_tau_path=synthetic_tau_path,
+            cohort_prior_path=cohort_prior_path,
+            audit_path=audit_path,
+            audit_block=audit_block,
+            n_rows_synthetic=len(rows),
+        )
 
     # ─── Private builders ────────────────────────────────────────────────
 
@@ -271,7 +296,7 @@ class CohortEmitter:
         pp_idata: az.InferenceData,
         month: int,
         tier_assignments: np.ndarray | None,
-    ) -> list:
+    ) -> list[SyntheticTauRow]:
         """Construct the ``SyntheticTauRow`` list for one month emission.
 
         Pulls posterior parameter draws (mu, phi, alpha_pareto, x_m) and
@@ -306,7 +331,7 @@ class CohortEmitter:
                     f" must match flattened posterior rows {n_rows}"
                 )
 
-        rows = []
+        rows: list[SyntheticTauRow] = []
         for sim_id in range(n_rows):
             mu_v = float(mu_arr[sim_id])
             phi_v = float(phi_arr[sim_id])
@@ -334,11 +359,11 @@ class CohortEmitter:
         *,
         priors: CohortPriors,
         prior_idata: az.InferenceData,
-    ) -> list:
+    ) -> list[CohortPriorRow]:
         """Construct ``CohortPriorRow`` list — five percentiles per param."""
         prior = prior_idata["prior"]
         fetched_at = datetime.now(timezone.utc).isoformat()
-        rows = []
+        rows: list[CohortPriorRow] = []
         for param in _PRIOR_PARAM_EMISSION_NAMES:
             if param not in prior:
                 # Defensive: skip params absent from the prior idata
@@ -389,5 +414,6 @@ class CohortEmitter:
 __all__ = [
     "COHORT_PRIOR_PERCENTILES",
     "CohortEmitter",
+    "EmissionSummary",
     "run_posterior_predictive",
 ]
