@@ -174,6 +174,25 @@ class CohortPriorWriter:
         )
 
     def __call__(self, rows: list[CohortPriorRow]) -> Path:
+        """Write rows as ``cohort_prior.parquet`` and return the output path.
+
+        Contract:
+            Preconditions:
+                - ``rows`` must be non-empty (explicit check; raises
+                  ``ValueError``).
+                - Each row must satisfy ``CohortPriorRow`` keys (TypedDict —
+                  unchecked at runtime; a missing key surfaces as a pandas
+                  ``KeyError`` during DataFrame construction).
+                - Row values must be castable to ``COHORT_PRIOR_DTYPES``
+                  (pandas ``ValueError`` from ``astype`` on dtype drift —
+                  this IS the M4 dtype-mismatch detection).
+
+            Raises:
+                ValueError: rows empty, or pandas dtype-cast failure.
+                SchemaMismatchError: columns differ from
+                    ``COHORT_PRIOR_COLUMNS`` (from ``_check_columns``).
+                OSError: filesystem write failure (mkdir or to_parquet).
+        """
         if len(rows) == 0:
             raise ValueError("CohortPriorWriter: rows must be non-empty")
         df = pd.DataFrame(rows, columns=list(COHORT_PRIOR_COLUMNS))
@@ -198,6 +217,24 @@ class CohortPriorReader:
         )
 
     def __call__(self, path: str | Path | None = None) -> list[CohortPriorRow]:
+        """Read parquet at ``path`` (or default base_dir) and return typed rows.
+
+        Contract:
+            Preconditions:
+                - File at the resolved path must exist (explicit check;
+                  raises ``FileNotFoundError``).
+                - On-disk parquet column set must equal
+                  ``COHORT_PRIOR_COLUMNS`` (raises ``SchemaMismatchError``
+                  via ``_check_columns``).
+                - Each value in declared columns must be coercible to its
+                  Python type (``str(...)``, ``float(...)``); incidental
+                  ``ValueError`` / ``TypeError`` from coercion otherwise.
+
+            Raises:
+                FileNotFoundError: target parquet missing.
+                SchemaMismatchError: column-set drift.
+                OSError: parquet read failure (propagates from pandas).
+        """
         target = (
             Path(path) if path is not None else self._base_dir / "cohort_prior.parquet"
         )
@@ -246,6 +283,28 @@ class SyntheticTauWriter:
         )
 
     def __call__(self, rows: list[SyntheticTauRow]) -> Path:
+        """Write Hive-partitioned dataset and return the dataset root path.
+
+        Contract:
+            Preconditions:
+                - ``rows`` non-empty (explicit ``ValueError``).
+                - Row keys must match ``SyntheticTauRow`` (TypedDict —
+                  unchecked at runtime; missing key → pandas ``KeyError``).
+                - Row values must cast to ``SYNTHETIC_TAU_DTYPES`` —
+                  notably ``month`` and ``simulation_id`` must be
+                  ``int64``-coercible. Float values for ``month`` would
+                  produce ``month=4.0/`` Hive directories absent the
+                  explicit ``astype`` step on line ~253; the cast forces
+                  ``month=4/``. Drift surfaces as pandas ``ValueError``.
+
+            Raises:
+                ValueError: rows empty or dtype-cast failure.
+                SchemaMismatchError: column-set drift from
+                    ``SYNTHETIC_TAU_COLUMNS``.
+                OSError: mkdir or pyarrow write failure.
+                pyarrow.lib.ArrowException: pyarrow conversion failure
+                    (propagates from ``Table.from_pandas``).
+        """
         if len(rows) == 0:
             raise ValueError("SyntheticTauWriter: rows must be non-empty")
         df = pd.DataFrame(rows, columns=list(SYNTHETIC_TAU_COLUMNS))
@@ -280,6 +339,26 @@ class SyntheticTauReader:
         )
 
     def __call__(self, root: str | Path | None = None) -> list[SyntheticTauRow]:
+        """Read Hive-partitioned dataset and return reconstructed typed rows.
+
+        Contract:
+            Preconditions:
+                - Resolved dataset directory must exist
+                  (``FileNotFoundError`` if not).
+                - Directory must contain at least one ``*.parquet`` file
+                  (``FileNotFoundError`` raised if the writer has not run).
+                - Reattached partition columns ``tier_id`` and ``month``
+                  must be present in the read DataFrame; the reader
+                  coerces them to ``str`` / ``int`` defensively because
+                  pyarrow may surface ``tier_id`` as ``Categorical``.
+                - Final column set must equal ``SYNTHETIC_TAU_COLUMNS``
+                  (``SchemaMismatchError`` otherwise).
+
+            Raises:
+                FileNotFoundError: missing directory or no parquet files.
+                SchemaMismatchError: column-set drift after reattachment.
+                pyarrow.lib.ArrowException: dataset read failure.
+        """
         target = (
             Path(root) if root is not None else self._base_dir / "synthetic_tau_t"
         )

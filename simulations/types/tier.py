@@ -145,10 +145,23 @@ class TierPricing:
 
 
 def categorical_mass(prior: TierPrior, tier: TierID) -> float:
-    """Return Categorical mass π[tier] from a ``TierPrior``."""
+    """Return Categorical mass π[tier] from a ``TierPrior``.
+
+    Contract:
+        Preconditions:
+            - ``tier`` must be in ``TIER_IDS`` (the ``TierID`` Literal).
+              Type-checker enforces this; runtime mis-typed values raise
+              ``KeyError`` from the dict lookup (implicit).
+    """
     return prior.pi[tier]
 
 
 def subscription_price_usd(pricing: TierPricing, tier: TierID) -> float:
-    """Return the monthly subscription price (USD) for a given tier."""
+    """Return the monthly subscription price (USD) for a given tier.
+
+    Contract:
+        Preconditions:
+            - ``tier`` must be in ``TIER_IDS``. Implicit ``KeyError`` from
+              dict lookup if not.
+    """
     return pricing.usd_per_month[tier]

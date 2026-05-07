@@ -77,4 +77,18 @@ class AuditBlockHasher:
         pass
 
     def __call__(self, paths: tuple[Path, ...]) -> str:
+        """Delegate to ``compute_audit_block``; identical contract.
+
+        Contract:
+            Preconditions:
+                - ``paths`` non-empty (raises ``ValueError`` from callee).
+                - Every entry must be a regular file
+                  (``FileNotFoundError`` from callee).
+
+            Raises:
+                ValueError: empty ``paths``.
+                FileNotFoundError: any path missing or not a regular file.
+                OSError: read failure on a present file (propagates from
+                    ``open``/``read``; not caught).
+        """
         return compute_audit_block(paths)

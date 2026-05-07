@@ -73,6 +73,36 @@ class ZCapPinnedReader:
         pass
 
     def __call__(self, path: str | Path) -> ZCapPinned:
+        """Read JSON at ``path`` and return a validated ``ZCapPinned`` Value.
+
+        Contract:
+            Preconditions:
+                - File at ``path`` must exist (explicit
+                  ``FileNotFoundError``).
+                - File contents must parse as JSON (``json.JSONDecodeError``
+                  propagates — NOT silenced).
+                - Top-level value must be a JSON object (``SchemaMismatchError``
+                  if list/scalar).
+                - Field set must equal ``Z_CAP_PINNED_FIELDS``
+                  (pre-Pydantic check; ``SchemaMismatchError``).
+                - Field types/values must satisfy
+                  ``_ZCapPinnedJsonModel`` constraints (``audit_block``
+                  exactly 64 chars; Pydantic ``ValidationError`` propagates
+                  on type drift).
+                - ``tier_mix`` keys must equal ``set(TIER_IDS)``
+                  (``SchemaMismatchError`` from ``_coerce_tier_mix``).
+                - The constructed ``ZCapPinned`` must satisfy its own
+                  ``__post_init__`` invariants (CI ordering, sum-to-one,
+                  audit-block hex regex); ``ValueError`` propagates.
+
+            Raises:
+                FileNotFoundError: target JSON missing.
+                SchemaMismatchError: top-level not object, field-set drift,
+                    or tier_mix key drift.
+                json.JSONDecodeError: malformed JSON.
+                pydantic.ValidationError: per-field type/length violations.
+                ValueError: ZCapPinned ``__post_init__`` rejection.
+        """
         target = Path(path)
         if not target.is_file():
             raise FileNotFoundError(f"ZCapPinnedReader: missing JSON at {target}")
@@ -112,6 +142,26 @@ class ZCapPinnedWriter:
         pass
 
     def __call__(self, z: ZCapPinned, path: str | Path) -> None:
+        """Serialize ``z`` to JSON at ``path`` (parent dirs auto-created).
+
+        The ``ZCapPinned`` Value is already validated by its frozen-dc
+        ``__post_init__``, so this writer performs no additional
+        validation — it relies on the type's invariants.
+
+        Contract:
+            Preconditions:
+                - ``z`` must be a valid ``ZCapPinned`` (enforced upstream
+                  by the dataclass; not re-checked here).
+                - Parent directory of ``path`` must be creatable
+                  (otherwise ``OSError`` from ``mkdir``).
+
+            Raises:
+                OSError: mkdir or write_text failure (disk full,
+                    permission denied).
+                TypeError: from ``json.dumps`` if ``tier_mix`` contains
+                    non-JSON-serializable values (cannot occur given
+                    ``ZCapPinned`` invariants — float values only).
+        """
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload: dict[str, object] = {

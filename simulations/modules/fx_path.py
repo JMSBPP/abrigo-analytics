@@ -49,6 +49,19 @@ class FXPathGen:
 
         Returns:
             ``(1 + ε · (cos²(ω t) - 1/2)) · mean_x_over_y`` as float64.
+
+        Contract:
+            Preconditions:
+                - ``t`` must be a numeric numpy array. Non-numeric dtype
+                  raises ``TypeError`` from ``np.cos`` (implicit).
+                - ``t`` SHOULD contain finite values; ``np.nan`` or
+                  ``np.inf`` entries propagate to ``NaN`` in the output
+                  silently (no validation here — preserves numpy's
+                  total-function semantics on the math pin M5).
+
+            Silences:
+                None; numpy invalid-FP warnings are NOT suppressed (the
+                module does not call ``np.errstate``).
         """
         cos_sq = np.cos(self.params.omega * t) ** 2
         return (
@@ -89,6 +102,23 @@ class RealizedVarianceCalc:
 
         Returns:
             Mean-squared deviation from ``mean_x_over_y`` (PRIMITIVES.md (7)).
+
+        Contract:
+            Preconditions:
+                - ``path`` must be a non-empty numeric array (empty array
+                  yields ``NaN`` from ``np.mean`` with a runtime warning,
+                  NOT an explicit error — silent wrong-result case).
+                - ``len(path)`` SHOULD equal ``params.horizon_T + 1`` for
+                  the spec §7 horizon contract; this is documentary —
+                  the function uses ``len(path)`` directly without
+                  cross-checking ``params.horizon_T``. Mismatch silently
+                  produces a different sample-count denominator.
+                - ``path`` should contain finite values; ``NaN``/``inf``
+                  propagate (implicit).
+
+            Raises:
+                TypeError: if ``path`` is not subtractable from a float
+                    (implicit, from ``path - self.mean_x_over_y``).
         """
         diffs = path - self.mean_x_over_y
         return float(np.mean(diffs * diffs))

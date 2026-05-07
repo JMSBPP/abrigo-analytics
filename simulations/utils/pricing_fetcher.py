@@ -52,6 +52,23 @@ class StaticPricingFetcher:
         )
 
     def __call__(self) -> list[CohortPriorRow]:
+        """Return six ``CohortPriorRow`` records — spec §5.2 frozen pricing.
+
+        Pure with respect to the construction-time ``fetched_at_utc``
+        timestamp; no IO performed. The "fetcher" name is aspirational —
+        a future iteration may replace this class with a live HTTP fetcher
+        that returns the same ``CohortPriorRow`` shape.
+
+        Contract:
+            Preconditions:
+                - None. The function is total: spec §5.2 ``Final``
+                  constants are imported at module load and cannot drift.
+
+            Raises:
+                None — the function does not validate (constants are
+                pinned at module-import time; row construction is a
+                straightforward dict literal).
+        """
         ts = self._fetched_at_utc
         prices: list[tuple[str, float]] = [
             ("sonnet_price_in_usd_per_mtok", SONNET_PRICE_IN_USD_PER_MTOK),

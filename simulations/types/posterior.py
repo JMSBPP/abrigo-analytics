@@ -260,7 +260,18 @@ def n_total_draws(draws: PosteriorDraws) -> int:
 
 
 def parameter_index(draws: PosteriorDraws, name: str) -> int:
-    """Return the column index of a named parameter in ``draws.draws``."""
+    """Return the column index of a named parameter in ``draws.draws``.
+
+    Contract:
+        Preconditions:
+            - ``name`` must be present in ``draws.param_names``.
+
+        Raises:
+            ValueError: re-raised with a descriptive message listing the
+                available parameter names if ``name`` is not found
+                (explicit; chains the underlying ``tuple.index`` error
+                via ``from exc``).
+    """
     try:
         return draws.param_names.index(name)
     except ValueError as exc:
@@ -271,7 +282,18 @@ def parameter_index(draws: PosteriorDraws, name: str) -> int:
 
 
 def cdf_percentile_value(cdf: MonthlyCDF, percentile: float) -> float:
-    """Return the value at a pinned percentile, or raise if not pinned."""
+    """Return the value at a pinned percentile, or raise if not pinned.
+
+    Contract:
+        Preconditions:
+            - ``percentile`` must appear in ``cdf.percentiles`` (exact
+              float equality — no tolerance applied).
+
+        Raises:
+            ValueError: re-raised with the available percentile grid in
+                the message if ``percentile`` is not pinned
+                (explicit; chains via ``from exc``).
+    """
     try:
         idx = cdf.percentiles.index(percentile)
     except ValueError as exc:
