@@ -607,3 +607,67 @@ class TestEpsilonSigmaTRoundTripProperty:
         )(path)
         recovered = epsilon_from_sigma_T(sigma_T, params.mean_x_over_y)
         assert math.isclose(recovered, params.epsilon, abs_tol=1e-2)
+
+
+# ─── Phase 3.5 — Pre-mortem regression tests ──────────────────────────────────
+#
+# Skill: pre-mortem. Each test pins a CURRENTLY-INTENTIONAL behavior that is
+# documented in the production docstring as silent / documentary / boundary,
+# so that a future "defensive guard" PR cannot land without explicitly
+# revisiting the contract. See scratch/2026-05-08-sim-infra-audit/
+# pre_mortem_report.md for the failure narratives.
+
+
+class TestPreMortem:
+    """Pre-mortem regression tests pinning documented silent behaviors."""
+
+    def test_realized_variance_documented_no_horizon_cross_check(self) -> None:
+        """RealizedVarianceCalc does NOT cross-check ``len(path)`` vs ``horizon_T``.
+
+        Pre-mortem #1 (fx_path.py docstring lines 110–115). A future change
+        adding a length-cross-check would deliberately break this test,
+        forcing the maintainer to confront the spec §7 horizon contract
+        choice (``len(path) == horizon_T + 1`` is documentary, not enforced).
+        """
+        # horizon_T = 100 declared, but feed a path of length 50 — must NOT raise.
+        rv = RealizedVarianceCalc(
+            params=RealizedVarianceParams(horizon_T=100),
+            mean_x_over_y=4000.0,
+        )
+        short_path = np.full(50, 4000.0, dtype=np.float64)
+        # Documented behavior: returns 0.0 (mean of zeros), no error.
+        assert rv(short_path) == 0.0
+        # And a length-T+2 path also passes silently.
+        long_path = np.full(102, 4000.0, dtype=np.float64)
+        assert rv(long_path) == 0.0
+
+    def test_fx_path_gen_propagates_nan_silently(self) -> None:
+        """FXPathGen.__call__ propagates NaN in t to NaN in output.
+
+        Pre-mortem #2 (fx_path.py docstring lines 56–60). A future
+        defensive ``np.isnan(t).any()`` guard that raises would
+        deliberately fail this test. Pins the numpy total-function
+        semantics as the contract.
+        """
+        gen = FXPathGen(
+            params=FXPathParams(mean_x_over_y=4000.0, epsilon=0.1, omega=1.0)
+        )
+        ts = np.array([0.0, np.nan, math.pi], dtype=np.float64)
+        out = gen(ts)
+        # Index 0 and 2 finite; index 1 is NaN — NOT raised.
+        assert math.isfinite(out[0])
+        assert np.isnan(out[1])
+        assert math.isfinite(out[2])
+
+    def test_truncpareto_alpha_floor_inclusive(self) -> None:
+        """α = 1.5 exactly is admitted (inclusive floor).
+
+        Pre-mortem #8. Spec §8(6) is read as ``α >= 1.5``. A future
+        change to a strict ``> 1.5`` floor would surface here.
+        """
+        sampler = TruncParetoSampler(
+            params=TruncParetoParams(alpha=1.5, x_m=1.0, x_max=10.0)
+        )
+        # Construction succeeded; draw to confirm functional sampler.
+        out = sampler(size=16, rng=np.random.default_rng(0))
+        assert out.shape == (16,)

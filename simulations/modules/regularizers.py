@@ -38,6 +38,14 @@ class SoftplusRegularizer:
     Pin M2 (spec §5.1 (T2)): refuses construction unless the L¹ deviation
     of ``softplus_β`` from ReLU on the support ``[0, 2 κ]`` is strictly
     less than ``SOFTPLUS_TIGHTNESS_EPS · κ`` (i.e. ``< 1e-3 · κ``).
+
+    NOTE (pre-mortem #7, scratch/2026-05-08-sim-infra-audit/): the
+    relative tightness check ties to ``κ``; spec §5.1 (T2) implicitly
+    assumes ``κ ~ O(1)`` USD per the cohort cost cap. At ``κ → 0`` the
+    threshold ``1e-3 · κ`` drops below the quadrature noise of
+    ``tightness_l1_deviation`` and the check no longer reliably
+    distinguishes admissible β. Unit-conversion changes that scale κ
+    must revisit this assumption.
     """
 
     params: SoftplusParams

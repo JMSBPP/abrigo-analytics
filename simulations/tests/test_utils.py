@@ -387,3 +387,110 @@ class TestM4Schemas:
             "q_t_cop",
         ):
             assert c in SYNTHETIC_TAU_COLUMNS, f"missing column {c!r}"
+
+
+# ─── Phase 3.5 — Pre-mortem regression tests ──────────────────────────────────
+#
+# Skill: pre-mortem. Pins documented intentional behaviors at IO boundaries.
+# See scratch/2026-05-08-sim-infra-audit/pre_mortem_report.md for narratives.
+
+
+class TestPreMortem:
+    """Pre-mortem regression tests pinning IO boundary contracts."""
+
+    def test_synthetic_tau_dtypes_pin_month_int64(self) -> None:
+        """SYNTHETIC_TAU_DTYPES['month'] MUST be int64 — load-bearing for Hive.
+
+        Pre-mortem #3. The astype(SYNTHETIC_TAU_DTYPES) step in
+        SyntheticTauWriter is the only mechanism preventing
+        ``month=4.0/`` Hive directories. Removing the int64 declaration
+        (or the cast itself) would silently corrupt partition layout.
+        This test surfaces ANY change to the load-bearing dtype constant.
+        """
+        from simulations.utils.parquet_io import SYNTHETIC_TAU_DTYPES
+
+        assert SYNTHETIC_TAU_DTYPES["month"] == "int64", (
+            "month dtype is load-bearing for Hive partition naming"
+            " (month=4/ vs month=4.0/); changing it requires explicit"
+            " migration review per pre-mortem #3."
+        )
+        assert SYNTHETIC_TAU_DTYPES["simulation_id"] == "int64", (
+            "simulation_id dtype guards integer identity through pyarrow"
+        )
+        assert SYNTHETIC_TAU_DTYPES["tier_id"] == "string", (
+            "tier_id dtype is load-bearing for Hive partition naming"
+        )
+
+    def test_zcap_pinned_reader_extra_field_is_not_pydantic_validation_error(
+        self, tmp_path: Path
+    ) -> None:
+        """Extra-field drift surfaces as SchemaMismatchError, NOT pydantic ValidationError.
+
+        Pre-mortem #4. The pre-Pydantic field-set check on lines 118–125
+        of json_io.py runs BEFORE model_validate_json. A future refactor
+        that reorders these would silently change the error type from
+        SchemaMismatchError (subclass of ValueError) to
+        pydantic.ValidationError, breaking ``except ValueError`` consumers.
+        """
+        import pydantic
+
+        target = tmp_path / "Z_cap_pinned.json"
+        payload = {
+            "Z_cop_per_month": 100.0,
+            "ci_95_lo": 90.0,
+            "ci_95_hi": 110.0,
+            "audit_block": "0" * 64,
+            "tier_mix": {"pro": 0.2, "max_5x": 0.5, "max_20x": 0.3},
+            "schema_version": "v1.0",
+            "rogue_extra": "nope",
+        }
+        target.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(SchemaMismatchError) as exc_info:
+            ZCapPinnedReader()(target)
+        # Critical contract: must NOT be a pydantic.ValidationError.
+        assert not isinstance(exc_info.value, pydantic.ValidationError), (
+            "ZCapPinnedReader extra-field path must surface as"
+            " SchemaMismatchError (ValueError subclass), NOT"
+            " pydantic.ValidationError. The pre-Pydantic check ordering"
+            " is load-bearing — see pre-mortem #4."
+        )
+        # Also: SchemaMismatchError IS a ValueError (existing-consumer guarantee).
+        assert isinstance(exc_info.value, ValueError)
+
+    def test_compute_audit_block_path_form_matters(self, tmp_path: Path) -> None:
+        """Relative vs absolute Path forms produce DIFFERENT digests.
+
+        Pre-mortem #5. The path-sort key is ``str(p)`` and the hashed
+        delimiter is ``f"--- {p}\\n"``, so two callers passing the same
+        underlying file via different Path representations get different
+        audit blocks. This test pins the documented (intentional)
+        non-canonicalization behavior. A future change to canonicalize
+        via ``Path.resolve()`` would deliberately fail this test, forcing
+        a contract review.
+        """
+        a_abs = tmp_path / "x.txt"
+        a_abs.write_bytes(b"hello")
+        # Same file, accessed via a non-canonical relative-style path.
+        a_rel = tmp_path / "." / "x.txt"
+        h_abs = compute_audit_block([a_abs])
+        # str(Path("./x.txt")) collapses to str(Path("x.txt")) — pathlib
+        # normalizes leading "./". The real fragility is the
+        # absolute-vs-cwd-relative path-string distinction, which we
+        # exercise next:
+        _ = compute_audit_block([a_rel])  # constructed but not asserted
+        import os
+
+        cwd_before = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            a_relative_str = Path("x.txt")  # relative to cwd
+            h_relative = compute_audit_block([a_relative_str])
+        finally:
+            os.chdir(cwd_before)
+        # Absolute and relative forms hash differently (path string is
+        # embedded in the digest stream).
+        assert h_abs != h_relative, (
+            "compute_audit_block must remain path-string-sensitive;"
+            " a change to canonicalize via Path.resolve() requires"
+            " explicit contract review per pre-mortem #5."
+        )

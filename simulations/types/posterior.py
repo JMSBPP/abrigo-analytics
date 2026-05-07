@@ -191,6 +191,12 @@ class ZCapPinned:
     - ``tier_mix`` keys are exactly ``TIER_IDS``; values in ``(0, 1]``
       summing to 1 within ``1e-9``;
     - ``schema_version`` is non-empty.
+
+    NOTE (pre-mortem #6, scratch/2026-05-08-sim-infra-audit/): the
+    sum-to-one tolerance ``1e-9`` is calibrated for the closed 3-tier
+    set ``TIER_IDS``. A future expansion to O(100) tiers would
+    accumulate float64 summation rounding above this threshold and
+    require a tolerance scaling with ``len(tier_mix)``.
     """
 
     Z_cop_per_month: float

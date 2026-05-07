@@ -31,6 +31,13 @@ def compute_audit_block(file_paths: Sequence[str | Path]) -> str:
     preceded by a delimiter line ``b"--- <path>\\n"`` so that two files
     swapping bytes cannot collide with the same total content.
 
+    NOTE (pre-mortem #5, scratch/2026-05-08-sim-infra-audit/): the path
+    string is embedded VERBATIM in the hashed delimiter — relative and
+    absolute representations of the same file produce DIFFERENT digests.
+    Callers that need cross-call-site digest equality MUST canonicalize
+    (e.g., ``Path.resolve()``) before passing in. This is intentional;
+    pinned by ``test_compute_audit_block_path_form_matters``.
+
     Args:
         file_paths: One or more existing regular files. Empty sequences
             raise ``ValueError`` (an empty audit block is meaningless).
