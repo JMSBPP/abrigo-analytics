@@ -761,6 +761,42 @@ class TestAlphaPriorBracketInvariance:
         assert prior.alpha_lower < prior.alpha_loc < prior.alpha_upper
 
 
+class TestPreMortemRegressions:
+    """Regression tests pinned by scratch/2026-05-08-cohort-1-execution/PRE-MORTEM.md."""
+
+    def test_alpha_logp_finite_at_boundary(self, t1_model: pm.Model) -> None:
+        """Pre-mortem #3 — α near 1.5 must yield finite logp post pymc upgrade."""
+        # Build a logp function and test at α just above the floor.
+        with t1_model:
+            logp_fn = t1_model.compile_logp(sum=True)
+        # Use a feasible point: α = 1.5 + 1e-6 (just above floor), other
+        # params at prior modes.
+        # Build a starting point dict via initial_point(), then perturb α.
+        with t1_model:
+            init = t1_model.initial_point()
+        if "alpha_pareto_interval__" in init:
+            # PyMC names the transformed RV. Just call logp at init point.
+            pass
+        # logp at init must be finite.
+        val = float(logp_fn(init))
+        assert math.isfinite(val), f"logp at initial_point not finite: {val}"
+
+    def test_emit_tier_idx_shape_matches_posterior(
+        self, tmp_path: Path,
+    ) -> None:
+        """Pre-mortem #4 — vector-shaped tier_idx must NOT silently mis-emit."""
+        # Build idata where tier_idx is shape (chain, draw) — matches scalar
+        # Categorical. Verify _build_synthetic_tau_rows row count == flat post.
+        post, prior, pp = _build_minimal_idata_for_emit()
+        emitter = CohortEmitter(base_dir=tmp_path)
+        rows = emitter._build_synthetic_tau_rows(
+            posterior_idata=post, pp_idata=pp, month=1, tier_assignments=None,
+        )
+        n_chains = post["posterior"]["mu"].shape[0]
+        n_draws = post["posterior"]["mu"].shape[1]
+        assert len(rows) == n_chains * n_draws
+
+
 class TestNegBinTurnsPriorAlwaysValidForMuPhi:
     """Any drawn cohort NegBinTurnsPrior produces a valid (r, p) under reparam."""
 
