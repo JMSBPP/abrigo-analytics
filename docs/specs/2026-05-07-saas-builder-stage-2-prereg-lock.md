@@ -1,6 +1,6 @@
 ---
 spec_id: saas-builder-stage-2-prereg-lock
-spec_version: v1.1 (post-2-wave-verify; CORRECTIONS-α addresses 10 BLOCKs)
+spec_version: v1.1.1 (post-reverify; §8(6) rationale fix per MQ reverify FLAG-G)
 emit_timestamp_utc: 2026-05-07
 parent_framework: notes/PRIMITIVES.md (a_s / a_l / CPO primitives)
 cohort_note: notes/SaaS_Builders_AI_NativeBuilders.md (cohort instantiation of §4.2)
@@ -9,7 +9,7 @@ audit_anchor: scratch/2026-05-07-prereg-review/ (Wave-1 RC + Wave-2 MQ verdicts;
 authority: CLAUDE.md anti-fishing invariants (NON-NEGOTIABLE); brainstorming flow; CORRECTIONS-ι per-user a_s framing; feedback_pathological_halt_anti_fishing_checkpoint
 predecessor: v1.0 (REJECTED 2-wave; 10 BLOCKs + 11 FLAGs)
 corrections_block: §14 — CORRECTIONS-α (covers RC-BLOCK-1,2,3 + MQ-BLOCK-1..7; MQ-FLAG-A..F)
-status: LOCKED-PENDING-REVERIFY (post-hoc 2-wave required before sub-task dispatch)
+status: REVERIFY-PASSED — Wave-1 RC ACCEPT_WITH_FLAGS PROCEED + Wave-2 MQ ACCEPT_WITH_FLAGS PROCEED. Sub-task dispatch authorized per §13(5–6) pending user approval. Residual: 2 RC FLAGs (Section M source primary-trace, $p_t$ dimensional one-liner) + 4 MQ FLAGs (G stale α-rationale → fixed in v1.1.1; H Dirichlet "mild" wording; I 4·SE PASS threshold stricter than canonical 2·SE; J $(\alpha, x_m, \kappa)$ joint identifiability — mitigated by §8(7) CI-width gate). All non-blocking; addressable in v1.2 or sub-task plan-time.
 ---
 
 # Stage-2 pre-registration lock — SaaS-builder $a_s$ instantiation (v1.1)
@@ -458,10 +458,19 @@ draws. (Resolves RC-BLOCK-2.)
    admitted.** Adding a candidate fires HALT per
    `feedback_pathological_halt_anti_fishing_checkpoint`.
 6. **Pareto-α floor.** Posteriors with $\alpha < 1.5$ are refused. The
-   bracketed prior $\alpha \in [1.5, 2.5]$ is the floor; if the data
-   drives the posterior below 1.5, this is a HALT (the cost generator
-   has unbounded variance and the spec's expectation-based inference
-   is unsound).
+   bracketed prior $\alpha \in [1.5, 2.5]$ is the floor. *Rationale
+   (corrected per Wave-2 MQ reverify FLAG-G):* under TruncPareto with
+   $x_{\max} = \kappa$, all moments are bounded for any $\alpha > 0$ —
+   the moment-existence concern from MQ-BLOCK-1 was specific to the
+   un-truncated Pareto in v1.0. With truncation, the $\alpha < 1.5$
+   floor binds for **tail-shape plausibility** (the empirical
+   right-tail in RESEARCH.md §3 is heavy but not pathological;
+   $\alpha < 1.5$ would imply a right-tail far heavier than any cited
+   evidence) and for **identifiability with $\kappa$** — a posterior
+   $\alpha$ near 1 with truncation pushes most mass toward $x_{\max}$
+   and renders $(\alpha, x_m, \kappa)$ jointly under-identified. HALT
+   on $\alpha < 1.5$ guards against both, not against unbounded
+   moments.
 7. **Posterior CI-width threshold.** For each (T1) / (T2) parameter,
    the posterior 95% CI width must be $\le 2\times$ the prior CI width
    (i.e., posterior is informed by data, not just regurgitating the
