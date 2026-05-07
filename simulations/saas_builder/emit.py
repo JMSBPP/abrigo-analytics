@@ -205,18 +205,58 @@ class CohortEmitter:
             random_seed: optional seed for the posterior-predictive draw.
 
         Returns:
-            Summary dict with keys:
-                - ``verdict`` — :class:`DiagnosticVerdict`
-                - ``synthetic_tau_path`` — Path to dataset root.
-                - ``cohort_prior_path`` — Path to single parquet file.
-                - ``audit_path`` — Path to ``_AUDIT.json``.
-                - ``audit_block`` — sha256 hex string.
-                - ``n_rows_synthetic`` — int row count emitted.
+            :class:`EmissionSummary` TypedDict with verdict, paths,
+            audit-block hex, and row count.
 
-        Raises:
-            DiagnosticGateError: if ``diagnostic(...)`` yields
-                ``passed=False`` (NO partial emission).
-            ValueError: malformed inputs (e.g. month <= 0).
+        Contract:
+            Preconditions:
+                - ``month > 0`` (explicit guard, line ~218; raises
+                  ``ValueError``).
+                - ``posterior_idata`` must satisfy the
+                  :meth:`PosteriorDiagnostic.__call__` preconditions
+                  (posterior + sample_stats groups).
+                - ``prior_idata`` must satisfy the §8(7) CI-width gate
+                  preconditions (non-None; prior group present).
+                - ``model`` must be a ``pm.Model`` whose unobserved RVs
+                  match the names in ``posterior_idata.posterior`` so
+                  ``pm.sample_posterior_predictive`` can resolve them.
+                  A mismatch surfaces as a ``KeyError`` from PyMC at
+                  the ``run_posterior_predictive`` step (implicit).
+                - The shipped writer ``SyntheticTauWriter`` requires a
+                  non-empty row list; if posterior + pp idata flatten
+                  to zero rows (impossible for valid sample-output
+                  shapes), it raises ``ValueError`` (implicit
+                  fallthrough).
+                - ``self.base_dir`` must be writable; otherwise
+                  ``OSError`` propagates from
+                  ``parent.mkdir(parents=True, exist_ok=True)`` and
+                  ``DataFrame.to_parquet(...)``.
+
+            Raises:
+                DiagnosticGateError: explicit, line ~228. Fires iff the
+                    spec §8(7) + §8(8) gate yields ``passed=False`` —
+                    NO partial emission, NO sidecar audit-block. Caller
+                    HALTs.
+                ValueError: explicit, line ~218 (month ≤ 0); also
+                    propagated from writers on dtype-cast failure.
+                SchemaMismatchError: from
+                    ``simulations.utils.parquet_io._check_columns``
+                    if the row TypedDicts somehow diverge from
+                    ``SYNTHETIC_TAU_COLUMNS`` / ``COHORT_PRIOR_COLUMNS``
+                    (defensive — the row factories
+                    ``synthetic_tau_row`` / ``cohort_prior_row``
+                    construct the exact column set).
+                OSError: filesystem write failure (mkdir / parquet
+                    write / sidecar JSON write).
+                pymc.SamplingError / pytensor.* errors: from
+                    ``pm.sample_posterior_predictive`` if the model
+                    surface is malformed (caller responsibility).
+
+            Silences: none. NO partial emission means: if any step
+                after the gate raises, the ``_AUDIT.json`` sidecar is
+                NOT written, signaling caller that the parquet may be
+                partial. Re-emission to the same partition path is
+                idempotent (writer-controlled).
         """
         if month <= 0:
             raise ValueError(f"CohortEmitter: month = {month} must be > 0")

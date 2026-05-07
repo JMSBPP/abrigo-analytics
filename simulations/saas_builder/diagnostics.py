@@ -287,11 +287,36 @@ class PosteriorDiagnostic:
         Returns:
             :class:`DiagnosticVerdict` with all gate fields populated.
 
-        Raises:
-            ValueError: if ``prior_idata`` is None (CI-width gate cannot
-                silently skip per MQ-B5).
-            KeyError: if a monitored parameter is missing from either
-                group (re-raised from ``compute_ci_width_ratio_max``).
+        Contract:
+            Preconditions:
+                - ``idata`` must have a ``"posterior"`` group containing
+                  every name in ``self.monitored_params`` AND a
+                  ``"sample_stats"`` group with a ``"diverging"`` boolean
+                  array of shape ``(n_chains, n_draws)``. Missing groups
+                  raise ``KeyError`` (implicit, ``idata["..."]`` on
+                  line ~318).
+                - ``prior_idata`` must NOT be None (explicit check, line
+                  ~310; raises ``ValueError`` per MQ-B5 — the §8(7)
+                  CI-width gate cannot silently skip).
+                - ``prior_idata.prior[name]`` 95 % CI width must be > 0
+                  for each monitored ``name``; degenerate prior with
+                  zero width yields ``ci_width_ratio_max = +inf``,
+                  forcing ``passed = False`` (no exception).
+                - ``self.monitored_params`` is non-empty and has no
+                  duplicates (enforced at ``__post_init__``).
+
+            Raises:
+                ValueError: if ``prior_idata is None`` (explicit, line
+                    ~310). Caller MUST supply prior draws.
+                KeyError: if a monitored parameter is missing from
+                    either ``idata.posterior`` or ``prior_idata.prior``
+                    (implicit, dict-style group access).
+
+            Silences: none. NaN values inside arrays are filtered by
+                ``_scalar_max`` / ``_scalar_min`` (treated as +inf /
+                0.0 respectively); this is intentional fallthrough so
+                an all-NaN diagnostic forces ``passed = False`` rather
+                than crashing.
         """
         if prior_idata is None:
             raise ValueError(

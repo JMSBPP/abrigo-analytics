@@ -91,10 +91,29 @@ def _build_sonnet_blended_price() -> float:
     which validates the params struct, not a tier-conditioned numeric
     output.
 
-    Raises:
-        AssertionError: if the closed-form drift exceeds
-            ``M3_BLENDED_PRICE_ABS_TOL``. Caller surfaces this as a
-            Phase-4 BLOCK.
+    Contract:
+        Preconditions:
+            - The shipped ``simulations.types.fx`` constants
+              ``DEFAULT_W_IN``, ``DEFAULT_W_OUT``, ``DEFAULT_H_CACHE``,
+              ``SONNET_PRICE_IN_USD_PER_MTOK``,
+              ``SONNET_PRICE_OUT_USD_PER_MTOK`` must be present and
+              well-typed (Final floats). If a SIM-INFRA-0 follow-up
+              renames or removes any, this raises ``ImportError`` at
+              module load (caught by Phase 4 verification).
+            - Caller is responsible for ensuring ``BlendedPriceFn`` and
+              ``BlendedPriceParams`` are not monkey-patched in
+              production paths; tests intentionally do this to verify
+              the M3 BLOCK assertion fires.
+
+        Raises:
+            AssertionError: explicit, line ~108. Fires iff
+                ``|price_per_mtok - 7.1495| > 0.01``. Caller (the
+                ``T1ModelFactory.__call__`` site) surfaces this as a
+                Phase-4 BLOCK and refuses to build the PyMC model.
+            ValueError: from ``BlendedPriceParams.__post_init__`` if
+                the constructed Sonnet defaults somehow violate the
+                ``w_in + w_out == 1`` constraint (defensive — the
+                module-level pinned constants satisfy it by design).
     """
     params = BlendedPriceParams(
         p_in=SONNET_PRICE_IN_USD_PER_MTOK,
@@ -191,9 +210,30 @@ class T1ModelFactory:
             A ``pm.Model`` instance with random variables and posterior-
             predictive Deterministics declared per the behavior contract.
 
-        Raises:
-            AssertionError: from :func:`_build_sonnet_blended_price` if
-                M3 closed-form drift exceeds :data:`M3_BLENDED_PRICE_ABS_TOL`.
+        Contract:
+            Preconditions:
+                - ``self.priors`` is a constructed :class:`CohortPriors`
+                  (its ``__post_init__`` already enforced sub-prior
+                  invariants including the M1 α-floor on
+                  ``priors.alpha.alpha_lower``).
+                - If ``observed_tau_t`` is supplied, it must be
+                  reshape-able to 1-D ``float64``. ``observed_tau_t.ndim
+                  != 1`` raises ``ValueError`` (explicit, line ~298).
+                - The shipped ``BlendedPriceFn`` produces 7.1495 ± 0.01
+                  on Sonnet defaults; M3 drift halts construction
+                  before any PyMC node is created (see below).
+
+            Raises:
+                AssertionError: from :func:`_build_sonnet_blended_price`
+                    if the shipped ``BlendedPriceFn`` Sonnet output drifts
+                    beyond ``M3_BLENDED_PRICE_ABS_TOL``. Phase-4 BLOCK.
+                ValueError: if ``observed_tau_t`` has ``ndim != 1``
+                    (explicit guard).
+                pymc.SamplingError / pytensor.* errors: NOT raised here —
+                propagate at downstream ``pm.sample(...)`` time, not at
+                model construction. Caller is responsible for handling.
+
+            Silences: none. All exceptions propagate.
         """
         # M3 assertion at call site (RC-B2): fail fast before any PyMC
         # node creation if the shipped BlendedPriceFn drifts.
