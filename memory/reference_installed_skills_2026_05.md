@@ -32,6 +32,10 @@ type: reference
 - `latex-econ-model` complements (does NOT replace) `latex-doc` and `notation-clean`.
 - `property-based-testing` (multi-lang) + `hypothesis-tests` (Python-specific) — use both as appropriate.
 
-**Why:** External research 2026-05-07 confirmed these were the strongest open-source matches to the Abrigo paradigm (functional Python + type-driven + econometrics + numerical sim). Dead-end gaps still unfilled: Lean/Coq/F\*, dedicated GMM/MLE structural estimation, Nix/DVC/Snakemake reproducibility, and **anti-fishing replication-package discipline** (where Abrigo's existing memory rules already exceed any public skill — strongest candidate for self-authoring via `superpowers:writing-skills`).
+**Self-authored 2026-05-07 (TDD-for-skills cycle):**
+- `anti-fishing-replication` — strict HALT + disposition memo + user-enumerated pivot when pre-reg target missed; closes Abrigo discipline gaps that the public skill ecosystem doesn't cover.
+- `structural-estimation` — GMM/MLE/QMLE workflow checklist enforcing identification (Jacobian rank, not moment count), 2-step efficient weighting, multi-start optimum verification, sandwich vs observed-info SE selection, and post-estimation spec tests (J-test for GMM; LB / LB² / ARCH-LM / sign-bias for GARCH-MLE). Frequentist counterpart to `pymc`; complements `structural-econometrics` (which derives the spec).
+
+**Why:** External research 2026-05-07 confirmed the 24 third-party skills were the strongest open-source matches to the Abrigo paradigm (functional Python + type-driven + econometrics + numerical sim). The two self-authored skills filled gaps with no acceptable open-source equivalent. Remaining unfilled gaps: Lean/Coq/F\* type-driven workflows, Nix/DVC/Snakemake reproducibility (low urgency given the Tier-1/2/3 Makefile), and JAX-dedicated.
 
 **How to apply:** When starting econ analysis on an iteration, prefer `python-panel-data` for linearmodels code, `pymc` for Bayesian/structural, `statsmodels` for classical inference, `sympy` for theoretical derivation. When writing Python implementation, chain `functional-python` → `tighten-types` → `hypothesis-tests` → `mutation-testing`. For audit / spec-compliance work, dispatch `spec-to-code-compliance` alongside `audit-econ`.
