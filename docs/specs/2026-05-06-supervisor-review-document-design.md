@@ -651,6 +651,50 @@ The §5 anti-overclaim invariants are unchanged; REVISION-D corrections
 are mechanical (citation accuracy, link clickability, attribute
 disclosure, length cuts) and do not introduce new claims.
 
+### §3.12 Spanish Translation of the Entry-Point Letter (2026-05-06)
+
+This sub-section records the Spanish translation of the 7-page entry-point
+letter v1.4 (committed `cf6b7a4`). The Spanish translation is a NEW
+deliverable, NOT a modification of the English source; both versions are
+preserved.
+
+**Source.** `docs/supervisor-review/letter.tex` → `2026-05-06-supervisor-letter.pdf`.
+Compile state: 7 pp, all citations resolved, REVISION-D corrections
+integrated.
+
+**Target.** `docs/supervisor-review/letter-es.tex` → `2026-05-06-supervisor-letter-es.pdf`.
+Latin-American academic Spanish (Colombian standard); `usted`-form
+throughout; verdict labels (`PASS` / `FAIL` / `EXIT_NON_REMITTANCE` /
+`PARKED`) preserved in English under `\texttt{...}`; Leifke verbatim
+quote preserved in English with a Spanish footnote gloss.
+
+**Pipeline.** Two-agent sequential pipeline:
+- Translator (`general-purpose` subagent): produces `letter-es.tex` from
+  the English source; consumes a translator-brief that pins the
+  terminology table (~30 entries) and the babel-spanish preamble swap.
+- Reviewer (`Cultural Intelligence Strategist` subagent, independent
+  fresh invocation): verifies translation accuracy + Latin-American
+  Spanish register + LaTeX integrity + anglicism/calque flag list.
+  Findings integrated by main thread before final commit.
+
+The 37-pp technical companion is NOT translated in this sub-plan; the
+Spanish letter references it via the existing English file paths
+(`docs/supervisor-review/2026-05-06-empirical-record-letter.pdf`) so the
+supervisor can drill into either language at his discretion.
+
+**Background research.** Spanish-academic-AI-writing agent reconnaissance
+at `/tmp/spanish-academic-agent-research.md` (2026-05-06) confirmed no
+local Spanish-specialist agent exists; the external `deusyu/translate-book`
+template (multi-agent translation, language-agnostic, NOT LaTeX-native)
+is deferred to user-decision and is not adopted in this run.
+
+**Out of scope for this translation pass.** No changes to the English
+letter; no changes to the 37-pp companion; no changes to `refs.bib`
+(international refs untranslated; BanRep refs already Spanish-titled);
+no changes to the project's spec / plan / sub-plans beyond this §3.12
+record. Future iterations may translate the companion or add other
+language versions; both are explicitly deferred.
+
 ## §4. Multi-agent authorship plan
 
 Three sub-agents dispatched in parallel from the main thread, each with a
