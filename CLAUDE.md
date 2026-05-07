@@ -108,18 +108,31 @@ summary as of repo bootstrap:
 abrigo-analytics/
 ├── README.md              # Public-facing quickstart for cloners
 ├── CLAUDE.md              # This file
-├── pyproject.toml         # uv-managed; mirrors requirements.txt
+├── pyproject.toml         # uv-managed; mirrors requirements.txt; declares simulations/ package
 ├── requirements.txt       # exact pin from source repo's venv
 ├── Makefile               # data tiers + notebook execution + lint/test
 ├── notebooks/             # 7 notebook trios + 2 standalone analyses
+├── simulations/           # functional-python three-tier package (added by SIM-INFRA-0)
+│   ├── types/             # Value tier — frozen-dataclass parameter containers + Protocols
+│   ├── modules/           # Callable tier — frozen-dc + __call__ stateless transforms
+│   ├── utils/             # IO Boundary tier — class-with-__init__; mutable state lives ONLY here
+│   └── tests/             # pytest + Hypothesis strategies + math-pin verification
 ├── docs/specs/            # 14 specs (econ/analytics relevant)
-├── docs/plans/            # 10 implementation plans
+├── docs/plans/            # 11 implementation plans (SIM-INFRA-0 added)
 ├── docs/sub-plans/        # 2 sub-plans (NB-α, ccop-provenance-audit)
 ├── scratch/               # ~245 research outputs (dispositions, reviews, designs)
-├── memory/                # 65 memory files — project state + feedback rules
+├── memory/                # 65+ memory files — project state + feedback rules
 ├── data/                  # gitignored; populated via three Make targets
 └── scripts/               # data fetchers (Tier 1/2) + panel builder (Tier 3)
 ```
+
+**`simulations/` discipline.** Three-tier (Value / Callable / IO Boundary) per
+`functional-python` skill: no inheritance except `Protocol` + `Exception` +
+private Pydantic `BaseModel` (utils/json_io transient validators) + TypedDict
+(utils/parquet_io row schemas). Tier-import discipline: types/ ↛ modules/utils;
+modules/ ↛ utils. Code-touching work follows the Honnibal audit-pass chain
+(tighten-types → contract-docstrings → hypothesis-tests → try-except →
+pre-mortem → mutation-testing) as established by SIM-INFRA-0 Phase 3.
 
 ## Key commands
 
