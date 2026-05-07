@@ -595,6 +595,62 @@ than weaken the "no marketing register / no Abrigo as product"
 invariant by replacing abstract claims with plain-language exposure
 descriptions and concrete actionable asks.
 
+### §3.11 Entry-Point Letter — REVISION-D corrections (2026-05-06)
+
+This sub-section records five user-given corrections that apply to the
+6-page entry-point letter v1.3 (`docs/supervisor-review/letter.tex` →
+`2026-05-06-supervisor-letter.pdf`, committed `05b436d`), NOT to the
+37-page technical companion. The companion remains unchanged.
+
+**Correction D-1 (§1 Motivation citation swap to Colombian context).**
+The v1.3 §1 Motivation bullet cites three generic FX-as-primary-transmission
+references (Calvo & Reinhart 2002 *QJE*; Rey 2015 NBER WP 21162;
+Bruno & Shin 2015 *RES*). Replace (or augment) with Colombian-context
+references — Banrep "borradores de economía" working papers on inflation
+pass-through and TES yield-rate dynamics following FX — sourced via a
+background-agent scan of `/home/jmsbpp/apps/ThetaSwap/thetaSwap-core-dev/.worktree/ranFromAngstrom/contracts/{notes,research,docs,design,security-reviews}/`.
+Generic references may stay as supporting literature if the
+Colombian-specific references are insufficient on their own; Colombian
+references take primacy.
+
+**Correction D-2 (§1 Suggested-solution YouTube transcript integration).**
+The v1.3 cites `depreciation_insurance_talk` with placeholder bib
+metadata. Resolve metadata via background-agent transcript extraction of
+`https://www.youtube.com/watch?v=-nPTjKRMSK8` around timestamp 20:50
+(= 1250s); fill in speaker, title, channel, upload date, and verbatim
+quote about underserved-country demand for depreciation insurance as a
+call option on FX rate. Optionally inline-quote the verbatim phrase in
+the §1 prose if the supervisor would benefit from seeing the source
+language.
+
+**Correction D-3 (§2 data references — repo HTTP URLs).**
+The v1.3 §2 iteration blocks reference data via relative paths
+(`\texttt{notebooks/bpo\_offshoring\_fx\_lag/}`). Replace with clickable
+HTTP URLs via `\href{...}{...}` (hyperref already in preamble); origin is
+`https://github.com/JMSBPP/abrigo-analytics`. Required for email delivery
+where the supervisor cannot navigate the local repo.
+
+**Correction D-4 (§2 expanded data attribute blocks).**
+The v1.3 §2 iteration blocks describe data in a single line. Expand each
+to a per-iteration data attribute block surfacing supervisor-relevant
+metadata (source, frequency, window, sample size, key transformations,
+repo link, spec sha). ~5–7 lines per iteration. Net page-count effect:
++~0.5 pp; ceiling 8 pp per the user's earlier guidance.
+
+**Correction D-5 (§2 Interpretation lines — even shorter).**
+The v1.3 Interpretation lines are 10–15 words each. Tighten further to
+"verdict + short why," ≤ 10 words each. The verdict label is already in
+the iteration heading; the Interpretation line should add a
+minimum-information *why* signal, not paraphrase the heading. The
+"Why it fails" line that follows handles the long-form post-mortem.
+
+**Out of scope for REVISION-D.** No changes to §3 Risk-target framing,
+§4 Asks structure (the four asks remain unchanged), the title block, or
+the bibliography section heading. No changes to the 37-page companion.
+The §5 anti-overclaim invariants are unchanged; REVISION-D corrections
+are mechanical (citation accuracy, link clickability, attribute
+disclosure, length cuts) and do not introduce new claims.
+
 ## §4. Multi-agent authorship plan
 
 Three sub-agents dispatched in parallel from the main thread, each with a
