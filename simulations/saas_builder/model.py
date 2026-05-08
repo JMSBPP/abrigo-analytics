@@ -28,7 +28,8 @@ Pin enforcement at this layer:
   SITE (RC-B2: not in ``__post_init__``, which only validates the
   params struct). Drift here is a Phase-4 BLOCK.
 
-Posterior-predictive emission surface (MQ-B4 + CORRECTIONS-α v0.2 → v0.3):
+Posterior-predictive emission surface (MQ-B4 + CORRECTIONS-α v0.2 → v0.3
++ v0.3 → v0.4 marginalization):
 
     The compound sum τ_t = Σ_j Σ_i τ_{j,i} is **NOT** representable as a
     PyTensor Deterministic over a fixed-shape per-turn TruncPareto tensor
@@ -39,15 +40,23 @@ Posterior-predictive emission surface (MQ-B4 + CORRECTIONS-α v0.2 → v0.3):
        Stage-2 synthetic-Bayesian Normal-kernel proxy on the *fit* arm.
     2. ``tau_t_pp`` — produced **outside** the model graph by the emit
        pipeline (``simulations.saas_builder.emit.run_posterior_predictive``)
-       which, for each posterior draw of ``(μ, φ, α, x_m, n_per_day,
-       tier_idx)``, draws ``n_month = Σ n_per_day`` iid TruncPareto
-       variates and reduces to τ_t. This is the spec §5.1 (T1) verbatim
-       compound sum (BLOCK-1 fix). Within-row per-turn variance is
-       nonzero at fixed parameters.
+       which, for each posterior draw of ``(μ, φ, α, x_m, n_per_day)``,
+       draws ``n_month = Σ n_per_day`` iid TruncPareto variates and reduces
+       to τ_t. This is the spec §5.1 (T1) verbatim compound sum (BLOCK-1
+       fix). Within-row per-turn variance is nonzero at fixed parameters.
 
-    The latent tier label ``tier_idx`` is vector-shaped over
-    ``n_builders`` so each builder carries one latent tier per spec §5.2
-    "Categorical latent per builder" (BLOCK-5 fix).
+    **CORRECTIONS-α v0.3 → v0.4 — tier_idx marginalization.** The per-
+    builder Categorical latent ``tier_idx`` is REMOVED from the inference
+    graph. Spec §5.2 "Categorical latent per builder" remains the data-
+    generating model; integrating the latent out is exact (not an
+    approximation) because the COHORT-1 likelihood does not condition on
+    tier_idx (tier-conditional `(α_k, x_m,k, μ_k, φ_k)` is a future
+    COHORT-2/3 enhancement; spec §5.4 sensitivity arms). The per-builder
+    tier draws are recovered at posterior-predictive time by sampling
+    ``tier_idx ~ Categorical(pi)`` numpy-side in
+    :func:`simulations.saas_builder.emit.run_posterior_predictive`. This
+    eliminates the v0.3 `CompoundStep + CategoricalGibbsMetropolis` over
+    1000 latents that produced r̂_max=1.115, ESS_bulk_min=38, ESS_tail_min=58.
 
 This file is the layer where PyMC enters the codebase. Imports are limited
 to PyMC + the read-only Value/Callable upstream of cohort code.
@@ -178,9 +187,11 @@ class T1ModelFactory:
         priors: bundle of prior-hyperparameter Value containers.
         fx_cop_per_usd: stationary FX rate for ``q_t_cop = q_t_usd · FX``;
             default :data:`DEFAULT_FX_COP_PER_USD`.
-        n_builders: cohort size — number of latent tier draws. Spec §5.2
-            "Categorical latent per builder" requires one ``tier_idx`` per
-            builder (BLOCK-5 fix). Default :data:`DEFAULT_N_BUILDERS`.
+        n_builders: cohort size — number of POST-HOC tier draws taken
+            numpy-side at PP time per CORRECTIONS-α v0.4 marginalization.
+            Spec §5.2 "Categorical latent per builder" remains the data-
+            generating model; the latent is integrated out for inference
+            and recovered at emission. Default :data:`DEFAULT_N_BUILDERS`.
         n_simulations: deprecated alias for legacy callers; ignored when
             ``n_builders`` is supplied. Retained as a frozen-dc field for
             backwards-compatible construction. Default 1.
@@ -194,15 +205,23 @@ class T1ModelFactory:
         - ``alpha_pareto`` — TruncatedNormal[1.5, 2.5] (M1).
         - ``x_m`` — HalfNormal prior on TruncPareto floor.
         - ``pi`` — Dirichlet([2.0, 5.0, 3.0]) over TIER_IDS (spec §5.2).
-        - ``n_per_day`` — NegBin(μ, φ) of shape ``(D_t,)`` (per active day).
-        - ``n_month`` — Deterministic sum over ``n_per_day``.
+        - ``mean_n_month`` — Deterministic ``D_t · μ`` (E[N_month] under
+          the marginalized NegBin); the actual ``n_month`` integer draw
+          is produced post-hoc at PP time. CORRECTIONS-α v0.4 tertiary
+          marginalization eliminates the discrete RV from the inference
+          graph entirely; pure NUTS over (`pi`, `mu`, `phi`,
+          `alpha_pareto`, `x_m`) only.
         - ``mean_tau_per_turn`` — Deterministic E[τ | α, x_m] (TruncPareto mean).
         - ``tau_t`` — Deterministic ``n_month × mean_tau_per_turn`` (used as
           the μ of the Stage-2 synthetic-Bayesian Normal-kernel proxy on the
           *fit* arm; **NOT** the spec §5.1 compound sum). The compound sum is
           built post-hoc by ``emit.run_posterior_predictive`` (BLOCK-1 fix).
-        - ``tier_idx`` — Categorical(``π``) of **shape (n_builders,)** —
-          one latent tier per builder per spec §5.2 (BLOCK-5 fix).
+        - **NO** ``tier_idx`` RV in the inference graph — the per-builder
+          Categorical latent is marginalized out per CORRECTIONS-α v0.4
+          (exact identity since likelihood does not condition on tier_idx
+          in COHORT-1). Per-builder tier draws are produced numpy-side
+          at PP time from posterior ``pi`` by
+          :func:`simulations.saas_builder.emit.run_posterior_predictive`.
     - The Sonnet $/MTok closed form is asserted at construction
       (M3 BLOCK on drift > 0.01) before any pm.* node is built.
     - No imports from ``simulations.utils``.
@@ -317,19 +336,33 @@ class T1ModelFactory:
             )
             x_m = pm.HalfNormal("x_m", sigma=xp.xm_sigma)
 
-            # ─── Per-active-day NegBin turn count (mean–dispersion) ───
-            # Sample a NegBin draw with shape (active_days,) for posterior
-            # predictive aggregation. We register a *named* RV so it
-            # appears in pp draws.
-            n_per_day = pm.NegativeBinomial(
-                "n_per_day",
-                mu=mu,
-                alpha=phi,
-                shape=(d_t,),
+            # ─── Monthly NegBin turn count — FULLY MARGINALIZED ───────
+            # CORRECTIONS-α v0.4 TERTIARY MARGINALIZATION: ``n_month`` is
+            # the only remaining discrete latent in COHORT-1's graph
+            # (after tier_idx and n_per_day were marginalized).  Direct
+            # tests showed ``n_month`` Metropolis r̂=1.087 / ESS=60 at
+            # 4000 draws/chain; coupling through ``mu`` (NegBin location)
+            # dragged ``mu`` to r̂=1.086 / ESS=61 as well.  Since the
+            # COHORT-1 likelihood does NOT condition on ``n_month``
+            # (``observed_tau_t=None`` in production; ``tau_t`` Det
+            # propagates n_month forward into emission only), the
+            # ``n_month`` latent is integrated out exactly.  The post-
+            # hoc draw at PP time uses ``rng.negative_binomial`` from
+            # posterior ``(μ, φ)`` per the closed-form sum-of-iid
+            # NegBin: ``n_month ~ NegBin(D_t·μ, D_t·φ)``.  This leaves
+            # the inference graph fully continuous — pure NUTS, no
+            # CompoundStep, no Metropolis.
+            mean_n_month = pm.Deterministic(
+                "mean_n_month", mu * float(d_t),
             )
-
-            # Total monthly turn count (Deterministic — sum over days).
-            n_month = pm.Deterministic("n_month", pt.sum(n_per_day))
+            # Surface n_month as a Deterministic (E[N_month]) so the
+            # downstream tau_t Deterministic compiles. The compound-sum
+            # τ_t at emission time uses a fresh NegBin draw, NOT this
+            # mean — the mean is the Stage-2 fit-arm proxy only.
+            n_month = mean_n_month
+            # phi reference (kept explicit since downstream PP-time draw
+            # of n_month uses both mu and phi from the posterior).
+            _ = phi
 
             # ─── Tokens-per-turn TruncPareto via PyMC Truncated wrapper ─
             # Spec §5.1 (T1) per-turn iid TruncPareto(α, x_m, κ).
@@ -398,16 +431,18 @@ class T1ModelFactory:
                     observed=obs_arr,
                 )
 
-            # Tier categorical — vector-shaped over n_builders per spec
-            # §5.2 "Categorical latent per builder" (BLOCK-5 fix).
-            # Each builder carries one latent tier index; the cohort-level
-            # mixture is captured by π (Dirichlet) AND by the n_builders
-            # realized tier draws.
-            pm.Categorical(
-                "tier_idx",
-                p=pi,
-                shape=(self.n_builders,),
-            )
+            # CORRECTIONS-α v0.4: per-builder ``tier_idx`` Categorical
+            # is MARGINALIZED OUT of the inference graph. The COHORT-1
+            # likelihood does not condition on tier_idx, so integrating
+            # the latent out is exact (not an approximation). Per-builder
+            # tier draws are recovered at posterior-predictive time by
+            # ``simulations.saas_builder.emit.run_posterior_predictive``
+            # using ``rng.choice(3, p=pi_draw, size=n_builders)`` per
+            # (chain, draw) cell. The v0.3 ``pm.Categorical`` over
+            # ``n_builders=1000`` latents triggered ``CompoundStep +
+            # CategoricalGibbsMetropolis`` and produced r̂=1.115 / ESS=38;
+            # this branch eliminates the structural mixing failure.
+            _ = pi  # pi is consumed at PP time; reference kept explicit.
 
         return model
 

@@ -6,10 +6,10 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `feedback_specialized_agents_per_task` (NON-NEGOTIABLE).
 
-**Plan version:** v0.3 (CORRECTIONS-α; addresses RC + MQ + CR 3-way independent post-implementation audit findings against v0.2 at commit 438a01a; supersedes v0.2).
-**emit_timestamp:** 2026-05-08 (CORRECTIONS-α second pass).
-**Predecessor:** v0.2 (REJECT under independent post-implementation audit at commit 438a01a — RC: 4 BLOCKs / 5 FLAGs; MQ: 3 BLOCKs / 2 FLAGs; CR: 2 BLOCKING / 8 IMPORTANT). SIM-INFRA-0 v1.1.1 REVERIFY-PASSED remains the upstream gate.
-**Status:** DRAFT v0.3 — pending re-audit on this CORRECTIONS-α revision. See §"CORRECTIONS-α v0.2 → v0.3" at end of plan for the verbatim resolution table.
+**Plan version:** v0.4 (CORRECTIONS-α; marginalizes per-builder Categorical `tier_idx` latent out of the inference graph after the v0.3 emit run produced r̂_max=1.115, ESS_bulk=38, ESS_tail=58 — failing the §8(8) HALT-gate; supersedes v0.3).
+**emit_timestamp:** 2026-05-08 (CORRECTIONS-α third pass).
+**Predecessor:** v0.3 (DRAFT — code at commit ec26317 produced a structural-mixing failure at the spec §8(8) gate under the explicit-Categorical inference graph; emit log `/tmp/c1-emit-stdout.log`). v0.2 commit 438a01a remains pinned for traceability. SIM-INFRA-0 v1.1.1 REVERIFY-PASSED remains the upstream gate.
+**Status:** DRAFT v0.4 — pending re-audit on this CORRECTIONS-α revision. See §"CORRECTIONS-α v0.3 → v0.4" at end of plan for the verbatim resolution table.
 
 **Goal:** Fit and emit the T1 (subscription-cap-regime) PyMC posterior for the per-user monthly latent compute cost on the SaaS-builder cohort, producing tier-conditioned posterior draws + tier-prior summary as Hive-partitioned parquet artifacts to be consumed downstream by COHORT-2 (sign certification), COHORT-3 (Υ_t form), and COHORT-4 (Z-cap pin).
 
@@ -631,3 +631,104 @@ ACCEPT requires:
 3. Coverage ≥ 80% across saas_builder/* (current: 89%).
 4. No new BLOCKs introduced by the rewrites.
 5. Anti-fishing invariants honored: no spec-pin relaxation; no test-fixture widening; no verdict-threshold tuning.
+
+
+## CORRECTIONS-α v0.3 → v0.4
+
+> Format precedent: `docs/specs/2026-05-07-saas-builder-stage-2-prereg-lock.md` §15 + the v0.1 → v0.2 and v0.2 → v0.3 blocks above.
+>
+> **Trigger.** v0.3 emit run on commit ec26317 (driver: `scripts/run_cohort1_emit.py`; log: `/tmp/c1-emit-stdout.log`). PyMC sampling completed (607.4 s for 4 chains × 4000 draws + 1000 tune) under `CompoundStep(NUTS + Metropolis(n_per_day) + CategoricalGibbsMetropolis(tier_idx))`. Diagnostic verdict:
+>
+> | Metric | v0.3 emit value | §8(8) gate | Pass? |
+> |---|---|---|---|
+> | r̂_max | 1.115095 | ≤ 1.01 | FAIL |
+> | ESS_bulk_min | 38.1 | ≥ 400 | FAIL |
+> | ESS_tail_min | 58.7 | ≥ 400 | FAIL |
+> | divergence_frac | 0.000000 | ≤ 0.005 | PASS |
+> | sim-floor (per-chain ≥ 4000, n_chains ≥ 4) | 4 × 4000 | required | PASS |
+> | ci_width_ratio_max | 1.041070 | ≤ 2.0 | PASS |
+>
+> Three of six axes failed simultaneously (r̂, ESS_bulk, ESS_tail) — this is a structural mixing failure, not finite-sample noise. Anti-fishing-replication: NO threshold relaxation; the methodology is what changes.
+>
+> **Diagnosis.** `pm.Categorical("tier_idx", p=pi, shape=(n_builders=1000,))` with the default `CompoundStep` selects `CategoricalGibbsMetropolis` on the 1000-dimensional discrete latent. Each NUTS step requires a Gibbs sweep over all 1000 latents (one per builder); for any reasonable runtime budget, the chains fail to mix in `pi` (and consequently in `mu`, `phi`, `alpha_pareto`, `x_m`, since the tier_idx posterior carries no information about them but the sampler still wastes proposals). r̂ ≈ 1.115 across monitored continuous params confirms chain-level disagreement.
+>
+> **Fix — exact marginalization (representation change, not spec amendment).** Spec §5.2 "Categorical latent per builder" remains the data-generating model. We integrate the latent out for inference and draw it back at posterior-predictive time. In the COHORT-1 model surface as currently constructed, `tier_idx` does **NOT enter the likelihood** of `tau_t`: the per-turn TruncPareto and per-day NegBin parameters are tier-independent (tier-conditional `(α_k, x_m,k, μ_k, φ_k)` is a future COHORT-2/3 enhancement; spec §5.4 sensitivity arms). The per-builder mixture marginalization
+>
+> $$
+> p(\tau_t \mid \theta) \;=\; \sum_{k=1}^{3} \pi_k \cdot p(\tau_t \mid \mathrm{tier}=k, \theta_k) \;=\; p(\tau_t \mid \theta) \quad (\text{shared } \theta_k = \theta)
+> $$
+>
+> is therefore **degenerate**: removing `tier_idx` from the inference graph leaves the likelihood and the posterior of `(π, μ, φ, α, x_m)` exactly unchanged (an identity, not an approximation). The per-builder tier draws are recovered at posterior-predictive time by sampling `tier_idx[builder] ~ Categorical(π_posterior_draw)` numpy-side, one draw per (chain, draw, builder) slot, using the shipped `numpy.random.Generator`.
+>
+> A property test (Property #7) is added that pins the numerical equivalence: the marginalized log-likelihood at fixed `(π, μ, φ, α, x_m)` equals the explicit-Categorical log-likelihood (LSE over tiers) within tolerance, on a synthetic τ_t observation grid.
+
+### Secondary + tertiary marginalization (added during v0.4 implementation)
+
+After applying the primary `tier_idx` marginalization, an end-to-end emit run on the v0.4 prototype produced r̂_max=1.062 / ESS_bulk_min=66.8 / ESS_tail_min=175.2 — better than v0.3 (1.115 / 38 / 58) but still failing the §8(8) gate. PyMC's `CompoundStep` invoked `Metropolis` on `n_per_day` (the 22-dim integer NegBin vector with `shape=(D_t,)`); the random-walk Metropolis on this discrete-vector latent left chain-level autocorrelation.
+
+**Secondary fix.** Sum-of-iid NegBin closed form: `Σ_{j=1}^{D_t} N_j` where `N_j ~ NegBin(μ, φ)` iid is itself `NegBin(D_t·μ, D_t·φ)` in PyMC's mean-dispersion form (variance addition: `Var(ΣN_j) = D_t·μ + D_t·μ²/φ = (D_t·μ) + (D_t·μ)²/(D_t·φ)`, matching `NegBin(μ_total=D_t·μ, α_total=D_t·φ)` exactly). The 22-dim `n_per_day` vector is therefore replaced by a single direct draw `n_month ~ NegBin(D_t·μ, D_t·φ)`. The data-generating model spec §5.1 (T1) is unchanged at the marginal-of-the-sum level.
+
+**Tertiary fix (necessitated by per-param diagnostics).** With `n_per_day` removed but `n_month` still a PyMC integer RV, per-param diagnostics showed:
+
+    n_month       r̂=1.087   ESS_bulk=60.5   (1-dim Metropolis)
+    mu            r̂=1.086   ESS_bulk=61.5   (NUTS, coupled to n_month)
+    pi, phi, alpha_pareto, x_m   r̂≈1.0    ESS_bulk in the thousands
+
+`n_month` Metropolis poorly mixed AND dragged `mu` (its location parameter under the NegBin) into chain-disagreement.
+
+Since the COHORT-1 likelihood does NOT condition on `n_month` (`observed_tau_t=None` in production; `tau_t` Det only propagates `n_month` forward into emission), `n_month` is integrated out exactly. The v0.4 graph replaces the `n_month` NegBin RV with a Deterministic `mean_n_month = D_t·μ` (used only as the Stage-2 fit-arm proxy mean) and synthesizes the integer `n_month` numpy-side at PP time via `rng.negative_binomial(n=D_t·φ, p=D_t·φ/(D_t·φ+D_t·μ))` per (chain, draw) cell. The inference graph becomes **fully continuous** — pure NUTS over `(pi, mu, phi, alpha_pareto, x_m)`, no `CompoundStep`, no `Metropolis`. Three discrete latents (`tier_idx`, `n_per_day`, `n_month`) are recovered post-hoc; all three are exact (not approximate) marginalizations because the COHORT-1 likelihood is degenerate w.r.t. them.
+
+### Single BLOCK resolution
+
+| ID | Verdict-line citation | Fix location in v0.4 | Resolution summary |
+|---|---|---|---|
+| BLOCK-α (structural mixing failure) | v0.3 emit run `/tmp/c1-emit-stdout.log`: r̂_max=1.115 / ESS_bulk_min=38 / ESS_tail_min=58 | `simulations/saas_builder/model.py` (`pm.Categorical("tier_idx", ...)` REMOVED from `T1ModelFactory.__call__`); `simulations/saas_builder/emit.py` (`run_posterior_predictive` draws tier_idx numpy-side from posterior `pi`); `simulations/tests/test_saas_builder.py` (Property #7 added; tier_idx-in-RV assertions removed) | Marginalize per-builder Categorical `tier_idx` out of the inference graph. Inference now over continuous `(π, μ, φ, α, x_m)` only; NUTS handles the entire posterior with no Gibbs sweep. Per-builder tier draws recovered at PP time via `rng.choice(3, p=pi_draw, size=n_builders)`. Methodology preserved by Property #7 numerical-equivalence test (marginalized ≡ explicit-Categorical likelihood). |
+
+### Pre-registered new behavior
+
+- `T1ModelFactory.__call__` returns a `pm.Model` with the same `pi`, `mu`, `phi`, `alpha_pareto`, `x_m`, `n_per_day`, `n_month`, `mean_tau_per_turn`, `tau_t`, `q_t_usd`, `q_t_cop` nodes as v0.3, MINUS the `tier_idx` Categorical RV. The `n_builders` field is retained on the factory to seed the post-hoc per-builder tier draws at emit time.
+- `simulations.saas_builder.emit.run_posterior_predictive` gains the post-hoc `tier_idx` draw: for each `(chain, draw)` posterior cell, sample `tier_idx ~ Categorical(pi[chain, draw, :])` of shape `(n_builders,)` using the shipped `numpy.random.Generator`. Injects a `tier_idx` array of shape `(chain, draw, n_builders)` into the `posterior_predictive` group so downstream emission paths (`_build_synthetic_tau_rows`) preserve their existing 3-D handling.
+- `_PP_PYMC_VAR_NAMES` no longer includes `tier_idx` (removed from the `pm.sample_posterior_predictive` var list — it is no longer a graph variable).
+- The `var_names` argument to `pm.sample` defaults remain unchanged. The existing `CompoundStep` is no longer triggered (no discrete RVs), so PyMC will use pure NUTS.
+
+### Test delta
+
+- REMOVED: `test_model_has_required_rvs` assertion on `"tier_idx"` membership of `unobserved_RVs`.
+- REMOVED: `_make_synthetic_idata` / `_build_minimal_idata_for_emit` injection of `tier_idx` into the posterior group (replaced with injection into the posterior_predictive group, mirroring the new emit path).
+- ADDED: `test_property_7_marginalization_numerical_equivalence` — pins the cohort mixture identity at fixed `(π, μ, φ, α, x_m)` over an observed-τ_t grid.
+- ADDED: `test_emit_pp_draws_tier_idx_from_posterior_pi` — verifies the post-hoc tier_idx draw uses posterior `pi`.
+
+### Pin invariants preserved
+
+- M1 (α-floor 1.5 dual-enforced): UNCHANGED. `priors.py:TruncParetoAlphaPrior` lower=1.5, sampler-side `TruncParetoSampler.__post_init__` raises on α<1.5.
+- M3 (Sonnet blended price 7.1495 ± 0.01): UNCHANGED. Asserted at `T1ModelFactory.__call__` site.
+- M4 (parquet schema: `synthetic_tau_t` 11 columns + `cohort_prior` 6 columns including `schema_version`): UNCHANGED.
+- M5 (FX path `[4200, 3800, 4200]` over 3 months): UNCHANGED.
+- §8(7) CI-width ≤ 2× gate: UNCHANGED.
+- §8(8) sim-floor per-chain ≥ 4000 / chains ≥ 4 / r̂ ≤ 1.01 / ESS ≥ 400 / divergence ≤ 0.5%: UNCHANGED.
+- Anti-fishing: NO threshold relaxation; NO `n_builders` reduction (still 1000); NO test-fixture widening.
+
+### Net delta vs v0.3
+
+- `T1ModelFactory.__call__` removes the final `pm.Categorical("tier_idx", ...)` block.
+- `_PP_PYMC_VAR_NAMES` in `emit.py` drops `"tier_idx"`.
+- `run_posterior_predictive` in `emit.py` adds: numpy-side per-builder tier draw; injects 3-D `tier_idx` into `pp.posterior_predictive` group with shape `(chain, draw, n_builders)`.
+- `_build_synthetic_tau_rows` reads `tier_idx` from `pp_idata["posterior_predictive"]` (post-hoc) instead of `posterior_idata["posterior"]`.
+- Test fixtures `_make_synthetic_idata` and `_build_minimal_idata_for_emit` move `tier_idx` from posterior to posterior_predictive groups.
+- One mutation-killer test (`test_emit_tier_idx_shape_matches_posterior`) renamed and re-pointed at the pp group.
+- Plan v0.3 → v0.4. No CR-IMPORTANT / RC-FLAG / MQ-FLAG items from the v0.3 deferred list are addressed in v0.4 (those remain queued for v0.5).
+
+### Reverify exit criteria (v0.4)
+
+ACCEPT requires:
+1. The single BLOCK above traceable to spec authority + shipped code + Property #7 numerical-equivalence test.
+2. Test suite passes, ruff + ty clean.
+3. `scripts/run_cohort1_emit.py` end-to-end run yields `verdict.passed = True` with the six §8(7) + §8(8) gate metrics in compliance:
+   - r̂_max ≤ 1.01
+   - ESS_bulk_min ≥ 400
+   - ESS_tail_min ≥ 400
+   - divergence_frac ≤ 0.005
+   - sim-floor: chains ≥ 4 AND draws/chain ≥ 4000
+   - ci_width_ratio_max ≤ 2.0
+4. `synthetic_tau_t/tier_id=*/month=*/` parquet files written for all 3 months in the M5 FX path; `cohort_prior.parquet` written; `_AUDIT.json` sidecar with sha256 audit-block.
+5. Anti-fishing invariants honored: no spec-pin relaxation; no test-fixture widening; no verdict-threshold tuning; the v0.3 emit failure is acknowledged in this CORRECTIONS-α block, not silently revised away.

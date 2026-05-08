@@ -116,8 +116,20 @@ class EmissionSummary(TypedDict):
 
 #: Posterior-predictive variable names sampled by PyMC. The compound-sum
 #: τ_t is **NOT** in this list — it is built post-hoc from per-turn
-#: TruncPareto draws (BLOCK-1 fix; spec §5.1 verbatim).
-_PP_PYMC_VAR_NAMES: tuple[str, ...] = ("n_per_day", "n_month", "tier_idx")
+#: TruncPareto draws (BLOCK-1 fix; spec §5.1 verbatim). Likewise
+#: ``tier_idx`` is NOT a PyMC RV in v0.4 (CORRECTIONS-α v0.3 → v0.4
+#: marginalization); it is drawn numpy-side from posterior ``pi`` at PP
+#: time and injected into the ``posterior_predictive`` group.
+_PP_PYMC_VAR_NAMES: tuple[str, ...] = ()
+
+#: Default active-days-per-month when emit-side reconstructs n_month
+#: post-hoc from posterior (μ, φ). Mirrors
+#: :data:`simulations.saas_builder.priors.ACTIVE_DAYS_PER_MONTH` (= 22).
+_DEFAULT_ACTIVE_DAYS_PER_MONTH: int = 22
+
+#: Default cohort size for the post-hoc per-builder tier draw at PP time.
+#: Mirrors :data:`simulations.saas_builder.model.DEFAULT_N_BUILDERS` (1000).
+_DEFAULT_N_BUILDERS_PP: int = 1000
 
 
 def run_posterior_predictive(
@@ -129,6 +141,8 @@ def run_posterior_predictive(
     fx_cop_per_usd: float,
     var_names: tuple[str, ...] = _PP_PYMC_VAR_NAMES,
     random_seed: int | None = 42,
+    n_builders: int = _DEFAULT_N_BUILDERS_PP,
+    active_days_per_month: int = _DEFAULT_ACTIVE_DAYS_PER_MONTH,
 ) -> az.InferenceData:
     """Run posterior-predictive + spec §5.1 compound-sum τ_t reduction.
 
@@ -189,30 +203,69 @@ def run_posterior_predictive(
             ValueError: if any draw yields ``alpha < 1.5`` (M1 floor; the
                 shipped ``TruncParetoSampler.__post_init__`` raises).
     """
-    with model:
-        pp = pm.sample_posterior_predictive(
-            posterior_idata,
-            var_names=list(var_names),
-            random_seed=random_seed,
-            progressbar=False,
-        )
-
-    pp_group = pp["posterior_predictive"]
+    # CORRECTIONS-α v0.4 tertiary marginalization: ``n_month`` and
+    # ``tier_idx`` are no longer PyMC RVs. If ``var_names`` is empty
+    # (the v0.4 default), skip ``pm.sample_posterior_predictive``
+    # entirely and synthesize the posterior_predictive group from
+    # numpy-side post-hoc draws.
     post_group = posterior_idata["posterior"]
+    if var_names:
+        with model:
+            pp = pm.sample_posterior_predictive(
+                posterior_idata,
+                var_names=list(var_names),
+                random_seed=random_seed,
+                progressbar=False,
+            )
+        pp_group = pp["posterior_predictive"]
+    else:
+        # Empty posterior_predictive Dataset; populated below. Use a
+        # placeholder dummy variable to ensure the group is created;
+        # we drop it before returning.
+        n_chains_seed = int(post_group["mu"].shape[0])
+        n_draws_seed = int(post_group["mu"].shape[1])
+        dummy = np.zeros((n_chains_seed, n_draws_seed), dtype=np.float64)
+        pp = az.from_dict(posterior_predictive={"_pp_init": dummy})
+        pp_group = pp["posterior_predictive"]
 
     # Shapes: posterior arrays are (chain, draw, ...); n_month is
     # Deterministic so it is in posterior (NOT posterior_predictive)
     # when produced via pm.sample_posterior_predictive on Deterministics
     # downstream of NegBin RVs — but PyMC versions vary, so check both.
+    # CORRECTIONS-α v0.4 tertiary marginalization: n_month is no longer
+    # a PyMC RV. Reconstruct post-hoc by drawing
+    # ``n_month ~ NegBin(D_t·μ, D_t·φ)`` from the posterior (μ, φ) per
+    # (chain, draw) cell. Sum-of-iid NegBin closed form: each per-day
+    # NegBin(μ, φ) summed over D_t days is NegBin(D_t·μ, D_t·φ) in the
+    # mean–dispersion form.
+    # Backwards-compatible fallbacks: if a caller hand-crafts a v0.3
+    # idata with n_month or n_per_day pre-populated, prefer those.
+    rng_seed = 42 if random_seed is None else int(random_seed)
+    rng = np.random.default_rng(rng_seed)
+
     if "n_month" in pp_group:
         n_month_arr = np.asarray(pp_group["n_month"].values)
     elif "n_month" in post_group:
         n_month_arr = np.asarray(post_group["n_month"].values)
-    else:
-        # Recompute from n_per_day if available.
+    elif "n_per_day" in pp_group:
         n_per_day_arr = np.asarray(pp_group["n_per_day"].values)
-        # Sum across the active-day dimension (last axis).
         n_month_arr = n_per_day_arr.sum(axis=-1)
+    else:
+        # v0.4 default path: synthesize n_month from posterior (μ, φ).
+        if "mu" not in post_group or "phi" not in post_group:
+            raise KeyError(
+                "run_posterior_predictive: posterior is missing 'mu' or"
+                " 'phi'; cannot perform the v0.4 post-hoc n_month draw."
+            )
+        mu_arr = np.asarray(post_group["mu"].values)
+        phi_arr = np.asarray(post_group["phi"].values)
+        d_t = float(active_days_per_month)
+        # NegBin(mu_total=D_t·μ, alpha=D_t·φ) — convert to numpy's
+        # (n=alpha, p=alpha/(alpha+mu)) parameterization.
+        mu_total = mu_arr * d_t
+        alpha_total = phi_arr * d_t
+        p_arr = alpha_total / (alpha_total + mu_total)
+        n_month_arr = rng.negative_binomial(n=alpha_total, p=p_arr)
 
     alpha_arr = np.asarray(post_group["alpha_pareto"].values)
     x_m_arr = np.asarray(post_group["x_m"].values)
@@ -225,9 +278,6 @@ def run_posterior_predictive(
         pass
     n_chains_arr = alpha_arr.shape[0]
     n_draws_arr = alpha_arr.shape[1]
-
-    rng_seed = 42 if random_seed is None else int(random_seed)
-    rng = np.random.default_rng(rng_seed)
 
     tau_t_arr = np.empty((n_chains_arr, n_draws_arr), dtype=np.float64)
     for c in range(n_chains_arr):
@@ -252,10 +302,52 @@ def run_posterior_predictive(
     q_t_usd_arr = tau_t_arr * float(blended_price_per_mtok) / 1.0e6
     q_t_cop_arr = q_t_usd_arr * float(fx_cop_per_usd)
 
+    # CORRECTIONS-α v0.4: post-hoc per-builder tier draw from posterior π.
+    # ``pi`` is in posterior group with shape (chain, draw, 3). For each
+    # (chain, draw) cell, draw ``n_builders`` iid tier indices from
+    # Categorical(pi[c, d, :]) using the shipped numpy Generator. This
+    # recovers the per-builder ``tier_idx`` that was marginalized out of
+    # the inference graph (an exact identity since the COHORT-1 likelihood
+    # does not condition on tier_idx).
+    if "pi" not in post_group:
+        raise KeyError(
+            "run_posterior_predictive: posterior is missing 'pi'; cannot"
+            " perform the v0.4 post-hoc tier_idx draw."
+        )
+    pi_arr = np.asarray(post_group["pi"].values)  # (chain, draw, 3)
+    if pi_arr.ndim != 3 or pi_arr.shape[2] != 3:
+        raise ValueError(
+            f"run_posterior_predictive: pi posterior shape {pi_arr.shape}"
+            f" must be (chain, draw, 3) for the per-builder tier draw."
+        )
+    if n_builders <= 0:
+        raise ValueError(
+            f"run_posterior_predictive: n_builders = {n_builders} must be > 0"
+        )
+    tier_idx_arr = np.empty(
+        (n_chains_arr, n_draws_arr, n_builders), dtype=np.int64,
+    )
+    for c in range(n_chains_arr):
+        for d in range(n_draws_arr):
+            pi_cd = pi_arr[c, d, :]
+            # Defensive renormalization: posterior draws sum to 1 within
+            # numerical tolerance, but rng.choice requires exact-sum.
+            pi_norm = pi_cd / pi_cd.sum()
+            tier_idx_arr[c, d, :] = rng.choice(
+                3, size=n_builders, p=pi_norm,
+            )
+
     # Inject the compound-sum arrays back into the pp dataset.
     pp_group["tau_t"] = (("chain", "draw"), tau_t_arr)
     pp_group["q_t_usd"] = (("chain", "draw"), q_t_usd_arr)
     pp_group["q_t_cop"] = (("chain", "draw"), q_t_cop_arr)
+    pp_group["tier_idx"] = (
+        ("chain", "draw", "builder"),
+        tier_idx_arr,
+    )
+    # Drop placeholder dummy variable used to bootstrap an empty pp group.
+    if "_pp_init" in pp_group:
+        del pp_group["_pp_init"]
 
     return pp
 
@@ -293,6 +385,7 @@ class CohortEmitter:
     base_dir: Path = field(default_factory=lambda: Path("simulations/saas_builder/data"))
     diagnostic: PosteriorDiagnostic = field(default_factory=PosteriorDiagnostic)
     fx_cop_per_usd: float = 4000.0
+    n_builders: int = _DEFAULT_N_BUILDERS_PP
 
     def __post_init__(self) -> None:
         # Coerce base_dir to Path defensively (callers may pass str).
@@ -404,6 +497,7 @@ class CohortEmitter:
             blended_price_per_mtok=blended_price,
             fx_cop_per_usd=self.fx_cop_per_usd,
             random_seed=random_seed,
+            n_builders=self.n_builders,
         )
 
         # 3) Build synthetic_tau_t rows.
@@ -496,17 +590,25 @@ class CohortEmitter:
         qcop_arr = np.asarray(pp["q_t_cop"].values).ravel()[:n_rows]
 
         if tier_assignments is None:
-            # tier_idx may be scalar (chain, draw) or vector
-            # (chain, draw, n_builders) per BLOCK-5 fix. Ravel → flat (one
-            # tier per row); when vector, the (chain, draw) row indexes
-            # one builder slot via simulation_id % n_builders.
-            tier_raw = np.asarray(post["tier_idx"].values)
+            # CORRECTIONS-α v0.4: tier_idx now lives in the posterior_-
+            # predictive group (post-hoc draw from posterior π in
+            # ``run_posterior_predictive``). Backwards-compatible
+            # fallback: if a caller hand-crafts an idata with tier_idx
+            # in the posterior group (test fixtures pre-v0.4), prefer
+            # that source.
+            if "tier_idx" in pp:
+                tier_raw = np.asarray(pp["tier_idx"].values)
+            elif "tier_idx" in post:
+                tier_raw = np.asarray(post["tier_idx"].values)
+            else:
+                raise KeyError(
+                    "_build_synthetic_tau_rows: tier_idx absent from both"
+                    " posterior_predictive and posterior groups."
+                )
             if tier_raw.ndim == 3:
                 # (chain, draw, n_builders) — flatten across (chain, draw)
-                # and pick builder slot 0 for each row. The n_builders
-                # latent tier vector is exposed in cohort_prior emission;
-                # synthetic_tau_t is keyed per (chain, draw) following
-                # the v0.2 layout.
+                # and pick builder slot 0 for each row. Synthetic_tau_t is
+                # keyed per (chain, draw) following the v0.2 layout.
                 n_chain, n_draw, _n_b = tier_raw.shape
                 tier_idx_arr = tier_raw[:, :, 0].reshape(n_chain * n_draw)[:n_rows]
             else:

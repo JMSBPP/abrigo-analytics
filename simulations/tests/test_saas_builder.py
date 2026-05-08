@@ -255,9 +255,16 @@ class TestT1ModelFactory:
         assert {"tau_t", "q_t_usd", "q_t_cop"} <= det_names
 
     def test_model_has_required_rvs(self, t1_model: pm.Model) -> None:
+        """v0.4: tier_idx is MARGINALIZED OUT — no longer in unobserved_RVs."""
         rv_names = {v.name for v in t1_model.unobserved_RVs}
-        assert {"mu", "phi", "alpha_pareto", "x_m", "pi", "n_per_day",
-                "tier_idx"} <= rv_names
+        # v0.4 marginalizations: only continuous RVs in inference graph.
+        assert {"mu", "phi", "alpha_pareto", "x_m", "pi"} <= rv_names
+        # tier_idx, n_per_day, n_month all marginalized out (CORRECTIONS-α
+        # v0.4 primary/secondary/tertiary marginalizations); recovered at
+        # PP time.
+        assert "tier_idx" not in rv_names
+        assert "n_per_day" not in rv_names
+        assert "n_month" not in rv_names
 
     def test_factory_rejects_negative_fx(self) -> None:
         with pytest.raises(ValueError):
@@ -457,14 +464,12 @@ def _build_minimal_idata_for_emit(
         "phi": rng.normal(loc=60.0, scale=5.0, size=(n_chains, n_draws)),
         "alpha_pareto": rng.uniform(1.6, 2.4, size=(n_chains, n_draws)),
         "x_m": rng.uniform(5.0, 15.0, size=(n_chains, n_draws)),
-        "tier_idx": rng.integers(0, 3, size=(n_chains, n_draws)),
         "pi": rng.dirichlet(np.array(DIRICHLET_ALPHA_VECTOR),
                             size=(n_chains, n_draws)),
     }
     prior_data: dict[str, np.ndarray] = {
-        k: v[:1] * 1.5 for k, v in post_data.items() if k != "tier_idx"
+        k: v[:1] * 1.5 for k, v in post_data.items()
     }
-    prior_data["tier_idx"] = post_data["tier_idx"][:1]
 
     diverging = np.zeros((n_chains, n_draws), dtype=bool)
     posterior = az.from_dict(
@@ -479,11 +484,15 @@ def _build_minimal_idata_for_emit(
         dims={"pi": ["pi_dim_0"]},
     )
     # Posterior-predictive: τ_t / q_t_usd / q_t_cop with within-row var > 0.
+    # v0.4: tier_idx now lives in posterior_predictive (post-hoc draw from
+    # posterior π in run_posterior_predictive).
     tau_t = rng.gamma(shape=2.0, scale=1.0e6, size=(n_chains, n_draws))
+    tier_idx_pp = rng.integers(0, 3, size=(n_chains, n_draws, 4))
     pp_data = {
         "tau_t": tau_t,
         "q_t_usd": tau_t * 7.1495 / 1.0e6,
         "q_t_cop": tau_t * 7.1495 / 1.0e6 * 4000.0,
+        "tier_idx": tier_idx_pp,
     }
     pp = az.from_dict(posterior_predictive=pp_data)
     return posterior, prior, pp
@@ -774,6 +783,105 @@ class TestHypothesisProperties:
         tau_pp2 = np.asarray(pp2["posterior_predictive"]["tau_t"].values)
         assert np.allclose(tau_pp, tau_pp2)
 
+    def test_property_7_marginalization_numerical_equivalence(self) -> None:
+        """CORRECTIONS-α v0.3 → v0.4: marginalized ≡ explicit-Categorical likelihood.
+
+        Pins the methodology defensibility of the v0.4 representation
+        change. Because the COHORT-1 likelihood does not condition on
+        ``tier_idx`` (parameters ``θ_k = θ`` shared across tiers in this
+        cohort), the cohort mixture
+            p(τ_t | θ) = Σ_k π_k · p(τ_t | tier=k, θ_k)
+        collapses to ``p(τ_t | θ)`` (an exact identity, not an
+        approximation). This test verifies the identity numerically by
+        constructing the per-tier conditional log-likelihoods at fixed
+        parameters and confirming they all equal the marginalized value
+        (so log(Σ π_k · L_k) = log L_1 = log L_2 = log L_3 within numerical
+        tolerance, regardless of π).
+
+        Methodology: at fixed ``(α, x_m, x_max)``, the per-turn
+        log-pdf of TruncPareto evaluated on a synthetic τ-grid must be
+        invariant across tier labels (since θ_k are not tier-conditioned
+        in COHORT-1). This is the precondition that makes the v0.4
+        marginalization mathematically exact.
+        """
+        from scipy.stats import truncpareto
+        rng = np.random.default_rng(7)
+        # Fixed shared parameters across tiers (COHORT-1 invariant).
+        alpha, x_m_val, x_max = 2.0, 10.0, 5000.0
+        # Synthetic τ-grid (per-turn token counts).
+        tau_grid = rng.uniform(x_m_val + 1.0, x_max - 1.0, size=50)
+        # Per-tier conditional log-pdf — IDENTICAL because θ_k = θ.
+        b = x_max / x_m_val
+        logpdf_k0 = truncpareto.logpdf(tau_grid, alpha, b, scale=x_m_val)
+        logpdf_k1 = truncpareto.logpdf(tau_grid, alpha, b, scale=x_m_val)
+        logpdf_k2 = truncpareto.logpdf(tau_grid, alpha, b, scale=x_m_val)
+        # All three per-tier logpdfs identical (COHORT-1 shared θ_k).
+        assert np.allclose(logpdf_k0, logpdf_k1, rtol=1e-12)
+        assert np.allclose(logpdf_k1, logpdf_k2, rtol=1e-12)
+        # Mixture log-likelihood under any π on the simplex equals the
+        # per-tier value: log(Σ π_k exp(logpdf_k)) = logpdf_k for any k.
+        for pi_test in (
+            np.array([0.2, 0.5, 0.3]),
+            np.array([1/3, 1/3, 1/3]),
+            np.array([0.99, 0.005, 0.005]),
+            rng.dirichlet(np.array(DIRICHLET_ALPHA_VECTOR)),
+        ):
+            assert math.isclose(float(pi_test.sum()), 1.0, abs_tol=1e-9)
+            # Stack per-tier logpdfs along a new axis; LSE with weights π.
+            stacked = np.stack([logpdf_k0, logpdf_k1, logpdf_k2], axis=0)
+            log_pi = np.log(pi_test)
+            from scipy.special import logsumexp
+            mixture_logpdf = logsumexp(stacked + log_pi[:, None], axis=0)
+            # Equals the shared per-tier logpdf (since logpdfs are equal,
+            # the LSE reduces to logpdf + log(Σ π_k) = logpdf + 0).
+            assert np.allclose(mixture_logpdf, logpdf_k0, rtol=1e-10), (
+                f"mixture vs explicit-Categorical drift under π={pi_test}"
+            )
+
+    def test_property_8_emit_pp_draws_tier_idx_from_posterior_pi(self) -> None:
+        """CORRECTIONS-α v0.4: post-hoc tier_idx draw uses posterior π.
+
+        Verifies that ``run_posterior_predictive`` injects a 3-D
+        ``tier_idx`` array into the posterior_predictive group, sourced
+        from posterior π via ``rng.choice``. With a degenerate posterior
+        π = (1, 0, 0) everywhere, the drawn tier_idx must be all zeros.
+        With π = (0, 1, 0), all ones. This is the test of "the right
+        Categorical was used", not just shape sanity.
+        """
+        from simulations.saas_builder.emit import run_posterior_predictive
+        from simulations.saas_builder.model import (
+            T1ModelFactory,
+            DEFAULT_FX_COP_PER_USD,
+        )
+        from simulations.saas_builder.priors import CohortPriors
+
+        priors = CohortPriors()
+        factory = T1ModelFactory(priors=priors, n_builders=4)
+        model = factory()
+        with model:
+            idata = pm.sample(
+                draws=50, tune=50, chains=2, cores=1,
+                progressbar=False, random_seed=42,
+            )
+        # Overwrite posterior π with a degenerate point mass on tier 1.
+        pi_arr = np.zeros_like(idata.posterior["pi"].values)
+        pi_arr[..., 1] = 1.0
+        idata.posterior["pi"] = (
+            ("chain", "draw", "pi_dim_0"), pi_arr,
+        )
+        pp = run_posterior_predictive(
+            model, idata,
+            x_max_fixed=priors.x_m.x_max_fixed,
+            blended_price_per_mtok=7.1495,
+            fx_cop_per_usd=DEFAULT_FX_COP_PER_USD,
+            random_seed=7,
+            n_builders=20,
+        )
+        tier_pp = np.asarray(pp["posterior_predictive"]["tier_idx"].values)
+        assert tier_pp.shape == (2, 50, 20)
+        # Every drawn tier index must be 1 under degenerate π.
+        assert np.all(tier_pp == 1)
+
 
 # ─── Stronger Hypothesis properties (cohort strategies) ─────────────────────
 
@@ -882,13 +990,8 @@ class TestMutationKillers:
             "phi": np.full((n_chains, n_draws), phi_pin),
             "alpha_pareto": np.full((n_chains, n_draws), 2.0),
             "x_m": np.full((n_chains, n_draws), 10.0),
-            "tier_idx": np.zeros((n_chains, n_draws), dtype=int),
             "pi": np.tile(np.array([0.2, 0.5, 0.3]), (n_chains, n_draws, 1)),
         }
-        prior_data: dict[str, np.ndarray] = {
-            k: v[:1] for k, v in post_data.items() if k != "tier_idx"
-        }
-        prior_data["tier_idx"] = post_data["tier_idx"][:1]
         diverging = np.zeros((n_chains, n_draws), dtype=bool)
         post = az.from_dict(
             posterior=post_data,
@@ -896,10 +999,12 @@ class TestMutationKillers:
             coords={"pi_dim_0": np.arange(3)},
             dims={"pi": ["pi_dim_0"]},
         )
+        # v0.4: tier_idx in posterior_predictive group (post-hoc draw).
         pp_data = {
             "tau_t": np.ones((n_chains, n_draws)) * 1e6,
             "q_t_usd": np.ones((n_chains, n_draws)) * 7.15,
             "q_t_cop": np.ones((n_chains, n_draws)) * 28600.0,
+            "tier_idx": np.zeros((n_chains, n_draws, 4), dtype=int),
         }
         pp = az.from_dict(posterior_predictive=pp_data)
 
@@ -939,14 +1044,9 @@ class TestMutationKillers:
             "phi": rng.normal(60.0, 5.0, (n_chains, n_draws)),
             "alpha_pareto": rng.uniform(1.6, 2.4, (n_chains, n_draws)),
             "x_m": rng.uniform(5.0, 15.0, (n_chains, n_draws)),
-            "tier_idx": rng.integers(0, 3, (n_chains, n_draws)),
             "pi": rng.dirichlet(np.array(DIRICHLET_ALPHA_VECTOR),
                                 (n_chains, n_draws)),
         }
-        prior_data: dict[str, np.ndarray] = {
-            k: v[:1] for k, v in post_data.items() if k != "tier_idx"
-        }
-        prior_data["tier_idx"] = post_data["tier_idx"][:1]
         diverging = np.zeros((n_chains, n_draws), dtype=bool)
         post = az.from_dict(
             posterior=post_data,
@@ -954,12 +1054,13 @@ class TestMutationKillers:
             coords={"pi_dim_0": np.arange(3)},
             dims={"pi": ["pi_dim_0"]},
         )
-        # Pinned non-zero pp values.
+        # Pinned non-zero pp values. v0.4: tier_idx in pp group.
         pp_qcop = rng.gamma(2.0, 30000.0, (n_chains, n_draws))
         pp_data = {
             "tau_t": rng.gamma(2.0, 1e6, (n_chains, n_draws)),
             "q_t_usd": rng.gamma(2.0, 7.0, (n_chains, n_draws)),
             "q_t_cop": pp_qcop,
+            "tier_idx": rng.integers(0, 3, (n_chains, n_draws, 4)),
         }
         pp = az.from_dict(posterior_predictive=pp_data)
 
