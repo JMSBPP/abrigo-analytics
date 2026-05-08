@@ -223,8 +223,18 @@ class DetChurnModelBuilder:
 
     def __call__(self, panel: UpsilonPanel) -> pm.Model:
         y = _first_trajectory(panel)
-        t_arr = np.arange(len(y), dtype=np.float64)
-        log_y = np.log(y)
+        # Spec v1.2.1 §15.4 forward-fix (CLOSE Phase 0 Task 0.2b): the
+        # likelihood scores t=1..T-1 (length T-1), matching the (T-1)
+        # convention documented in :func:`_first_trajectory`. Without this
+        # alignment, ``arviz.compare`` raises "number of observations should
+        # be the same across all models" because martingale and AR(1)-log
+        # both emit T-1 pointwise log-lik values while det+churn previously
+        # emitted T. The deterministic process Υ_t = Υ_0·((1+g)·(1-λ))^t
+        # at t=0 is exactly Υ_0, so dropping that observation removes a
+        # degenerate point that contributed only to identifying Υ_0 (which
+        # is now identified through the t≥1 mean curve via prior + data).
+        t_arr = np.arange(1, len(y), dtype=np.float64)
+        log_y = np.log(y[1:])
         with pm.Model() as model:
             upsilon_0 = pm.LogNormal(
                 "upsilon_0",

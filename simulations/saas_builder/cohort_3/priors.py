@@ -37,10 +37,14 @@ DET_CHURN_UPSILON0_LOG_SIGMA: Final[float] = 1.0
 DET_CHURN_G_PRIOR_MU: Final[float] = 0.05
 DET_CHURN_G_PRIOR_SIGMA: Final[float] = 0.10
 
-#: Det+churn churn λ prior — Beta(a, b). Anchored at solo-AI-builder
-#: monthly churn ~ 5% (Beta(2, 38) has mean 0.05 and CI ~ [0.006, 0.135]).
-DET_CHURN_LAMBDA_BETA_A: Final[float] = 2.0
-DET_CHURN_LAMBDA_BETA_B: Final[float] = 38.0
+#: Det+churn churn λ prior — Beta(a, b). Spec v1.2.1 §6.1 pin:
+#: λ ~ Beta(4.5, 95.5), mean = 0.045, concentration α+β = 100, anchored
+#: on SURVEY.md citation-5 (4.5% midpoint prosumer monthly churn).
+#: Spec v1.2.1 §15.4 routes Task 0.2b NON-NO-OP re-fit at this prior;
+#: previous v0.3 setting Beta(2.0, 38.0) (mean 0.05, conc. 40) is
+#: NOT equivalent — see §15.7 FLAG-A/B.
+DET_CHURN_LAMBDA_BETA_A: Final[float] = 4.5
+DET_CHURN_LAMBDA_BETA_B: Final[float] = 95.5
 
 
 # ─── Value types ──────────────────────────────────────────────────────────────
