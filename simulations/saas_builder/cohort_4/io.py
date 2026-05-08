@@ -30,6 +30,10 @@ from numpy.typing import NDArray
 from simulations.saas_builder.cohort_4._errors import (
     AuditBlockDriftError,
     DiagnosticGateError,
+    RoundTripDriftError,
+)
+from simulations.saas_builder.cohort_4.pi_derivation import (
+    derive_pi_t_symbolic,
 )
 from simulations.saas_builder.cohort_4.sign_cert import (
     SignVerdictMarkdownRenderer,
@@ -40,9 +44,6 @@ from simulations.saas_builder.cohort_4.types import (
     ZEvaluationResult,
 )
 from simulations.saas_builder.cohort_4.z_cap import ZCapRunner
-from simulations.saas_builder.cohort_4.pi_derivation import (
-    derive_pi_t_symbolic,
-)
 from simulations.types.posterior import ZCapPinned
 from simulations.types.tier import TIER_IDS, TierID
 from simulations.utils.audit_block import compute_audit_block
@@ -264,8 +265,8 @@ def pin_and_emit(
 
     # Step 6 — round-trip verify (defense-in-depth against fs drift).
     roundtripped = ZCapPinnedReader()(json_path)
-    if not _z_cap_pinned_equal(roundtripped, z_cap):
-        raise RuntimeError(
+    if not z_cap_pinned_equal(roundtripped, z_cap):
+        raise RoundTripDriftError(
             f"pin_and_emit: round-trip equality breach at {json_path}"
             f" — wrote {z_cap!r}, read back {roundtripped!r}"
         )
@@ -279,8 +280,14 @@ def pin_and_emit(
     return json_path, sidecar_path, z_cap, sign_verdicts
 
 
-def _z_cap_pinned_equal(a: ZCapPinned, b: ZCapPinned) -> bool:
-    """Field-by-field equality predicate for round-trip verification."""
+def z_cap_pinned_equal(a: ZCapPinned, b: ZCapPinned) -> bool:
+    """Field-by-field equality predicate for round-trip verification.
+
+    Promoted from the prior leading-underscore-private
+    ``_z_cap_pinned_equal`` (CR NIT-2 v0.3 sweep) — the function is
+    imported by the cohort-4 test suite and must therefore live on
+    the public surface of ``simulations.saas_builder.cohort_4.io``.
+    """
     if a.audit_block != b.audit_block:
         return False
     if a.schema_version != b.schema_version:
@@ -340,6 +347,12 @@ def with_tier_mix(z: ZCapPinned, tier_mix: Mapping[TierID, float]) -> ZCapPinned
     return replace(z, tier_mix=tier_mix)
 
 
+#: Backwards-compatible alias for the prior private name. New callers
+#: should import :func:`z_cap_pinned_equal` directly (CR NIT-2 v0.3
+#: sweep promoted the symbol to the public surface).
+_z_cap_pinned_equal = z_cap_pinned_equal
+
+
 __all__ = [
     "AuditBlockResolver",
     "DEFAULT_AUDIT_INPUT_RELATIVE_PATHS",
@@ -349,4 +362,5 @@ __all__ = [
     "assert_audit_block_unchanged",
     "pin_and_emit",
     "with_tier_mix",
+    "z_cap_pinned_equal",
 ]

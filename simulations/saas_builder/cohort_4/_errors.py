@@ -40,9 +40,21 @@ class MCErrorBudgetExceededError(Exception):
     """
 
 
+class RoundTripDriftError(Exception):
+    """Raised by ``pin_and_emit`` when the JSON round-trip breaks equality.
+
+    Phase-3 close (CR NIT-3 v0.3 sweep): replaces the prior bare
+    ``RuntimeError`` raised on ``pin_and_emit`` round-trip equality
+    breach. Routes consistently with :class:`AuditBlockDriftError`
+    so both sidecar-equality failures expose a typed cohort-4 error
+    class to the foreground harness.
+    """
+
+
 __all__ = [
     "AuditBlockDriftError",
     "DiagnosticGateError",
     "IdentityToleranceError",
     "MCErrorBudgetExceededError",
+    "RoundTripDriftError",
 ]
