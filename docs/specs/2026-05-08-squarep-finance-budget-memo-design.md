@@ -96,7 +96,7 @@ likely mid-to-late May.
 | Line | Amount | Rationale |
 |---|---|---|
 | `squarep.finance` domain (annual, paid May) | ~$50 | One-time annual; `.finance` TLD ~$30–80 (Cloudflare ~$45) |
-| X Basic | $8 | Start posting cadence now to seed before June 11 |
+| X (free tier — paid sub postponed) | $0 | Free account, multi-post threads; paid sub deferred to Section 7 trigger |
 | Vercel Hobby | $0 | Free tier sufficient for hackathon demo site |
 | Email (Cloudflare Email Routing → Gmail; Resend free for outbound) | $0 | Skip Workspace seat; hackathon-volume appropriate |
 | Alchemy Free tier | $0 | Sufficient until rate limits hit during demo polish |
@@ -106,7 +106,7 @@ likely mid-to-late May.
 | Mainnet deploy gas — Celo (Proof of Ship) | $10 | Initial deploys + monthly cadence updates; <$1/deploy on Celo |
 | Hackathon-discretionary slack | ~$232 | Unallocated; absorbs unexpected May needs and rolls forward |
 | **May spend ceiling** | **$400** | |
-| **May spend floor** (if Cloud Code top-up defers to June) | **$68** | Domain + X + Celo gas |
+| **May spend floor** (if Cloud Code top-up defers to June) | **$60** | Domain + Celo gas only (X paid sub postponed) |
 
 **Key choices:**
 
@@ -129,7 +129,7 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 
 | Line | Amount | Rationale |
 |---|---|---|
-| X Basic | $8 | Recurring |
+| X (free tier) | $0 | Paid sub still deferred; multi-post threads continue |
 | Vercel Hobby | $0 | Still free |
 | Email infra | $0 | Cloudflare + Resend stay free |
 | Alchemy Growth | $49 | **Committed** (was conditional) — removes RPC-throttling risk in polish week |
@@ -155,7 +155,7 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 |---|---|
 | Colombian macro paid data | Research-paper deadline becomes concrete; reassess in next budget cycle |
 | LinkedIn presence | First grant application or B2B-partnership conversation lined up |
-| X Premium upgrade ($8 → $16) | Single thread crosses ~5k impressions; checkmark becomes ROI-positive |
+| X paid subscription (Basic $8 or Premium $13–16) | Single thread crosses ~5k impressions, OR Hookathon judges click profile and bounce, OR multi-post threads cap distribution; whichever fires first |
 | Workspace email seats ($6/mo) | Second team member joins, OR judges start emailing alias regularly |
 | Vercel Pro ($20/mo) | Demo site needs custom analytics, password protection, or team seat |
 | AWS commitment plans | Compute usage stable across 2+ months |

@@ -84,13 +84,12 @@
   - Profile photo + banner: agent will provide drafts on request
   - Success: account live, follows ~30 relevant accounts (Atrium Academy, Uniswap Foundation, Reactive Network, Somnia, Celo, Mento, Panoptic, Encode Club + UHI9 cohort mates)
 
-- [ ] **USER — X Basic subscription** ($8/mo)
-  - Success: ledger entry under "Brand surface — X Basic"
+- [ ] ~~**USER — X paid subscription**~~ — **POSTPONED**. Trigger to revisit per spec §7: thread crosses 5k impressions, judges click profile and bounce, or multi-post threads cap distribution.
 
-- [ ] **AGENT — Draft X bio + profile copy + first-pinned-tweet**
-  - Output: `scratch/2026-05-08-squarep-finance-ledger/x-pinned-tweet-v1.md` (≤25k chars, threaded)
+- [ ] **AGENT — Draft X bio + profile copy + first pinned thread (multi-post format)**
+  - Output: `scratch/2026-05-08-squarep-finance-ledger/x-pinned-thread-v1.md` (8–10 short posts, ≤280 chars each)
   - Brief: positioning, what Abrigo is, what UHI9 capstone will demo, link to GitHub
-  - Success: user reads + approves + pastes
+  - Success: user reads + approves + pastes (post first, reply-thread the rest, pin the first)
 
 ### Day 5 — Tuesday May 12
 
