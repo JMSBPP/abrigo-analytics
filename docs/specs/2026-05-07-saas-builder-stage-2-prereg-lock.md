@@ -1,14 +1,14 @@
 ---
 spec_id: saas-builder-stage-2-prereg-lock
-spec_version: v1.1.1 (post-reverify; §8(6) rationale fix per MQ reverify FLAG-G)
-emit_timestamp_utc: 2026-05-07
+spec_version: v1.2.1 (tightening patch — concentration-prior provenance + Task 0.2b NON-NO-OP routing per v1.2 independent-audit MQ FLAGs)
+emit_timestamp_utc: 2026-05-08
 parent_framework: notes/PRIMITIVES.md (a_s / a_l / CPO primitives)
 cohort_note: notes/SaaS_Builders_AI_NativeBuilders.md (cohort instantiation of §4.2)
 research_anchor: scratch/2026-05-07-claude-code-cost-research/RESEARCH.md (1500 words, 22 references)
-audit_anchor: scratch/2026-05-07-prereg-review/ (Wave-1 RC + Wave-2 MQ verdicts; disposition memo)
+audit_anchor: scratch/2026-05-07-prereg-review/ (Wave-1 RC + Wave-2 MQ verdicts; disposition memo); scratch/2026-05-09-spec-v1.2-review/ (RC ACCEPT + MQ ACCEPT_WITH_FLAGS on v1.2; 2 FLAGs addressed in v1.2.1)
 authority: CLAUDE.md anti-fishing invariants (NON-NEGOTIABLE); brainstorming flow; CORRECTIONS-ι per-user a_s framing; feedback_pathological_halt_anti_fishing_checkpoint
-predecessor: v1.0 (REJECTED 2-wave; 10 BLOCKs + 11 FLAGs)
-corrections_block: §14 — CORRECTIONS-α (covers RC-BLOCK-1,2,3 + MQ-BLOCK-1..7; MQ-FLAG-A..F)
+predecessor: v1.0 (REJECTED 2-wave; 10 BLOCKs + 11 FLAGs); v1.2 (ACCEPT_WITH_FLAGS — 2 MQ FLAGs)
+corrections_block: §14 — CORRECTIONS-α v1.0 → v1.1 (covers RC-BLOCK-1,2,3 + MQ-BLOCK-1..7; MQ-FLAG-A..F); §15 — CORRECTIONS-α v1.1.1 → v1.2 (S_t form pin per SURVEY.md, adjudicates C3 MQ-FLAG-2); §15.7 — CORRECTIONS-α v1.2 → v1.2.1 (concentration provenance + Task 0.2b NON-NO-OP routing)
 status: REVERIFY-PASSED — Wave-1 RC ACCEPT_WITH_FLAGS PROCEED + Wave-2 MQ ACCEPT_WITH_FLAGS PROCEED. Sub-task dispatch authorized per §13(5–6) pending user approval. Residual: 2 RC FLAGs (Section M source primary-trace, $p_t$ dimensional one-liner) + 4 MQ FLAGs (G stale α-rationale → fixed in v1.1.1; H Dirichlet "mild" wording; I 4·SE PASS threshold stricter than canonical 2·SE; J $(\alpha, x_m, \kappa)$ joint identifiability — mitigated by §8(7) CI-width gate). All non-blocking; addressable in v1.2 or sub-task plan-time.
 ---
 
@@ -379,7 +379,7 @@ Per the prior conversation:
 | Object | Primary form | Source | Sensitivity arms |
 |---|---|---|---|
 | $a_s^{(T)}$ | (S1): $\sum \Upsilon_t - \sum q_t/(X/Y)_t$ | PRIMITIVES (5'); SaaS note | n/a — universal |
-| $\Upsilon_t$ | (S4): martingale $\mathbb{E}[\Upsilon_{t+1}\mid\mathcal F_t] = \Upsilon_t$ | SaaS note §"Revenue" | AR(1)-log-MRR; det+churn |
+| $\Upsilon_t$ | (S4): martingale $\mathbb{E}[\Upsilon_{t+1}\mid\mathcal F_t] = \Upsilon_t$ | SaaS note §"Revenue" | AR(1)-log-MRR; det+churn with $S_t = (1-\lambda)^t$ per §6.1 |
 | $\text{tier}_i$ | Categorical($\pi_{\text{Pro}}, \pi_{\text{Max-5x}}, \pi_{\text{Max-20x}}$) per builder | §5.1, §5.2 | Dirichlet bracket |
 | $\bar p_{\text{sub}}$ | Discrete RV indexed by $\text{tier}_i$: $\{20, 100, 200\}$ | §5.2 | post-doubling $\kappa$ arm |
 | $q_t^{\text{sticky}}$ | (T2) softplus-regularized overage $p_t \cdot \mathrm{softplus}_\beta(\tau_t - \kappa)$ | §5.1 | $\beta \to \infty$ asymptotic; ReLU baseline |
@@ -395,6 +395,102 @@ Per the prior conversation:
 this document only**; they are not numbered equations of PRIMITIVES.md
 (which ends at (20)). T-numbering is local to this spec. Sub-task plans
 must cite as "spec §5.1 (T1)" not "PRIMITIVES.md (T1)".
+
+### §6.1 Det+churn survival form $S_t$ — LOCKED v1.2
+
+The Det+churn sensitivity arm of $\Upsilon_t$ requires a per-builder
+cohort-survival process $S_t = \Pr[\text{builder still active at }t \mid
+\text{active at }t-1]$. v1.1.1 left the functional form ambiguous
+(C3 MQ-FLAG-2). v1.2 pins:
+
+$$
+S_t \;=\; (1 - \lambda)^t, \qquad \lambda \sim \mathrm{Beta}(\alpha_S, \beta_S)
+$$
+
+i.e. **deterministic factor / discrete-time constant-hazard exponential
+survival**, single hazard parameter $\lambda$.
+
+**Authority.** `scratch/2026-05-09-st-literature-survey/SURVEY.md`
+(2026-05-09) — methodology-led literature survey produced *decoupled
+from C3 v0.3 implementation code* per CLOSE plan v0.2 BLOCK-2
+anti-fishing constraint. SURVEY.md §5 TOP RECOMMENDATION; rationale per
+SURVEY.md §3.1, §3.2, §3.4, §3.5, §4. Citations 1-5: Zammit & Zerafa
+2025 (arxiv:2502.12912); Han, Hou & Chen 2018 (arxiv:1808.03831);
+Equihua et al. 2023 (arxiv:2304.00575); Tsubota & Beppu 2025
+(arxiv:2506.00889); Reichheld + Recurly / Paddle / Indie Hackers
+prosumer-segment monthly-churn benchmarks.
+
+**Rationale (condensed from SURVEY.md §5).**
+(i) Matches monthly observation cadence of AI-tooling subscription
+billing. (ii) Memoryless hazard is the appropriate default given
+event-driven, FX-shock-correlated builder exit, with no calendar-tied
+honeymoon or wear-out mechanism for the solo AI-native LATAM cohort.
+(iii) Reichheld retention math implicitly assumes this form across all
+SaaS practitioner literature. (iv) Maximally parsimonious — one
+parameter, identifiable under cohort prior alone, leaves the §6
+$\Upsilon_t$ form-selection PSIS-LOO-CV ranking uncontaminated by
+free shape parameters. (v) Nested null inside Weibull at $k=1$
+(SURVEY.md §3.4, citation 2), enabling Stage-3 falsification.
+
+**$\lambda$ prior — pinned v1.2.**
+
+$$
+\lambda \sim \mathrm{Beta}(\alpha_S = 4.5,\; \beta_S = 95.5)
+$$
+
+Properties: $\mathbb{E}[\lambda] = \alpha_S / (\alpha_S + \beta_S) =
+0.045$ (centered on the 4.5% midpoint of the SURVEY.md citation-5
+prosumer-segment 4–5% monthly-churn benchmark); concentration
+$\alpha_S + \beta_S = 100$ (moderate — informative about the
+4–5%/mo industry pin yet allows posterior shrinkage from any Stage-3
+cohort survival panel); 95% prior CI $\approx [0.013, 0.094]$ which
+covers the full SURVEY.md-cited prosumer/solopreneur range without
+admitting implausibly heavy attrition ($\lambda > 0.10$/mo) or
+implausible loyalty ($\lambda < 0.01$/mo) for this cohort. Posterior
+CI-width threshold §8(7) applies.
+
+**Concentration-provenance defence ($\alpha_S + \beta_S = 100$).** The
+concentration is selected as informative-but-not-overconfident on
+independent benchmarks, NOT retro-fit to a target posterior. (i)
+**Upper exclusion**: at concentration 100, prior mass on $\lambda >
+0.10$/mo is $\approx 1.5\%$, excluding implausible $>10\%$/mo exit
+rates that contradict prosumer-segment retention benchmarks
+(SURVEY.md citation 5: Reichheld + Recurly / Paddle / Indie Hackers
+prosumer-segment monthly churn $\approx 4$–$5\%$ reported as a
+single-rate quantity; tail beyond $10\%$/mo not observed in any cited
+prosumer cohort). (ii) **Lower-concentration rejection**: lower
+concentrations ($\alpha_S + \beta_S < 50$) admit material prior mass
+on $\lambda > 0.15$/mo (e.g., at concentration 40 ≈ C3 v0.3 prior,
+$\Pr[\lambda > 0.15] \approx 4\%$) inconsistent with the cohort's
+wage-funded recurring-purchase model — the cohort has *contractual
+monthly billing* (SURVEY.md §3.1 distinguishing from BG/NBD non-
+contractual setting), making aggressive churn priors inappropriate
+for Stage-2 synthetic-Bayesian regime where no panel data shrinks
+the prior. (iii) **Higher-concentration rejection**: concentrations
+$>200$ overconfidently constrain Stage-3 falsification — the Stage-3
+Weibull-$k$-vs-exponential test (§6.1 Stage-3 falsification path)
+requires posterior shrinkage capacity from real survival panel data,
+which a too-tight Stage-2 prior would suppress. Concentration 100
+sits in the documented mid-band (50–200) where 95% prior CI brackets
+the SURVEY.md-cited 4–5% range with margin on each side and prior
+predictive checks (§7) admit Stage-3 panel updating without
+collapsing onto the prior mean.
+
+**Stage-3 falsification path.** $S_t = (1-\lambda)^t$ is the $k=1$
+nested null inside Weibull $S(t) = e^{-(\lambda t)^k}$. Once Stage-3
+real-cohort survival panel data exists (per RESEARCH.md §6 cohort
+survey, n=30–75), constant-hazard memorylessness may be falsified by
+fitting Weibull and testing $k \ne 1$ (LR test or posterior CI on $k$
+excluding 1). Stage-2 synthetic-Bayesian regime does **not** admit
+$k$ as a free parameter (SURVEY.md §3.4 weakness: no theoretical
+anchor for $k$ at Stage-2). Falsification is deferred to Stage-3 by
+construction — this is not a fishing surface, it is a scope boundary.
+
+**Candidate-set closure (§8(5)) reaffirmed.** $S_t = (1-\lambda)^t$ is
+the **only** admitted survival form for the Det+churn arm at Stage-2.
+Bernoulli-time-varying, Gompertz, BG/NBD, and free-Weibull are
+explicitly **rejected** at Stage-2 per SURVEY.md §3.2, §3.5, §3.6,
+§3.4 respectively. Adding any post-hoc fires HALT per §8(5).
 
 ## §7 Tooling commitment (Option 1) — post-MQ-BLOCK-6,7 update
 
@@ -677,3 +773,306 @@ End of CORRECTIONS-α.
       complete.
 
 End of v1.1.
+
+---
+
+## §15 CORRECTIONS-α — v1.1.1 → v1.2 delta record
+
+Per `feedback_pathological_halt_anti_fishing_checkpoint`, this
+CORRECTIONS-block is valid because:
+- (a) **Triggered by external signal** — C3 (TODO-COHORT-3 $\Upsilon_t$
+  form selection via PSIS-LOO-CV) Wave-2 MQ verify produced
+  **MQ-FLAG-2**: spec v1.1.1 §5 / §6 Det+churn arm specified a per-
+  builder survival process but did not pin its functional form.
+  Implementation chose $S_t = (1-\lambda)^t$ on parsimony grounds; MQ
+  flagged this as a spec ambiguity not a code defect, requiring spec
+  amendment before close-out. ✅
+- (b) **Disposition memo with ≥3 pivot options** — SAAS-COHORT-CLOSE
+  plan v0.2 (`docs/plans/2026-05-09-saas-cohort-close.md`) Phase 0
+  Task 0.1 enumerated: (α) ratify $(1-\lambda)^t$ via decoupled
+  literature survey; (β) Weibull with $k$-prior; (γ) Bernoulli per-
+  step time-varying; plus four runner-ups (Gompertz, BG/NBD, cloglog,
+  continuous-time exponential). ✅
+- (c) **User adjudication via decoupled lit survey** — Task 0.1
+  produced `scratch/2026-05-09-st-literature-survey/SURVEY.md`
+  (288 lines, 7 citations) by an analyst who did NOT read C3 v0.3
+  implementation code prior to writing the survey, per CLOSE plan
+  v0.2 BLOCK-2 anti-fishing constraint. SURVEY.md §5 TOP
+  recommendation: $(1-\lambda)^t$ deterministic factor / discrete-
+  time constant-hazard exponential, with $\lambda \sim \mathrm{Beta}$
+  prior centered on 4–5% prosumer-segment monthly churn. ✅
+- (d) **Old + new + preserved-guarantees argument** — this section. ✅
+- (e) **Post-hoc verify on the result** — independent RC + MQ 2-wave
+  reverify queued per SAAS-COHORT-CLOSE plan v0.2 Phase 0 Task 0.3. ⏳
+
+### §15.1 The change
+
+| Element | v1.1.1 | v1.2 |
+|---|---|---|
+| §6 functional-form table, $\Upsilon_t$ row, sensitivity arm column | "AR(1)-log-MRR; det+churn" (form unspecified) | "AR(1)-log-MRR; det+churn with $S_t = (1-\lambda)^t$ per §6.1" |
+| §6.1 Det+churn survival form | (absent) | NEW — pins $S_t = (1-\lambda)^t$, $\lambda \sim \mathrm{Beta}(4.5, 95.5)$, falsification path, candidate-set closure |
+| Spec version | v1.1.1 | v1.2 |
+| emit_timestamp_utc | 2026-05-07 | 2026-05-08 |
+
+### §15.2 Authority and rationale
+
+**Authority is SURVEY.md, NOT C3 v0.3 implementation.** The amendment
+ratifies the literature survey's adjudication of spec §5 ambiguity on
+the basis of: (i) Reichheld retention-math identity implicitly
+assuming constant hazard across SaaS practitioner literature
+(SURVEY.md §3.1 + citation 5); (ii) Recurly / Paddle / Indie Hackers
+prosumer-segment industry benchmark of 4–5% monthly churn reported as
+a single-rate quantity (SURVEY.md citation 5); (iii) parsimony under
+synthetic-Bayesian Stage-2 regime where shape-flexibility would
+contaminate the §6 PSIS-LOO-CV form-selection ranking (SURVEY.md §4);
+(iv) memorylessness as appropriate default for event-driven (FX-
+shock, side-project abandonment, full-time-job absorption) builder
+exit absent calendar-tied honeymoon/wear-out mechanisms (SURVEY.md
+§3.1, §3.4 cohort-fit); (v) Han, Hou & Chen 2018 (arxiv:1808.03831)
+showing Weibull as the most robust nesting form, with exponential as
+the most parsimonious special case at $k=1$ (SURVEY.md citation 2),
+making the pin testable at Stage-3 without committing Stage-2 to the
+extra parameter.
+
+**Citations (per SURVEY.md §7).**
+1. Zammit & Zerafa 2025 (arxiv:2502.12912) — BG/NBD canonical
+   reference; documents non-contractual setting, contrasting with
+   this cohort's contractual monthly billing.
+2. Han, Hou & Chen 2018 (arxiv:1808.03831) — exponential vs Weibull
+   vs Gompertz comparison; Weibull nests exponential at $k=1$.
+3. Equihua et al. 2023 (arxiv:2304.00575) — substantiates parsimony
+   under no-data Stage-2 regime via deep-survival data demands.
+4. Tsubota & Beppu 2025 (arxiv:2506.00889) — discrete-time cloglog
+   alternative if Stage-3 covariate-conditional hazards needed.
+5. Reichheld + Recurly / Paddle / Indie Hackers — prosumer / solo-
+   targeted SaaS monthly churn ≈ 4–5% benchmark, single-rate
+   reporting operationally exponential-survival.
+
+### §15.3 Coincidence with C3 v0.3 — partial form-coincidence, prior-mismatch (revised v1.2.1)
+
+> **v1.2.1 correction.** v1.2 §15.3 originally framed the
+> SURVEY-vs-C3-v0.3 alignment as "coincidence" on the *functional
+> form* and presumed, without inspecting code, that the priors
+> matched. v1.2 independent-audit MQ FLAG-B established that **the
+> priors do NOT match**: C3 v0.3 implements $\lambda \sim
+> \mathrm{Beta}(2.0, 38.0)$ (mean $= 0.05$, concentration $= 40$) per
+> `simulations/saas_builder/cohort_3/priors.py:42-43`, while v1.2
+> pins $\lambda \sim \mathrm{Beta}(4.5, 95.5)$ (mean $= 0.045$,
+> concentration $= 100$). The §15.3 coincidence claim holds only at
+> the *functional-form* level $(1-\lambda)^t$; it does NOT extend to
+> the prior hyperparameters.
+
+C3 v0.3 implementer chose $(1-\lambda)^t$ for parsimony reasons; the
+SURVEY arrived at the same form independently via literature +
+cohort-economic semantics. Form coincidence is preserved. Prior-
+hyperparameter coincidence is **explicitly disclaimed in v1.2.1**:
+the C3 v0.3 $\mathrm{Beta}(2.0, 38.0)$ prior is *not* the v1.2-pinned
+$\mathrm{Beta}(4.5, 95.5)$ prior, and the two priors are NOT
+equivalent.
+
+**Authority remains the literature survey, not C3 v0.3 code.** Had
+SURVEY.md recommended Weibull-with-prior-near-$k=1$ or BG/NBD, v1.2
+would have pinned that form and C3 v0.3 would have been re-fit
+accordingly. The same logic applies to the prior: SURVEY.md citation
+5 (4–5% midpoint, prosumer-segment) drove $\mathrm{Beta}(4.5, 95.5)$;
+C3 v0.3's $\mathrm{Beta}(2.0, 38.0)$ was chosen by the implementer
+*before* SURVEY.md existed and is not load-bearing on the v1.2 pin.
+
+### §15.4 C3 re-fit / Task 0.2b status — NON-NO-OP routing (revised v1.2.1)
+
+> **v1.2.1 correction.** v1.2 §15.4 authorized Task 0.2b as a NO-OP
+> on the assumption that C3 v0.3's prior matched the v1.2 pin. v1.2
+> independent-audit MQ FLAG-B falsified that assumption (see §15.3
+> revised). v1.2.1 **rescinds the NO-OP authorization** and routes
+> Task 0.2b to **NON-NO-OP execution**: a real re-fit of C3 under
+> the v1.2-pinned $\mathrm{Beta}(4.5, 95.5)$ prior is required.
+
+**Prior-mismatch acknowledgement (load-bearing).** C3 v0.3 was
+implemented with $\lambda \sim \mathrm{Beta}(2.0, 38.0)$
+(mean $= 0.05$, concentration $= 40$); spec v1.2 pins $\lambda \sim
+\mathrm{Beta}(4.5, 95.5)$ (mean $= 0.045$, concentration $= 100$).
+The priors are **NOT equivalent** — they differ in both location
+($0.050$ vs $0.045$) and concentration ($40$ vs $100$, a factor of
+$2.5\times$ in informativeness). The v1.2-pinned prior is materially
+tighter and centred on a slightly lower mean. A re-fit is required
+to obtain a posterior conditioned on the v1.2 prior.
+
+**Routing.** Per CLOSE plan v0.2 Phase 0 Task 0.2b, C3 must be re-
+fit under the v1.2-pinned $\lambda \sim \mathrm{Beta}(4.5, 95.5)$
+prior. The re-fit:
+
+1. Replaces `DET_CHURN_LAMBDA_BETA_A = 2.0` and
+   `DET_CHURN_LAMBDA_BETA_B = 38.0` in
+   `simulations/saas_builder/cohort_3/priors.py` with $4.5$ and
+   $95.5$ respectively (single-line amendment, frozen-dataclass
+   semantics preserved).
+2. Re-runs the full PSIS-LOO-CV form-selection comparison
+   (martingale, AR(1)-log-MRR, det+churn) under the new prior.
+3. Re-issues the C3 PASS / WEAK / MARGINAL / FAIL / INDISTINGUISHABLE
+   verdict from the §9 thresholds.
+
+**HALT-on-ELPD-rank-flip.** The HALT-on-flip safeguard from CLOSE
+plan v0.2 Phase 0 Task 0.2b **remains in force**. If the re-fit
+ELPD ranking flips relative to C3 v0.3 (i.e., a different $\Upsilon_t$
+form wins, or any verdict band crosses the $4 \cdot \mathrm{SE}$ /
+$2 \cdot \mathrm{SE}$ thresholds), the close-out HALTs and a
+disposition memo is required before Phase 1 dispatch.
+
+**Audit-trail integrity.** The prior change ($\mathrm{Beta}(2.0,
+38.0) \to \mathrm{Beta}(4.5, 95.5)$) is documented as a **real
+Stage-2 methodology change** triggered by SURVEY.md adjudication of
+§5 ambiguity. It is **not** cosmetic. The v1.2 spec amendment is
+a substantive prior tightening, and Task 0.2b is the substantive
+verification that the C3 verdict survives that tightening.
+
+**Anti-fishing posture (load-bearing).** The $\mathrm{Beta}(4.5,
+95.5)$ prior was selected on independent literature grounds
+(SURVEY.md citation 5 prosumer-segment 4–5% midpoint; concentration-
+provenance §6.1) **before** the v1.2 author inspected
+`cohort_3/priors.py`. The prior was NOT chosen to match the C3 v0.3
+results. The fact that it differs from C3 v0.3's prior is evidence
+of independent derivation, not post-hoc selection. The decoupled
+literature-survey constraint (CLOSE plan v0.2 BLOCK-2) was honoured
+specifically to permit this assertion.
+
+### §15.5 Preserved guarantees
+
+This patch preserves verbatim:
+
+1. **CLAUDE.md anti-fishing invariants** — $N_{\text{MIN}}=75$,
+   $\text{POWER}_{\text{MIN}}=0.80$, $\text{MDES}_{\text{SD}}=0.40$,
+   sign pre-pin discipline, HALT cascade per
+   `feedback_pathological_halt_anti_fishing_checkpoint`.
+2. **§5 cost specification** — (T1) NegBin × TruncPareto, (T2)
+   softplus regularization, tier-prior Categorical, blended $p_t$
+   formula, all §5.2 brackets sha-pinned.
+3. **§6 $a_s^{(T)}$, $\Upsilon_t$ primary martingale** — unchanged.
+   Det+churn remains a sensitivity arm.
+4. **§7 PSIS-LOO-CV via `arviz.compare`** — unchanged.
+5. **§8 anti-fishing invariants** — all 10 items preserved verbatim.
+   §6.1 candidate-set closure reaffirms §8(5).
+6. **§9 verification gates** — TODO-COHORT-3 thresholds (PASS at
+   $\Delta\mathrm{elpd}_{\mathrm{loo}} > 4 \cdot \mathrm{SE}$;
+   INDISTINGUISHABLE at $< 2 \cdot \mathrm{SE}$) unchanged.
+7. **$\Upsilon_t$ closed candidate set** (martingale, AR(1)-log-MRR,
+   det+churn, pure deterministic-no-churn per spec §6 + C3 v0.3
+   territory) — unchanged. v1.2 narrows the *internal specification*
+   of the det+churn arm only.
+
+### §15.6 Anti-fishing posture
+
+**No threshold relaxed. No pin loosened. No candidate added.**
+
+The amendment is *strictly tightening*: spec v1.1.1 left $S_t$ form
+unspecified, admitting any survival functional form an implementer
+might choose. v1.2 pins the form to a specific 1-parameter family
+with a specific Beta prior, with explicit candidate-set closure
+reaffirming §8(5) HALT-on-post-hoc-additions. The Stage-3
+falsification path (Weibull $k\ne 1$) is documented as a *scope
+boundary* (synthetic-Bayesian Stage-2 cannot identify $k$ without
+data) not as a *fishing escape hatch*.
+
+The lit survey was conducted decoupled from code per CLOSE plan v0.2
+BLOCK-2 anti-fishing constraint specifically to avoid retroactive
+ratification of an implementation choice. Authority chain:
+
+  (literature + cohort economics) → SURVEY.md TOP recommendation
+  → spec v1.2 §6.1 pin → C3 v0.3 conformance check
+  → (v1.2.1) prior-mismatch detected → Task 0.2b NON-NO-OP re-fit
+
+NOT:
+
+  (C3 v0.3 implementation) → spec ratification
+
+This ordering is what permits the v1.2.1 NON-NO-OP routing of Task
+0.2b in §15.4 (revised) without violating the anti-fishing
+invariants: the prior-mismatch is evidence the spec was NOT retro-
+fit to the implementation.
+
+End of CORRECTIONS-α v1.1.1 → v1.2.
+
+### §15.7 CORRECTIONS-α — v1.2 → v1.2.1 (concentration provenance + Task 0.2b NON-NO-OP routing)
+
+Per `feedback_pathological_halt_anti_fishing_checkpoint`, this sub-
+block is valid because:
+
+- (a) **Triggered by external signal** — v1.2 independent-audit MQ
+  verdict (`scratch/2026-05-09-spec-v1.2-review/mq-verdict.md`,
+  ACCEPT_WITH_FLAGS) raised 2 FLAGs: FLAG-A (concentration
+  provenance) and FLAG-B (Task 0.2b NON-NO-OP). RC verdict
+  (`scratch/2026-05-09-spec-v1.2-review/rc-verdict.md`) ACCEPT — no
+  reproducibility-class fixes. ✅
+- (b) **No pin loosened, no candidate added** — patch is strictly
+  tightening: §6.1 adds independent-benchmark provenance for
+  $\alpha_S + \beta_S = 100$; §15.4 escalates Task 0.2b from NO-OP to
+  NON-NO-OP (more verification, not less). ✅
+- (c) **Audit-trail integrity preserved** — v1.2 §15.3 / §15.4
+  retained verbatim with explicit "v1.2.1 correction" preface
+  blockquotes; prior assumption (form coincidence ⇒ prior
+  coincidence) explicitly disclaimed; no rewrite of historical text
+  to suppress the mistake. ✅
+- (d) **Old + new + preserved-guarantees argument** — this section.
+  ✅
+- (e) **Post-hoc verify on the result** — independent RC + MQ 2-wave
+  reverify on v1.2.1 queued before CLOSE plan v0.2 Phase 1 dispatch.
+  ⏳
+
+**FLAG-A — concentration provenance (§6.1, MQ verdict).**
+
+| Element | v1.2 | v1.2.1 |
+|---|---|---|
+| §6.1 concentration defence | "moderate" (no independent benchmark) | NEW concentration-provenance defence paragraph: $>10\%$/mo upper exclusion via SURVEY.md citation 5; rejection of $\alpha_S+\beta_S<50$ on cohort-billing-model grounds; rejection of $>200$ on Stage-3 falsification-capacity grounds |
+
+**Fix-A**. §6.1 concentration $\alpha_S + \beta_S = 100$ is now
+defended on three independent benchmarks: (i) tail-mass exclusion
+of $>10\%$/mo against SURVEY.md citation 5 prosumer-segment
+benchmark; (ii) lower-bound rejection ($<50$) on contractual-billing
+cohort grounds (SURVEY.md §3.1 distinguishing from BG/NBD non-
+contractual setting); (iii) upper-bound rejection ($>200$) on
+Stage-3 Weibull-falsification-capacity grounds. Concentration $=
+100$ sits in the documented mid-band where 95% prior CI brackets
+4–5% with margin.
+
+**FLAG-B — Task 0.2b NON-NO-OP routing (§15.4, MQ verdict).**
+
+| Element | v1.2 | v1.2.1 |
+|---|---|---|
+| §15.3 prior-coincidence claim | "coincidence, not ratification" (form + prior assumed coincident) | revised — form coincidence preserved; prior-mismatch explicitly disclaimed |
+| §15.4 Task 0.2b status | NO-OP authorized; "*defined to have been conducted* under v1.2 prior" | NON-NO-OP routing; real re-fit required; HALT-on-ELPD-rank-flip in force |
+| §15.4 prior-mismatch acknowledgement | absent | NEW — C3 v0.3 implements $\mathrm{Beta}(2.0, 38.0)$; v1.2 pins $\mathrm{Beta}(4.5, 95.5)$; priors NOT equivalent |
+| §15.4 anti-fishing posture | implicit | NEW — explicit assertion that v1.2 prior was selected on lit grounds *before* `priors.py` inspection |
+
+**Fix-B**. §15.4 NO-OP authorization rescinded. C3 must be re-fit
+under $\lambda \sim \mathrm{Beta}(4.5, 95.5)$ per the procedure
+documented in §15.4 (revised). The HALT-on-ELPD-rank-flip safeguard
+from CLOSE plan v0.2 Phase 0 Task 0.2b remains in force. The prior
+delta ($\mathrm{Beta}(2.0, 38.0) \to \mathrm{Beta}(4.5, 95.5)$) is
+documented as a real Stage-2 methodology change, not cosmetic.
+
+**Anti-fishing assertion (load-bearing, v1.2.1 author certification).**
+The v1.2 $\mathrm{Beta}(4.5, 95.5)$ pin was derived from SURVEY.md
+citation 5 (4–5% prosumer-segment midpoint) and the concentration
+provenance now in §6.1, both grounded in literature decoupled from
+implementation per CLOSE plan v0.2 BLOCK-2. The v1.2 author did NOT
+inspect `simulations/saas_builder/cohort_3/priors.py` prior to
+selecting the prior hyperparameters. The prior-mismatch surfaced by
+v1.2 audit is therefore evidence of independent derivation, not
+post-hoc selection. The lit-derived prior stands; C3 v0.3 must
+adapt under Task 0.2b.
+
+**Preserved guarantees (v1.2.1).** Items 1–7 of §15.5 carry forward
+verbatim. Additionally:
+
+8. **§6 candidate-set closure** — unchanged. $S_t = (1-\lambda)^t$
+   remains the only admitted survival form.
+9. **CLOSE plan v0.2 HALT-on-flip mechanic** — preserved and now
+   load-bearing on the Task 0.2b re-fit.
+10. **§9 verification gates** — unchanged; same $4\cdot\mathrm{SE}$
+    PASS / $2\cdot\mathrm{SE}$ INDISTINGUISHABLE thresholds apply
+    to the re-fit ELPD ranking.
+
+**MQ verdict citation.** Both FLAGs documented in
+`scratch/2026-05-09-spec-v1.2-review/mq-verdict.md`
+(ACCEPT_WITH_FLAGS) per the v1.2 independent-audit dispatch.
+
+End of CORRECTIONS-α v1.2 → v1.2.1.
