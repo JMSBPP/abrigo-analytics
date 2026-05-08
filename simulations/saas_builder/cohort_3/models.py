@@ -40,6 +40,7 @@ from simulations.saas_builder.cohort_3.priors import (
 from simulations.saas_builder.cohort_3.types import (
     REVENUE_FORM_NAMES,
     RHO_BOUNDARY_TAIL_THRESHOLD,
+    CvMethod,
     RevenueFormFit,
     RevenueFormName,
     UpsilonPanel,
@@ -399,7 +400,7 @@ class FitDriver:
     tune: int = 1000
     target_accept: float = 0.95
     seed: int = 20260508
-    cv_method: str = "loo"
+    cv_method: CvMethod = "loo"
 
     def __post_init__(self) -> None:
         if self.draws < DRAWS_PER_CHAIN_FLOOR:
@@ -418,6 +419,9 @@ class FitDriver:
                 f"FitDriver.target_accept = {self.target_accept}"
                 f" must lie in (0, 1)"
             )
+        # CR N3 v0.3 sweep: cv_method is now ``CvMethod`` Literal, so the
+        # tuple-membership check below is now a defense-in-depth guard for
+        # callers that bypass the type system (str injected at runtime).
         if self.cv_method not in ("loo", "lfo"):
             raise ValueError(
                 f"FitDriver.cv_method = {self.cv_method!r}"

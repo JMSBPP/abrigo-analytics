@@ -159,8 +159,15 @@ class VerdictArtifactWriter:
 
 
 def _to_float(value: object) -> float:
-    """Coerce a JSON-decoded numeric to float; raise SchemaMismatchError otherwise."""
-    if isinstance(value, (int, float)) or isinstance(value, SupportsFloat):
+    """Coerce a JSON-decoded numeric to float; raise SchemaMismatchError otherwise.
+
+    Phase-3 nit (CR N2 v0.3 sweep): the prior
+    ``isinstance(value, (int, float)) or isinstance(value, SupportsFloat)``
+    was redundant — ``int`` and ``float`` are both ``SupportsFloat``
+    subtypes. A single ``SupportsFloat`` check suffices and tightens
+    type narrowing.
+    """
+    if isinstance(value, SupportsFloat):
         return float(value)
     raise SchemaMismatchError(
         f"VerdictArtifactWriter._to_float: value {value!r}"

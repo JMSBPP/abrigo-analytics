@@ -89,7 +89,8 @@ def _make_panel(n_months: int = 36, n_sims: int = 1) -> UpsilonPanel:
     rng = np.random.default_rng(20260508)
     for s_idx in range(n_sims):
         for m in range(n_months):
-            rows.append((m, f"sim_{s_idx}", float(1.0e6 * (1.05 ** m) * rng.uniform(0.95, 1.05)), "cohort_a"))
+            value = float(1.0e6 * (1.05 ** m) * rng.uniform(0.95, 1.05))
+            rows.append((m, f"sim_{s_idx}", value, "cohort_a"))
     return UpsilonPanel(
         month_index=np.array([r[0] for r in rows], dtype=np.int64),
         simulation_id=tuple(r[1] for r in rows),
@@ -710,6 +711,38 @@ def test_r5_audit_block_deterministic() -> None:
     assert all(c in "0123456789abcdef" for c in h1)
 
 
+def test_r5_audit_block_invariant_under_dict_insertion_order() -> None:
+    """CR N6 v0.3 sweep: compute_audit_block sorts idata_paths keys.
+
+    Two ``Mapping`` inputs with the same items but different insertion
+    order (Python 3.7+ dict preserves insertion order) must yield the
+    same digest. Pins the ``sorted(idata_paths)`` reduction in
+    ``cohort_3/io.py:compute_audit_block`` against silent regression to
+    iteration-order-dependent hashing.
+    """
+    paths_order_a = {
+        "martingale": "estimates/cohort_3_idata_martingale.nc",
+        "ar1_log": "estimates/cohort_3_idata_ar1_log.nc",
+        "det_churn": "estimates/cohort_3_idata_det_churn.nc",
+    }
+    paths_order_b = {
+        "det_churn": "estimates/cohort_3_idata_det_churn.nc",
+        "martingale": "estimates/cohort_3_idata_martingale.nc",
+        "ar1_log": "estimates/cohort_3_idata_ar1_log.nc",
+    }
+    h_a = compute_audit_block(
+        "data/upsilon_panel.parquet",
+        "2026-05-08T00:00:00Z",
+        paths_order_a,
+    )
+    h_b = compute_audit_block(
+        "data/upsilon_panel.parquet",
+        "2026-05-08T00:00:00Z",
+        paths_order_b,
+    )
+    assert h_a == h_b
+
+
 # ─── R2: arviz.compare integration via LooComparator ───────────────────────────
 
 
@@ -899,8 +932,11 @@ def test_loo_comparator_full_pipeline() -> None:
         "det_churn": _fit("det_churn"),
     }
     result = VerdictRouter()(cmp, fits, audit_block=_zero_audit())
-    assert result.verdict in (
-        "PASS", "MARGINAL", "INDISTINGUISHABLE", "WEAK", "FAIL"
+    # CR N5 v0.3 sweep: tighten membership to a frozenset literal (Pin R3
+    # closed verdict alphabet); avoids the variadic-tuple membership lookup
+    # and matches the static type of ``VerdictLabel``.
+    assert result.verdict in frozenset(
+        {"PASS", "MARGINAL", "INDISTINGUISHABLE", "WEAK", "FAIL"}
     )
     assert cmp.ranked_forms[0] == "martingale"
 

@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping as MappingABC
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final, Literal, Mapping, TypeAlias
+from typing import Final, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -487,7 +487,7 @@ class VerdictRouting:
             ("pareto_k_max_per_form", self.pareto_k_max_per_form),
             ("weights_per_form", self.weights_per_form),
         ):
-            if not isinstance(mapping, MappingABC):
+            if not isinstance(mapping, Mapping):
                 raise TypeError(
                     f"VerdictRouting.{fname} must be a Mapping"
                 )
