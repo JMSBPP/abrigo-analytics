@@ -49,7 +49,7 @@ and one brand surface:
 | Spend category | What's in it | Funded? |
 |---|---|---|
 | Hookathon-critical | Solidity hook + reactive contract, RPC, AWS for control proofs, agent compute | Primary claim on funds |
-| Brand surface | `squarep.finance` domain + email, Vercel host, X Basic | Small fixed cost; serves all channels |
+| Brand surface | `*.vercel.app` (domain postponed) domain + email, Vercel host, X Basic | Small fixed cost; serves all channels |
 | Research-paper data | Paid Colombian macro feeds | **Deferred** — single-channel, out of cycle |
 | Operating buffer | Cross-vendor float so jobs don't die | All channels (continuity) |
 
@@ -95,10 +95,10 @@ likely mid-to-late May.
 
 | Line | Amount | Rationale |
 |---|---|---|
-| `squarep.finance` domain (annual, paid May) | ~$50 | One-time annual; `.finance` TLD ~$30–80 (Cloudflare ~$45) |
+| Domain registration | **$0 (postponed)** | Postponed per user decision 2026-05-08 PM; trigger §7 |
 | X (free tier — paid sub postponed) | $0 | Free account, multi-post threads; paid sub deferred to Section 7 trigger |
 | Vercel Hobby | $0 | Free tier sufficient for hackathon demo site |
-| Email (Cloudflare Email Routing → Gmail; Resend free for outbound) | $0 | Skip Workspace seat; hackathon-volume appropriate |
+| Email (dedicated brand Gmail; no custom-domain aliasing) | $0 | Domain postponed; brand correspondence runs from new Gmail until domain returns |
 | Alchemy Free tier | $0 | Sufficient until rate limits hit during demo polish |
 | AWS | $0 | Don't spin up until a control-proof job is queued |
 | Cloud Code top-up (contingent, when $17 session depletes) | $100 | Fires when balance < $10; likely mid-to-late May |
@@ -106,17 +106,16 @@ likely mid-to-late May.
 | Mainnet deploy gas — Celo (Proof of Ship) | $10 | Initial deploys + monthly cadence updates; <$1/deploy on Celo |
 | Hackathon-discretionary slack | ~$232 | Unallocated; absorbs unexpected May needs and rolls forward |
 | **May spend ceiling** | **$400** | |
-| **May spend floor** (if Cloud Code top-up defers to June) | **$60** | Domain + Celo gas only (X paid sub postponed) |
+| **May spend floor** (if Cloud Code top-up defers to June) | **$15** | Celo gas only (domain + X paid sub postponed) |
 
 **Key choices:**
 
-- **Email via Cloudflare Email Routing + Resend free tier** instead of
-  Workspace ($0 vs $6/mo). Routes `you@squarep.finance` into existing Gmail;
-  sends from `squarep.finance` via Resend (3k emails/mo free). Trigger to
-  upgrade: judges or grant orgs start emailing the alias regularly, OR a
-  second team member joins.
-- **Domain hits May, not June**, because annual TLD registration is a one-time
-  charge, not amortized.
+- **Brand correspondence via dedicated Gmail** (created Day 1 alongside @D2pFinance
+  X account). No custom-domain email aliasing while domain is postponed. Trigger
+  to upgrade to custom-domain email: domain registration fires per its own §7
+  trigger, OR judges/grant orgs start emailing the brand and Gmail-only feels
+  unprofessional.
+- **No domain charge in May** — postponed entirely.
 - **Hackathon-discretionary slack of ~$92 is intentional** — the highest-
   uncertainty week of any solo build is week 3 (last week before submission).
   Holding May slack is cheaper than emergency June reallocation.
@@ -131,7 +130,7 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 |---|---|---|
 | X (free tier) | $0 | Paid sub still deferred; multi-post threads continue |
 | Vercel Hobby | $0 | Still free |
-| Email infra | $0 | Cloudflare + Resend stay free |
+| Email infra | $0 | Brand Gmail only (no Cloudflare Email Routing / Resend while domain postponed) |
 | Alchemy Growth | $49 | **Committed** (was conditional) — removes RPC-throttling risk in polish week |
 | AWS control-proof bursts | $100 | **Committed budget** (was $50–100 conditional) — symbolic verification headroom |
 | Cloud Code top-up (contingent, if needed) | $0–100 | Only if May top-up depletes before June 11 |
@@ -154,6 +153,7 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 | Deferred | Trigger to revisit |
 |---|---|
 | Colombian macro paid data | Research-paper deadline becomes concrete; reassess in next budget cycle |
+| Custom domain (`squarep.finance`, `d2p.finance`, or other) | Hackathon judges request a custom URL; OR grant orgs ask for a website; OR `*.vercel.app` correspondence reads unprofessional in 1+ outbound exchange |
 | LinkedIn presence | First grant application or B2B-partnership conversation lined up |
 | X paid subscription (Basic $8 or Premium $13–16) | Single thread crosses ~5k impressions, OR Hookathon judges click profile and bounce, OR multi-post threads cap distribution; whichever fires first |
 | Workspace email seats ($6/mo) | Second team member joins, OR judges start emailing alias regularly |
@@ -179,9 +179,9 @@ Two named failure modes, each with explicit cost line:
    window.
 
 **Total flexible reserves** (slack + submission reserve, excluding committed
-infra): ~$427–635 across both months = **53–79% of $800 envelope** held in
+infra): ~$411–611 across both months = **51–76% of $800 envelope** held in
 flex. The high flex ratio is intentional given solo-builder uncertainty over a
-34-day window.
+34-day window plus domain/X postponements freeing additional slack.
 
 ## 9. Out-of-budget risks (flagged, not funded)
 
@@ -195,31 +195,35 @@ flagged so they're not invisible:
   With 34 days solo, that's 20–40% of available engineering hours. Pick *one*
   of the two for the June 11 submission; defer the other.
 - **Hackathon-judge profile clicks pre-checkmark** — partially mitigated by
-  `squarep.finance` domain in bio + GitHub with real commits. Acceptable.
-- **Domain DNS / email-deliverability setup time** — first-time SPF/DKIM/DMARC
-  config takes a few hours. Schedule in week 1 of May to leave buffer.
+  Vercel `*.vercel.app` site in X bio + GitHub with real commits + Karma GAP
+  public shipping log. Acceptable for cycle.
+- **Brand-Gmail deliverability** — no SPF/DKIM/DMARC concerns since brand uses a
+  plain Gmail account; deliverability is Google's problem, not ours. Trade-off:
+  reads less polished than a `name@brand.tld` address. Acceptable for cycle.
 
 ## 10. Cumulative envelope check
 
 | Category | May | June | Cycle total |
 |---|---|---|---|
-| Brand surface (domain + X + email + Vercel) | $58 | $8 | $66 |
+| Brand surface (X free + Vercel free + Gmail; domain & paid X postponed) | $0 | $0 | $0 |
 | Hackathon infra committed (Alchemy, AWS) | $0 | $149 | $149 |
 | Mainnet deploy gas (Celo + Unichain reserve) | $10 | $30 | $40 |
 | Cloud Code top-ups (contingent — likely 1, possibly 2) | $0–100 | $0–100 | $100–200 |
 | Submission-week reserve | $0 | $50 | $50 |
-| Discretionary slack | $232–332 | $63–163 | $295–495 |
+| Discretionary slack | $290–390 | $71–171 | $361–561 |
 | **Total per month ceiling** | **$400** | **$400** | **$800** |
-| **Total per month floor** | **$68** | **$237** | **$305** |
+| **Total per month floor** | **$10** | **$229** | **$239** |
 
-**Realistic point estimate** (one Cloud Code top-up across cycle, full
-committed June infra used, $40 mainnet gas, ~$100 of slack absorbs misc
-surprises): **~$505 of $800** = **63% utilization**, ~$295 underspend
-rolling to post-hackathon cycle.
+**Realistic point estimate** (one Cloud Code top-up across cycle + full
+committed June infra used + $40 mainnet gas + $50 submission reserve =
+$339 hard; small slack absorbs misc surprises): **~$339 of $800** =
+**42% utilization**, **~$461 underspend** rolling to post-hackathon cycle.
 
 Underspend is **expected and intentional**, not a planning failure. The
-~$295 rolling forward is what funds the *next* cycle's first-look at paid
-Colombian macro data once the paper deadline becomes concrete.
+~$461 rolling forward is what funds the *next* cycle's first-look at paid
+Colombian macro data once the paper deadline becomes concrete, with
+substantial headroom remaining for a domain (~$45) and X paid sub
+(~$16/mo) re-introduction if their triggers fire.
 
 ## 10a. Chain deployment policy
 
@@ -238,13 +242,15 @@ Celo Proof of Ship only.
 all chains: free tier provides faucets, deploy SDK, and on-chain tooling
 sufficient for hackathon volume. Upgrade triggers are in Section 7.
 
-## 11. Decision points needing live confirmation
+## 11. Decision points (resolved as of 2026-05-08 PM)
 
-- [ ] X tier: Basic ($8) recommended; upgrade to Premium ($16) override-able
-- [ ] Domain registrar: Cloudflare Registrar (~$45/yr) recommended; Namecheap or
-      Porkbun comparable
-- [ ] Email outbound: Resend free tier (3k/mo) recommended; alternatives
-      Postmark, AWS SES if Resend's deliverability proves weak
+- [x] **X tier**: free tier; paid subscription POSTPONED with §7 trigger
+- [x] **Domain**: registration POSTPONED entirely; `*.vercel.app` serves as public URL
+- [x] **Email**: dedicated brand Gmail; no custom-domain aliasing while domain postponed
+- [x] **Brand hierarchy**: @D2pFinance = parent/lab handle; @abrigo = product brand (separate X account, Day 2)
+
+If any of the above postponed items revisits per its §7 trigger, decision
+points re-open at that time.
 
 ## 12. Out of scope for this memo
 

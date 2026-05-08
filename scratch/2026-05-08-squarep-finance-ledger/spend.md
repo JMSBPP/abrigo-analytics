@@ -25,10 +25,10 @@
 
 | Date | Vendor | Category | Amount (USD) | Cumulative cycle | Notes |
 |------|--------|----------|--------------|------------------|-------|
-| _no entries yet — first charge expected 2026-05-08 (domain registration)_ | | | | $0 | |
+| _no entries yet — domain & X paid sub postponed; first likely charge is Cloud Code top-up when balance < $10_ | | | | $0 | |
 
 ## Reconciliation log
 
-| Date | Cumulative | Vs. budget point estimate ($505) | Vs. ceiling ($800) | Notes |
+| Date | Cumulative | Vs. budget point estimate ($339) | Vs. ceiling ($800) | Notes |
 |------|-----------|----------------------------------|---------------------|-------|
-| 2026-05-08 | $0 | -$505 | -$800 | Day 1; ledger initialized; no charges yet |
+| 2026-05-08 | $0 | -$339 | -$800 | Day 1; ledger initialized; domain & X paid sub postponed; no charges yet |

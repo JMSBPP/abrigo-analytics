@@ -34,69 +34,58 @@
 
 ### Day 1 — Friday May 8 (today)
 
-- [ ] **HYBRID — Domain registration: `squarep.finance` via Cloudflare Registrar** (~$45/yr)
-  - User: create Cloudflare account if not present; complete payment
-  - Agent: prepare Cloudflare API token (read-only first) for later DNS work
-  - Success: domain shows in Cloudflare dashboard, status "Active"
-  - Log: $45 → ledger under "Brand surface — domain"
+- [ ] ~~**HYBRID — Domain registration**~~ — **POSTPONED** per user decision 2026-05-08 PM. Trigger to revisit per spec §7. Saves $45 + Day 2 DNS/email setup overhead.
 
-- [ ] **AGENT — Initialize spend ledger** at `scratch/2026-05-08-squarep-finance-ledger/spend.md`
-  - Columns: Date | Vendor | Category | Amount | Cumulative | Notes
-  - Pre-seed with Day 1 domain charge
-  - Success: file exists with the Day 1 entry committed
+- [x] **USER — X free account created** (`@D2pFinance`) ✅ done — parent/lab handle
+  - Paid subscription remains POSTPONED per spec §7
 
-- [ ] **AGENT — Note Cloud Code session balance** at start of day in ledger sidecar
-  - Success: `scratch/2026-05-08-squarep-finance-ledger/cloudcode-balance.md` exists, today's entry recorded
+- [ ] **USER — Second X account: Abrigo product brand** (`@abrigo_xyz`, `@abrigo_fi`, or first-claim available)
+  - Use the **new dedicated brand Gmail** (different from D2pFinance's email)
+  - Same phone number reusable
+  - Bio: agent will provide v1; cross-link with @D2pFinance
+  - Success: account live; @D2pFinance and @abrigo bios cross-reference
+
+- [ ] **AGENT — Draft X bio + multi-post pinned thread** *(pulled forward from Day 4)*
+  - Output: `scratch/2026-05-08-squarep-finance-ledger/x-pinned-thread-v1.md` (8–10 short posts ≤280 chars each)
+  - Brief: positioning, what Abrigo is, what UHI9 capstone will demo, link to GitHub
+  - Success: user reads + approves; **posting moves to Day 2 or 3** (was Day 5 — 3 days of compound-interest claw-back)
+
+- [x] **AGENT — Initialize spend ledger** at `scratch/2026-05-08-squarep-finance-ledger/spend.md` ✅ done
+
+- [x] **AGENT — Note Cloud Code session balance** at start of day in ledger sidecar ✅ done
 
 ### Day 2 — Saturday May 9
 
-- [ ] **HYBRID — Cloudflare DNS setup**
-  - Agent: prepare zone file (root A record placeholder, www CNAME placeholder, MX records for Email Routing)
-  - User: review and apply via Cloudflare dashboard or `cf-terraforming`
-  - Success: `dig squarep.finance NS` returns Cloudflare nameservers
+*All Cloudflare DNS / Email Routing / Resend tasks REMOVED — domain postponed.*
 
-- [ ] **HYBRID — Cloudflare Email Routing — alias setup**
-  - Agent: draft alias list (`hello@`, `juan@`, `grants@`, `press@`) → forward to user's existing Gmail
-  - User: enable Email Routing in dashboard, verify forwarding email, paste agent's alias list
-  - Success: test email to `hello@squarep.finance` arrives in Gmail
+- [ ] **AGENT — Draft @abrigo bio + multi-post pinned thread** (product-brand voice; distinct from @D2pFinance)
+  - Output: `scratch/2026-05-08-squarep-finance-ledger/abrigo-pinned-thread-v1.md`
+  - Cross-references @D2pFinance as parent
 
-- [ ] **HYBRID — Resend account + sender domain verification**
-  - User: create Resend account (free tier), add `squarep.finance` as sender domain
-  - Agent: prepare DKIM/SPF/DMARC records; user pastes into Cloudflare DNS
-  - Success: Resend domain shows "Verified" in dashboard
+- [ ] **HYBRID — Post both pinned threads** (@D2pFinance + @abrigo)
+  - Agent: revise per user edits
+  - User: post + pin on both accounts
+  - Success: both threads live; both pinned
 
 ### Day 3 — Sunday May 10
 
 - [ ] **HYBRID — Vercel project scaffold**
-  - Agent: scaffold a minimal Next.js or static site repo at `~/apps/squarep-finance-site/` (separate from analytics repo); README, single landing page placeholder, `vercel.json`
+  - Agent: scaffold a minimal Next.js or static site repo at `~/apps/d2p-finance-site/` (separate from analytics repo); README, single landing page placeholder, `vercel.json`
   - User: connect GitHub repo to Vercel; deploy
-  - Success: `*.vercel.app` URL serves placeholder landing page
+  - Success: `*.vercel.app` URL (e.g., `d2p-finance.vercel.app` or similar) serves placeholder landing page; URL added to both X bios
 
-- [ ] **HYBRID — Custom domain on Vercel**
-  - User: add `squarep.finance` and `www.squarep.finance` to Vercel project
-  - Agent: prepare CNAME/A records for Cloudflare; user pastes
-  - Success: `https://squarep.finance` serves the Vercel placeholder over TLS
+- [ ] ~~**HYBRID — Custom domain on Vercel**~~ — POSTPONED (domain itself postponed)
 
 ### Day 4 — Monday May 11
 
-- [ ] **USER — X account creation** (`@squarepfi` or `@squarep_finance` — first-claim race)
-  - Set bio: short positioning ("Permissionless on-chain hedges for wage earners. Building Abrigo.")
-  - Profile photo + banner: agent will provide drafts on request
-  - Success: account live, follows ~30 relevant accounts (Atrium Academy, Uniswap Foundation, Reactive Network, Somnia, Celo, Mento, Panoptic, Encode Club + UHI9 cohort mates)
+*X account creation pulled to Day 1, threads pulled to Day 2 (compound-interest claw-back). Paid subscription remains POSTPONED per spec §7. Custom-domain swap REMOVED — domain postponed.*
 
-- [ ] ~~**USER — X paid subscription**~~ — **POSTPONED**. Trigger to revisit per spec §7: thread crosses 5k impressions, judges click profile and bounce, or multi-post threads cap distribution.
-
-- [ ] **AGENT — Draft X bio + profile copy + first pinned thread (multi-post format)**
-  - Output: `scratch/2026-05-08-squarep-finance-ledger/x-pinned-thread-v1.md` (8–10 short posts, ≤280 chars each)
-  - Brief: positioning, what Abrigo is, what UHI9 capstone will demo, link to GitHub
-  - Success: user reads + approves + pastes (post first, reply-thread the rest, pin the first)
+- [ ] **AGENT — Bio v2 polish** on both X accounts once Vercel landing page is live (replace GitHub-only link with `*.vercel.app` URL in @D2pFinance and @abrigo bios)
+  - Success: bios updated; pinned threads untouched
 
 ### Day 5 — Tuesday May 12
 
-- [ ] **HYBRID — Post first X pinned thread**
-  - Agent: revise per any user edits
-  - User: post + pin
-  - Success: thread live; pinned
+*X pinned thread post pulled forward (target: Day 2 or 3 once user approves the draft from Day 1).*
 
 - [ ] **AGENT — Prepare GitHub org `squarep-finance`** (or personal repo if org costs friction)
   - Create org skeleton repo `squarep-finance/site` (Vercel-linked) and a placeholder `squarep-finance/abrigo-hookathon` (the eventual UHI9 capstone repo — empty for now, user will populate with engineering content)
@@ -162,15 +151,16 @@
 - [ ] **HYBRID — Vercel landing page v1** (replace placeholder)
   - Agent: write minimal copy (one paragraph thesis + GitHub + X + Karma GAP links); use whatever stack the Vercel scaffold uses; no fancy UI
   - User: review, push to repo (Vercel auto-deploys)
-  - Success: `https://squarep.finance` serves real content, no Lorem Ipsum
+  - Success: `*.vercel.app` URL serves real content, no Lorem Ipsum; URL pinned in both X bios
 
 ### Day 12 — Tuesday May 19
 
-- [ ] **HYBRID — First test email from `hello@squarep.finance`** via Resend
-  - Agent: write a one-line test email; Resend API call to user's Gmail
-  - User: confirm receipt in inbox (NOT spam folder)
-  - If in spam: user adjusts SPF/DMARC alignment (agent provides corrected DNS)
-  - Success: email lands in Gmail Primary
+*Resend test email REMOVED — no custom-domain email; brand correspondence runs from dedicated Gmail.*
+
+- [ ] **AGENT — Brand-Gmail signature template**
+  - Output: short signature for the dedicated brand Gmail (name, role, X handles, GitHub, Vercel URL)
+  - User pastes into Gmail Settings → Signatures
+  - Success: outbound brand-Gmail emails carry consistent footer linking to public surfaces
 
 ### Day 13 — Wednesday May 20
 
