@@ -6,8 +6,12 @@ Driver script that:
    ``CohortPriors`` defaults).
 2. Builds the ``T1ModelFactory`` with ``n_builders=1000`` per spec §5.2
    "Categorical latent per builder" (BLOCK-5 fix).
-3. Runs ``pm.sample(draws=4000, chains=4, target_accept=0.95, random_seed=42)``
-   per spec §8(8) per-chain ≥ 4000 floor (BLOCK-4 fix).
+3. Runs ``pm.sample(draws=178000, chains=4, target_accept=0.95, random_seed=42)``
+   per spec §8(8) per-chain ≥ 4000 floor (BLOCK-4 fix). PATH-α RUN: this
+   driver bumps DRAWS_PER_CHAIN from the spec floor (4000) to 178,000 to
+   satisfy the C4 MC error budget (stderr/Ẑ < 1e-3 at CV=0.84) per CLOSE
+   plan v0.2 Phase 2 Path α (`docs/plans/2026-05-09-saas-cohort-close.md`).
+   Run-config-only change; NO model surgery, NO spec amendment.
 4. Runs ``pm.sample_prior_predictive(draws=4000)`` for the §8(7)
    posterior-vs-prior CI-width gate.
 5. For each month ``m`` in the M5 evaluation horizon (default
@@ -45,7 +49,13 @@ from simulations.saas_builder.priors import CohortPriors
 
 # ─── Spec-pinned sampling configuration ───────────────────────────────────────
 
-DRAWS_PER_CHAIN: int = 4000
+# PATH-α bump (CLOSE plan v0.2 Phase 2): 4000 → 178000 per chain.
+# Total N_draws = 4 × 178000 = 712000 ≈ 7.1e5 per plan pin
+# (`docs/plans/2026-05-09-saas-cohort-close.md` §"Phase 2 — COHORT-1 MC
+# budget on real C1"). Resolves C4 MC error budget breach (stderr/Ẑ ≤ 1e-3
+# ceiling at CV=0.84 real-C1 input). Spec §8(8) per-chain ≥ 4000 floor
+# satisfied (going UP, not down). NO model surgery, NO spec amendment.
+DRAWS_PER_CHAIN: int = 178_000
 N_CHAINS: int = 4
 TARGET_ACCEPT: float = 0.95
 RANDOM_SEED: int = 42
