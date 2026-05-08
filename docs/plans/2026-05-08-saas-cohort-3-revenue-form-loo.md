@@ -611,3 +611,153 @@ This patch preserves:
 NO threshold relaxed. Three new constraints added (Pin R4-bis posterior boundary-mass HALT; LFO-CV trigger conditions; closed-interval boundary semantics). Each strictly *increases* the failure surface — i.e., increases the set of posterior states that route to WEAK or HALT — and therefore reduces the silent-fishing surface. Per `feedback_pathological_halt_anti_fishing_checkpoint`: trigger ✅ external 2-wave verify FLAGs; disposition memo ✅ this CORRECTIONS-α block enumerates per-FLAG resolution; user adjudication ✅ patch authored under explicit user instruction; old + new + preserved-guarantees argument ✅ §15.1–§15.5; post-hoc verify ⏳ NOT required (FLAGs are non-blocking; both verdicts state "no re-RC required" / "FLAG-A and FLAG-B route through CORRECTIONS-α in v0.2 ... neither blocks Phase 2 dispatch").
 
 End of plan v0.2.
+
+---
+
+## §"CORRECTIONS-α v0.2 → v0.3" — delta record
+
+**emit_timestamp_utc:** 2026-05-08
+**Trigger.** Three independent post-implementation audits on commit `f86ce58`
+(RC verdict ACCEPT_WITH_FLAGS at `scratch/2026-05-08-saas-cohort-3-independent-audit/rc-verdict.md`,
+MQ verdict ACCEPT_WITH_FLAGS at `…/mq-verdict.md`, CR ACCEPT-grade with 3
+SUGGESTIONS + 6 NITs) returned four convergent issues. None are BLOCKs;
+all four are forward-fixable in CORRECTIONS-α before downstream propagation.
+Per `feedback_pathological_halt_anti_fishing_checkpoint`, FLAGs are absorbable
+without re-running 2-wave verify.
+
+### §15.7 — LFO-CV mislabel (CR-S3 = MQ-FLAG-3 = RC-FLAG-3) → unconditional HALT
+
+**Source.** RC verdict line 116 ("`models.py:416-425` LFO branch re-uses
+`loo_result` and only flips `cv_method` label; no genuine forward-step PSIS
+reweighting"); MQ verdict line 63-79 ("the `cv_method='lfo'` branch …
+**falls through** without doing LFO; only the output label `cv_method='lfo'`
+differs"); CR-S3 (same observation, dishonest data provenance).
+**Fix location.** `simulations/saas_builder/cohort_3/models.py:415-425`
+(`FitDriver.__call__` LFO branch); test addition at
+`simulations/tests/test_saas_cohort3.py::test_fit_driver_lfo_request_raises_unconditionally`.
+**Resolution.** The LFO branch now raises `LfoCvUnavailableError`
+unconditionally whenever `cv_method == "lfo"` is requested, BEFORE any
+`az.loo` call. Consumers cannot receive PSIS-LOO output under an LFO label;
+foreground HALTs cleanly per CORRECTIONS-α §15.3 +
+`feedback_pathological_halt_anti_fishing_checkpoint`. The `cv_method` field
+on emitted `RevenueFormFit` is now hard-pinned to `"loo"` (dead branch
+removed). The `Literal["loo", "lfo"]` admits "lfo" only as a request token —
+never as an emitted label.
+
+### §15.8 — `_first_trajectory` multi-trajectory truncation (CR-S4 = MQ-FLAG-1) → loud documentation + runtime warning
+
+**Source.** MQ verdict line 26-43 ("the fit driver picks the first
+`(cohort_id, simulation_id)` group and discards remaining trajectories. …
+spec §5 does not authorize this restriction"); CR-S4 (same).
+**Fix location.** `simulations/saas_builder/cohort_3/models.py:71-105`
+(`_first_trajectory` docstring + runtime `warnings.warn`); test additions
+at `…::test_first_trajectory_warns_on_multi_sim_panel` +
+`…::test_first_trajectory_no_warn_on_single_sim_panel`.
+**Resolution (option α — documentation-only).** Stage-2 single-trajectory
+fit is preserved; hierarchical pooling across posterior trajectories is
+DEFERRED to Stage-3 and out of scope for this iteration. The truncation is
+now surfaced explicitly via (i) a "KNOWN LIMITATION" docstring section
+referencing this §15.8 + spec §5 + Pin R5, and (ii) a runtime
+`UserWarning` emitted when the panel carries N > 1 unique
+`(cohort_id, simulation_id)` keys, listing how many trajectories are
+discarded. Single-trajectory panels (the canonical Stage-2 input) emit no
+warning. Option β (hierarchical refactor) was rejected as out-of-scope per
+the user's autonomous-mode directive.
+
+### §15.9 — `dse=0` → `+inf` ratio → PASS misclassification (CR-S1) → explicit branch
+
+**Source.** CR-S1 ("`simulations/saas_builder/cohort_3/loo.py:218`. When
+`se == 0.0` the code currently returns `inf` → PASS, but
+`delta_elpd == 0` ∧ `se == 0` should classify as INDISTINGUISHABLE").
+**Fix location.** `simulations/saas_builder/cohort_3/loo.py:218`
+(`VerdictRouter.__call__` ratio computation); test additions at
+`…::test_r3_dse_zero_with_zero_delta_is_indistinguishable` +
+`…::test_r3_dse_zero_with_nonzero_delta_raises`.
+**Resolution.** Replaced the silent `float("inf")` fallback with an
+explicit two-branch disambiguation:
+
+- `se == 0.0 ∧ delta_elpd == 0.0` → `ratio = 0.0` (legitimate ties under
+  stacking; routes to INDISTINGUISHABLE band).
+- `se == 0.0 ∧ delta_elpd != 0.0` → raise `ValueError` (degenerate input
+  from `arviz.compare`; ratio is ill-defined; refusing to classify rather
+  than silently passing).
+- `se > 0.0` → `ratio = delta_elpd / se` (canonical path, unchanged).
+
+Anti-fishing posture: the previous behaviour silently mapped a degenerate
+input to PASS (a *strictly more permissive* classification). The new
+behaviour either ties (INDISTINGUISHABLE — non-permissive) or raises
+(non-permissive). Neither path increases the PASS surface.
+
+### §15.10 — `winning_form = top` on INDISTINGUISHABLE (CR-S5 = RC-FLAG-1) → empty winner on INDISTINGUISHABLE/FAIL
+
+**Source.** RC verdict line 101-106 ("`loo.py:257-259` sets
+`winning_form = top` even when verdict is INDISTINGUISHABLE. Plan line 88
+forbids 'silent winner pick'; … the field semantics could be tightened to
+`winning_form = ""` on INDISTINGUISHABLE"); CR-S5 (same).
+**Fix location.** `simulations/saas_builder/cohort_3/loo.py:257-259`
+(verdict-router `winning_form` assignment) + `…/types.py` `VerdictRouting`
+docstring + validation contract; test additions at
+`…::test_r3_verdict_indistinguishable_no_winning_form_marginal_has_one`,
+plus assertion added to existing
+`…::test_r3_verdict_indistinguishable_at_1se`.
+**Resolution.** `winning_form` is now declared iff `verdict ∈
+{PASS, WEAK, MARGINAL}`; `verdict ∈ {INDISTINGUISHABLE, FAIL}` emits
+`winning_form = ""` (no winner declared) per Pin R3's
+explicit-non-winner semantics. Consumers wanting the
+numerically-best form on INDISTINGUISHABLE can still inspect
+`comparison.ranked_forms[0]`; verdict-router does NOT advertise it.
+`VerdictRouting` Value-tier docstring + `__post_init__` invariants
+updated to reflect the new contract.
+
+### §15.11 — Preserved guarantees
+
+This patch preserves:
+
+1. **Anti-fishing closure (Pin R6).** `Final` thresholds 2·SE / 4·SE
+   unchanged. Candidate set unchanged. `register_form` unconditional raise
+   unchanged. New constraints (LFO unconditional HALT, dse=0 explicit
+   refusal, INDISTINGUISHABLE no-winner) all *strictly increase* the
+   failure surface — they reduce the set of posterior states that route
+   to PASS or that silently advertise a winner. No threshold relaxed.
+2. **Verdict-router thresholds (Pin R3).** Closed-interval boundary
+   semantics from v0.2 §15.2 unchanged. The `winning_form` discipline in
+   §15.10 is a *tightening* of Pin R3's "no winner declared on
+   INDISTINGUISHABLE" semantics — already implied; now enforced.
+3. **PSIS-LOO-CV via `arviz.compare` (Pin R2).** Default LOO branch
+   unchanged. §15.7 only removes a dishonest LFO-fall-through path; LOO
+   remains canonical and is the only emitted CV method.
+4. **SIM-INFRA-0 contract (Pin R5).** No SIM-INFRA-0 amendment required.
+   All edits live in `simulations/saas_builder/cohort_3/`.
+5. **Stage-2 / Stage-3 boundary.** §15.8 makes the Stage-2
+   single-trajectory restriction explicit and documented; hierarchical
+   pooling remains a Stage-3 concern. The Stage boundary is not crossed.
+6. **2-wave verifier discipline.** v0.2 passed RC + MQ + CR at
+   ACCEPT-grade; v0.3 absorbs the 4 convergent FLAGs without invalidating
+   any verdict. Per the three audit verdicts, no reverify is required.
+
+### §15.12 — Out-of-scope (deferred to v0.4 or escalated)
+
+- **MQ-FLAG-2 (Det+churn S_t Bernoulli vs deterministic).** Not addressed
+  here; surfaces as a spec-amendment request to user — the `(1-λ)^t`
+  collapse is a non-trivial methodological choice that should be pinned
+  in spec §5 explicitly (Bernoulli/exponential survival vs. deterministic
+  factor with Beta-prior λ shared across months).
+- **CR NITs (×6).** Deferred to v0.4 cosmetic pass.
+- **Phase 5 e2e real-sample (`pm.sample(draws=4000, chains=4)`).** Runner
+  script authored separately; not a code-change concern of v0.3.
+
+### §15.13 — Anti-fishing posture
+
+NO threshold relaxed. Four new constraints added (LFO unconditional HALT;
+dse=0 explicit ValueError on degenerate input; `winning_form = ""` on
+INDISTINGUISHABLE/FAIL; multi-trajectory `UserWarning`). Each strictly
+*increases* the failure or surface-of-attention — i.e., increases the set
+of posterior states that route to HALT, refuse classification, or emit no
+winner — and therefore reduces the silent-fishing surface. Per
+`feedback_pathological_halt_anti_fishing_checkpoint`: trigger ✅ three
+external audit verdicts (RC + MQ + CR); disposition memo ✅ this block;
+user adjudication ✅ explicit user instruction in autonomous mode;
+old + new + preserved-guarantees argument ✅ §15.7–§15.11; post-hoc verify
+⏳ NOT required (FLAGs are non-blocking; all three verdicts ACCEPT-grade).
+
+End of plan v0.3.

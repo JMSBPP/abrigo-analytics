@@ -427,8 +427,10 @@ class VerdictRouting:
     Attributes:
         verdict: Pin R3 Literal in {PASS, MARGINAL, INDISTINGUISHABLE,
             WEAK, FAIL}.
-        winning_form: top-ranked form name (or "" on FAIL with no usable
-            ranking).
+        winning_form: top-ranked form name iff ``verdict ∈ {PASS, WEAK,
+            MARGINAL}``; ``""`` (no winner declared) iff ``verdict ∈
+            {INDISTINGUISHABLE, FAIL}`` per Pin R3 explicit-non-winner
+            semantics (CORRECTIONS-α v0.3 §15.10 / CR-S5 / RC-FLAG-1).
         delta_elpd_loo: |elpd_loo[top] - elpd_loo[runner-up]|; 0 if
             single form.
         se: dse for the top-vs-runner-up comparison; 0 if single form.
@@ -440,7 +442,8 @@ class VerdictRouting:
     Validation contract:
 
     - ``verdict`` in the closed Literal.
-    - ``winning_form`` empty iff verdict is FAIL with no ranking; else in
+    - ``winning_form`` empty iff ``verdict ∈ {INDISTINGUISHABLE, FAIL}``;
+      otherwise (verdict ∈ {PASS, WEAK, MARGINAL}) must be in
       REVENUE_FORM_NAMES.
     - ``delta_elpd_loo ≥ 0`` and ``se ≥ 0``.
     - All keys in ``pareto_k_max_per_form`` / ``weights_per_form`` ⊆

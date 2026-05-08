@@ -33,6 +33,7 @@ from xarray import DataArray, Dataset
 
 from simulations.saas_builder.cohort_3._errors import (
     CandidateSetClosedError,
+    LfoCvUnavailableError,
     RhoBoundaryHaltError,
     SchemaMismatchError,
 )
@@ -390,6 +391,37 @@ def test_r3_verdict_indistinguishable_at_1se() -> None:
     fits = {n: _fit(n) for n in forms}
     result = VerdictRouter()(cmp, fits, audit_block=_zero_audit())
     assert result.verdict == "INDISTINGUISHABLE"
+    # CORRECTIONS-α v0.3 §15.10 (CR-S5 / RC-FLAG-1): no winner declared
+    # on INDISTINGUISHABLE — winning_form must be "" not the top form.
+    assert result.winning_form == ""
+
+
+def test_r3_verdict_indistinguishable_no_winning_form_marginal_has_one() -> None:
+    """CORRECTIONS-α v0.3 §15.10: winning_form discipline by verdict band.
+
+    PASS / WEAK / MARGINAL → winning_form = top.
+    INDISTINGUISHABLE / FAIL → winning_form = "".
+    """
+    forms = ("martingale", "ar1_log", "det_churn")
+    # MARGINAL case — winner declared.
+    cmp_marg = _comparison(
+        forms,
+        elpd_loo={"martingale": 0.0, "ar1_log": -3.0, "det_churn": -10.0},
+        dse={"martingale": 0.0, "ar1_log": 1.0, "det_churn": 1.0},
+    )
+    fits = {n: _fit(n) for n in forms}
+    res_marg = VerdictRouter()(cmp_marg, fits, audit_block=_zero_audit())
+    assert res_marg.verdict == "MARGINAL"
+    assert res_marg.winning_form == "martingale"
+    # INDISTINGUISHABLE case — no winner.
+    cmp_ind = _comparison(
+        forms,
+        elpd_loo={"martingale": 0.0, "ar1_log": -1.0, "det_churn": -10.0},
+        dse={"martingale": 0.0, "ar1_log": 1.0, "det_churn": 1.0},
+    )
+    res_ind = VerdictRouter()(cmp_ind, fits, audit_block=_zero_audit())
+    assert res_ind.verdict == "INDISTINGUISHABLE"
+    assert res_ind.winning_form == ""
 
 
 def test_r3_verdict_fail_top_gates() -> None:
@@ -874,6 +906,95 @@ def test_loo_comparator_full_pipeline() -> None:
 
 
 # ─── Hypothesis property: rank-name covariance ────────────────────────────────
+
+
+# ─── CORRECTIONS-α v0.3 §15.9 (CR-S1): dse=0 boundary disambiguation ─────────
+
+
+def test_r3_dse_zero_with_zero_delta_is_indistinguishable() -> None:
+    """CR-S1: se == 0 ∧ |Δelpd| == 0 → ratio = 0 → INDISTINGUISHABLE.
+
+    Legitimate ties under stacking should NOT short-circuit to PASS via
+    inf-ratio.
+    """
+    forms = ("martingale", "ar1_log", "det_churn")
+    cmp = _comparison(
+        forms,
+        elpd_loo={"martingale": 0.0, "ar1_log": 0.0, "det_churn": -10.0},
+        dse={"martingale": 0.0, "ar1_log": 0.0, "det_churn": 1.0},
+    )
+    fits = {n: _fit(n) for n in forms}
+    result = VerdictRouter()(cmp, fits, audit_block=_zero_audit())
+    assert result.verdict == "INDISTINGUISHABLE"
+    assert result.winning_form == ""
+    assert result.delta_elpd_loo == 0.0
+    assert result.se == 0.0
+
+
+def test_r3_dse_zero_with_nonzero_delta_raises() -> None:
+    """CR-S1: se == 0 ∧ |Δelpd| != 0 is degenerate; refuse to classify."""
+    forms = ("martingale", "ar1_log", "det_churn")
+    cmp = _comparison(
+        forms,
+        elpd_loo={"martingale": 0.0, "ar1_log": -5.0, "det_churn": -10.0},
+        dse={"martingale": 0.0, "ar1_log": 0.0, "det_churn": 1.0},
+    )
+    fits = {n: _fit(n) for n in forms}
+    with pytest.raises(ValueError, match="degenerate"):
+        VerdictRouter()(cmp, fits, audit_block=_zero_audit())
+
+
+# ─── CORRECTIONS-α v0.3 §15.7 (CR-S3 / MQ-FLAG-3 / RC-FLAG-3): LFO HALTs ─────
+
+
+def test_fit_driver_lfo_request_raises_unconditionally() -> None:
+    """CR-S3: cv_method='lfo' must raise LfoCvUnavailableError, not relabel.
+
+    The previous fall-through tagged ``cv_method='lfo'`` while emitting
+    PSIS-LOO output. CORRECTIONS-α v0.3 §15.7 requires unconditional HALT
+    so consumers cannot be misled about cross-validation provenance.
+    """
+    panel = _make_panel(n_months=30, n_sims=1)
+    driver = FitDriver(cv_method="lfo")
+    with pytest.raises(LfoCvUnavailableError, match="LFO"):
+        driver("martingale", panel, "/tmp/x.nc")
+
+
+# ─── CORRECTIONS-α v0.3 §15.8 (CR-S4 / MQ-FLAG-1): multi-traj warning ────────
+
+
+def test_first_trajectory_warns_on_multi_sim_panel() -> None:
+    """CR-S4: panels with N>1 (cohort, sim) trajectories trigger a
+    UserWarning surfacing the Stage-2 single-trajectory limitation.
+    """
+    import warnings as _warnings
+    from simulations.saas_builder.cohort_3.models import _first_trajectory
+
+    panel = _make_panel(n_months=30, n_sims=3)
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        out = _first_trajectory(panel)
+        relevant = [w for w in caught if "Stage-2" in str(w.message)]
+        assert len(relevant) == 1
+        assert "discards" in str(relevant[0].message)
+    # Returns a 1-D array of the FIRST trajectory only.
+    assert out.ndim == 1
+    assert out.shape[0] == 30
+
+
+def test_first_trajectory_no_warn_on_single_sim_panel() -> None:
+    """CR-S4: single-trajectory panel (the canonical Stage-2 path) emits
+    no Stage-2 limitation warning.
+    """
+    import warnings as _warnings
+    from simulations.saas_builder.cohort_3.models import _first_trajectory
+
+    panel = _make_panel(n_months=30, n_sims=1)
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        _first_trajectory(panel)
+        relevant = [w for w in caught if "Stage-2" in str(w.message)]
+        assert len(relevant) == 0
 
 
 @given(

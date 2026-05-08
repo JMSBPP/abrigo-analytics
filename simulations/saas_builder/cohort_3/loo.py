@@ -209,13 +209,30 @@ class VerdictRouter:
                 )
 
         # Compute ratio against runner-up (if any).
+        # CORRECTIONS-α v0.3 §15.9 (CR-S1): explicit branch on se == 0 to
+        # avoid the dse=0 → +inf → PASS misclassification. Two cases:
+        #   (a) se == 0.0 ∧ delta_elpd == 0.0 → ratio = 0.0
+        #       (legitimate ties under stacking; route to INDISTINGUISHABLE)
+        #   (b) se == 0.0 ∧ delta_elpd != 0.0 → degenerate input from
+        #       arviz.compare; raise ValueError (caller's data is ill-defined).
         if len(ranked) >= 2:
             runner_up = ranked[1]
             delta_elpd = abs(
                 comparison.elpd_loo[top] - comparison.elpd_loo[runner_up]
             )
             se = comparison.dse[runner_up]
-            ratio = delta_elpd / se if se > 0.0 else float("inf")
+            if se == 0.0:
+                if delta_elpd == 0.0:
+                    ratio = 0.0
+                else:
+                    raise ValueError(
+                        f"VerdictRouter: degenerate input from arviz.compare —"
+                        f" dse[{runner_up!r}] = 0.0 but |Δelpd_loo| ="
+                        f" {delta_elpd} ≠ 0; ratio is ill-defined. Refusing to"
+                        f" classify (CORRECTIONS-α v0.3 §15.9 / CR-S1)."
+                    )
+            else:
+                ratio = delta_elpd / se
         else:
             delta_elpd = 0.0
             se = 0.0
@@ -254,12 +271,18 @@ class VerdictRouter:
             if ar1_boundary_weak and top == "ar1_log":
                 verdict = "WEAK"
 
-            winning_form = top if verdict in ("PASS", "MARGINAL") else (
-                top if verdict in ("WEAK", "INDISTINGUISHABLE") else ""
-            )
-            # On INDISTINGUISHABLE we still record top as the
-            # numerically-best form, but the consumer must NOT treat it
-            # as a winner (Pin R3 explicit-INDISTINGUISHABLE label).
+            # CORRECTIONS-α v0.3 §15.10 (CR-S5 = RC-FLAG-1): only
+            # verdicts in {PASS, WEAK, MARGINAL} declare a winning_form.
+            # INDISTINGUISHABLE and FAIL declare NO winner (winning_form
+            # = "") per Pin R3's "no winner declared" semantics. The
+            # numerically-best form is still inspectable via
+            # ``comparison.ranked_forms[0]``; verdict-router does NOT
+            # advertise it on INDISTINGUISHABLE.
+            if verdict in ("PASS", "WEAK", "MARGINAL"):
+                winning_form = top
+            else:
+                # verdict ∈ {INDISTINGUISHABLE, FAIL} → no winner.
+                winning_form = ""
 
         return VerdictRouting(
             verdict=verdict,

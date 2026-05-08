@@ -19,6 +19,7 @@ Pin coverage:
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final
@@ -71,13 +72,25 @@ PARETO_K_HIGH_FRAC_GATE: Final[float] = 0.05
 def _first_trajectory(panel: UpsilonPanel) -> np.ndarray:
     """Extract a single Υ_t trajectory, sorted by month_index.
 
-    The three model builders fit a 1-D time series; this helper picks the
-    first (cohort_id, simulation_id) group encountered (deterministic
-    given panel input order) and returns its Υ_t values sorted ascending
-    by month.
+    The three Stage-2 model builders fit a 1-D time series; this helper
+    picks the first (cohort_id, simulation_id) group encountered
+    (deterministic given panel input order) and returns its Υ_t values
+    sorted ascending by month.
+
+    KNOWN LIMITATION — Stage-2 single-trajectory fit (CORRECTIONS-α v0.3
+    §15.8 / CR-S4 / MQ-FLAG-1). When ``UpsilonPanel`` carries N > 1
+    posterior trajectories (multiple ``simulation_id`` values), this
+    helper SILENTLY DISCARDS the remaining N-1 trajectories. The Stage-2
+    spec scope (spec §5 + Pin R5) admits only single-trajectory fits;
+    hierarchical pooling across posterior trajectories is DEFERRED to
+    Stage-3 and out of scope for this iteration. Consumers that supply a
+    multi-sim panel will see LOO-CV computed only on the first
+    trajectory's (T-1) increments — ELPD/SE will reflect that
+    trajectory's idiosyncrasies, not the full posterior. Document this
+    on the verdict-routing artifact when a multi-sim panel is fed.
 
     Returns:
-        1-D float array of length ≥ 2.
+        1-D float array of length ≥ 2 — the first trajectory only.
 
     Raises:
         ValueError: if no trajectory has ≥ 2 observations.
@@ -90,6 +103,20 @@ def _first_trajectory(panel: UpsilonPanel) -> np.ndarray:
         first_key = (cohort_id[0], simulation_id[0])
     else:
         raise ValueError("UpsilonPanel must have non-empty trajectory labels")
+    # CORRECTIONS-α v0.3 §15.8: surface multi-trajectory truncation loudly.
+    # Stage-2 fit is single-trajectory by design; hierarchical pooling
+    # deferred to Stage-3.
+    unique_keys = set(zip(cohort_id, simulation_id))
+    if len(unique_keys) > 1:
+        warnings.warn(
+            f"_first_trajectory: panel carries {len(unique_keys)}"
+            f" (cohort_id, simulation_id) trajectories;"
+            f" Stage-2 fit uses ONLY the first ({first_key!r}) and"
+            f" discards the remaining {len(unique_keys) - 1}. Hierarchical"
+            f" pooling deferred to Stage-3 (spec-pin reference: spec §5"
+            f" + Pin R5; CORRECTIONS-α v0.3 §15.8 / CR-S4 / MQ-FLAG-1).",
+            stacklevel=2,
+        )
     indices = [
         i for i, (c, s) in enumerate(zip(cohort_id, simulation_id))
         if (c, s) == first_key
@@ -411,18 +438,22 @@ class FitDriver:
                 progressbar=False,
                 idata_kwargs={"log_likelihood": True},
             )
-        # arviz.loo for k̂ stats.
-        loo_result = az.loo(idata, pointwise=True)
+        # CORRECTIONS-α v0.3 §15.7 (CR-S3 = MQ-FLAG-3 = RC-FLAG-3): the
+        # previous fall-through branch tagged ``cv_method="lfo"`` while
+        # silently emitting PSIS-LOO output — dishonest data provenance.
+        # `arviz` lacks first-class forward-step LFO-CV utilities at this
+        # release; the only honest behaviour is to HALT unconditionally
+        # whenever LFO is requested (per CORRECTIONS-α §15.3 + the
+        # `feedback_pathological_halt_anti_fishing_checkpoint` rule).
         if self.cv_method == "lfo":
-            # LFO branch — currently no first-class LFO util in arviz; we
-            # raise LfoCvUnavailableError. Foreground HALTs per
-            # CORRECTIONS-α §15.3.
-            if not hasattr(az, "loo"):  # pragma: no cover — defensive
-                raise LfoCvUnavailableError(
-                    "FitDriver: cv_method='lfo' requested but arviz lacks"
-                    " LFO-CV utilities; foreground must HALT."
-                )
-            # Pragmatic LFO stub: re-use loo_result; record cv_method='lfo'.
+            raise LfoCvUnavailableError(
+                "FitDriver: cv_method='lfo' requested but arviz lacks"
+                " first-class LFO-CV utilities; PSIS-LOO must NOT be"
+                " silently relabelled as LFO. Foreground HALTs per"
+                " CORRECTIONS-α §15.3."
+            )
+        # arviz.loo for k̂ stats (LOO branch only — LFO branch raised above).
+        loo_result = az.loo(idata, pointwise=True)
         rhat_max, ess_bulk_min, ess_tail_min = _summary_diagnostics(idata)
         pareto_k_max, pareto_k_high_frac = _pareto_k_stats(loo_result)
         rho_boundary_mass: float | None = None
@@ -448,7 +479,7 @@ class FitDriver:
             pareto_k_high_frac=pareto_k_high_frac,
             gates_passed=gates_passed,
             rho_boundary_mass=rho_boundary_mass,
-            cv_method="lfo" if self.cv_method == "lfo" else "loo",
+            cv_method="loo",  # LFO branch raises before this point (§15.7)
         )
         return idata, fit
 
