@@ -215,9 +215,14 @@ def main() -> int:
     audit_block = resolver()
     print(f"       sha256 = {audit_block}")
 
-    # 5. Drive pin_and_emit.
+    # 5. Drive pin_and_emit with full available draws (Phase 2 path α).
+    from simulations.saas_builder.cohort_4.types import MCBudget
+    from simulations.saas_builder.cohort_4.z_cap import ZCapRunner
+    n_avail = int(q_t_cop.size)
+    runner = ZCapRunner(mc_budget=MCBudget(n_draws=n_avail))
     print(
-        f"\n[5/5] Driving pin_and_emit (5-TP × {MC_DRAWS_FLOOR} draws)..."
+        f"\n[5/5] Driving pin_and_emit (5-TP × {n_avail} draws,"
+        f" full C1 v0.4 panel post-Phase-2)..."
     )
     t_start = time.time()
     try:
@@ -226,6 +231,7 @@ def main() -> int:
             test_points=grid,
             repo_root=REPO_ROOT,
             emit_dir=EMIT_DIR,
+            runner=runner,
         )
     except MCErrorBudgetExceededError as e:
         elapsed = time.time() - t_start
