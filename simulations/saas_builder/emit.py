@@ -37,6 +37,7 @@ import arviz as az
 import numpy as np
 import pymc as pm
 
+from simulations.modules.samplers import TruncParetoSampler
 from simulations.saas_builder._errors import DiagnosticGateError
 from simulations.saas_builder.diagnostics import (
     DiagnosticVerdict,
@@ -47,6 +48,7 @@ from simulations.saas_builder.priors import (
     negbin_mu_phi_to_r_p,
     tier_id_at_index,
 )
+from simulations.types.distributions import TruncParetoParams
 from simulations.types.posterior import DEFAULT_SCHEMA_VERSION
 from simulations.types.tier import TIER_IDS, TierID
 from simulations.utils.audit_block import compute_audit_block
@@ -112,32 +114,80 @@ class EmissionSummary(TypedDict):
 # ─── Posterior-predictive driver ──────────────────────────────────────────────
 
 
+#: Posterior-predictive variable names sampled by PyMC. The compound-sum
+#: τ_t is **NOT** in this list — it is built post-hoc from per-turn
+#: TruncPareto draws (BLOCK-1 fix; spec §5.1 verbatim).
+_PP_PYMC_VAR_NAMES: tuple[str, ...] = ("n_per_day", "n_month", "tier_idx")
+
+
 def run_posterior_predictive(
     model: pm.Model,
     posterior_idata: az.InferenceData,
     *,
-    var_names: tuple[str, ...] = ("tau_t", "q_t_usd", "q_t_cop"),
+    x_max_fixed: float,
+    blended_price_per_mtok: float,
+    fx_cop_per_usd: float,
+    var_names: tuple[str, ...] = _PP_PYMC_VAR_NAMES,
     random_seed: int | None = 42,
 ) -> az.InferenceData:
-    """Call ``pm.sample_posterior_predictive`` for the τ_t emission columns.
+    """Run posterior-predictive + spec §5.1 compound-sum τ_t reduction.
 
-    Spec §7 line 415 + MQ-B4 fix: ``tau_t``, ``q_t_usd``, ``q_t_cop`` are
-    functions of latent parameters AND new draws of the per-turn τ_{j,i}
-    random variates; they MUST be populated from posterior-predictive,
-    not from raw ``idata.posterior`` slicing (which would yield zero
-    within-row variance at fixed parameter draws).
+    BLOCK-1 fix (plan v0.3 CORRECTIONS-α): the spec §5.1 (T1) compound
+    sum
+
+        τ_t = Σ_{j=1}^{D_t} Σ_{i=1}^{N_j} τ_{j,i},   τ_{j,i} ~ TruncPareto(α, x_m, κ)
+
+    is realized in two stages because PyMC cannot represent a doubly-
+    stochastic compound sum as a fixed-shape Deterministic without a
+    custom distribution. We therefore:
+
+    1. Call ``pm.sample_posterior_predictive`` to populate ``n_per_day``,
+       ``n_month``, ``tier_idx`` (PyMC-graph variables).
+    2. For each posterior draw of ``(α, x_m, n_month)``, draw ``n_month``
+       iid TruncPareto variates via the shipped
+       :class:`simulations.modules.samplers.TruncParetoSampler` and reduce
+       to ``τ_t = Σ τ_{j,i}``. This produces nonzero within-row per-turn
+       variance at fixed parameters (BLOCK-3 verification target).
+    3. Compute ``q_t_usd = τ_t · price / 1e6`` and
+       ``q_t_cop = q_t_usd · FX``.
+    4. Inject ``tau_t``, ``q_t_usd``, ``q_t_cop`` back into the
+       ``posterior_predictive`` group as numpy arrays of shape
+       ``(chain, draw, n_builders)``.
 
     Args:
         model: the ``pm.Model`` from
             :func:`simulations.saas_builder.model.T1ModelFactory.__call__`.
         posterior_idata: posterior :class:`arviz.InferenceData` from
             ``pm.sample(...)``.
-        var_names: names to sample. Default: the three emission columns.
+        x_max_fixed: TruncPareto upper truncation κ pin from
+            ``priors.x_m.x_max_fixed`` (spec §5.1 (T1)).
+        blended_price_per_mtok: spec §5.1 closed-form Sonnet blended
+            price (≈ 7.1495 $/MTok per M3 assertion).
+        fx_cop_per_usd: COP/USD stationary FX rate.
+        var_names: PyMC-graph names to sample. Default
+            :data:`_PP_PYMC_VAR_NAMES`. Compound-sum ``tau_t`` is added
+            post-hoc.
         random_seed: optional RNG seed for reproducibility.
 
     Returns:
-        An :class:`arviz.InferenceData` with the ``posterior_predictive``
-        group populated for ``var_names``.
+        An :class:`arviz.InferenceData` with ``posterior_predictive``
+        populated by ``var_names`` PLUS the post-hoc compound-sum
+        ``tau_t``, ``q_t_usd``, ``q_t_cop`` arrays of shape
+        ``(chain, draw)``. Within-row per-turn variance is nonzero at
+        fixed posterior parameter draws because each (chain, draw) cell
+        re-samples ``n_month`` independent TruncPareto variates.
+
+    Contract:
+        Preconditions:
+            - ``x_max_fixed > 0``, ``blended_price_per_mtok > 0``,
+              ``fx_cop_per_usd > 0`` (callers should pass the priors
+              and model's pinned values).
+            - ``posterior_idata.posterior`` must contain ``alpha_pareto``
+              and ``x_m`` for the per-turn TruncPareto draws.
+        Raises:
+            KeyError: if posterior is missing ``alpha_pareto``/``x_m``.
+            ValueError: if any draw yields ``alpha < 1.5`` (M1 floor; the
+                shipped ``TruncParetoSampler.__post_init__`` raises).
     """
     with model:
         pp = pm.sample_posterior_predictive(
@@ -146,6 +196,67 @@ def run_posterior_predictive(
             random_seed=random_seed,
             progressbar=False,
         )
+
+    pp_group = pp["posterior_predictive"]
+    post_group = posterior_idata["posterior"]
+
+    # Shapes: posterior arrays are (chain, draw, ...); n_month is
+    # Deterministic so it is in posterior (NOT posterior_predictive)
+    # when produced via pm.sample_posterior_predictive on Deterministics
+    # downstream of NegBin RVs — but PyMC versions vary, so check both.
+    if "n_month" in pp_group:
+        n_month_arr = np.asarray(pp_group["n_month"].values)
+    elif "n_month" in post_group:
+        n_month_arr = np.asarray(post_group["n_month"].values)
+    else:
+        # Recompute from n_per_day if available.
+        n_per_day_arr = np.asarray(pp_group["n_per_day"].values)
+        # Sum across the active-day dimension (last axis).
+        n_month_arr = n_per_day_arr.sum(axis=-1)
+
+    alpha_arr = np.asarray(post_group["alpha_pareto"].values)
+    x_m_arr = np.asarray(post_group["x_m"].values)
+
+    # Broadcast n_month to (chain, draw) — collapse builder axis if
+    # n_month was emitted with shape (chain, draw); leave as-is otherwise.
+    if n_month_arr.ndim == 3:
+        # n_per_day was (chain, draw, D_t) → after sum(axis=-1) shape is
+        # (chain, draw); but pm sometimes broadcasts builders so keep flexible.
+        pass
+    n_chains_arr = alpha_arr.shape[0]
+    n_draws_arr = alpha_arr.shape[1]
+
+    rng_seed = 42 if random_seed is None else int(random_seed)
+    rng = np.random.default_rng(rng_seed)
+
+    tau_t_arr = np.empty((n_chains_arr, n_draws_arr), dtype=np.float64)
+    for c in range(n_chains_arr):
+        for d in range(n_draws_arr):
+            alpha_cd = float(alpha_arr[c, d])
+            x_m_cd = float(x_m_arr[c, d])
+            # Pull scalar n_month for this draw (sum across active days).
+            nm_raw = n_month_arr[c, d] if n_month_arr.ndim >= 2 else n_month_arr[c]
+            n_total = int(np.asarray(nm_raw).sum())
+            if n_total <= 0:
+                tau_t_arr[c, d] = 0.0
+                continue
+            params = TruncParetoParams(
+                alpha=alpha_cd,
+                x_m=x_m_cd,
+                x_max=float(x_max_fixed),
+            )
+            sampler = TruncParetoSampler(params=params)
+            draws = sampler(size=n_total, rng=rng)
+            tau_t_arr[c, d] = float(draws.sum())
+
+    q_t_usd_arr = tau_t_arr * float(blended_price_per_mtok) / 1.0e6
+    q_t_cop_arr = q_t_usd_arr * float(fx_cop_per_usd)
+
+    # Inject the compound-sum arrays back into the pp dataset.
+    pp_group["tau_t"] = (("chain", "draw"), tau_t_arr)
+    pp_group["q_t_usd"] = (("chain", "draw"), q_t_usd_arr)
+    pp_group["q_t_cop"] = (("chain", "draw"), q_t_cop_arr)
+
     return pp
 
 
@@ -181,6 +292,7 @@ class CohortEmitter:
 
     base_dir: Path = field(default_factory=lambda: Path("simulations/saas_builder/data"))
     diagnostic: PosteriorDiagnostic = field(default_factory=PosteriorDiagnostic)
+    fx_cop_per_usd: float = 4000.0
 
     def __post_init__(self) -> None:
         # Coerce base_dir to Path defensively (callers may pass str).
@@ -278,10 +390,19 @@ class CohortEmitter:
                 f" {verdict!r}"
             )
 
-        # 2) Posterior-predictive draws for τ_t / q_t_usd / q_t_cop (MQ-B4).
+        # 2) Posterior-predictive draws for τ_t / q_t_usd / q_t_cop (MQ-B4
+        # + BLOCK-1 fix: τ_t is the spec §5.1 compound sum, built post-hoc
+        # from per-turn TruncPareto draws by run_posterior_predictive).
+        # Resolve the M3 blended price and x_max_fixed from priors at the
+        # call site (no global module state).
+        from simulations.saas_builder.model import _build_sonnet_blended_price
+        blended_price = _build_sonnet_blended_price()
         pp_idata = run_posterior_predictive(
             model,
             posterior_idata,
+            x_max_fixed=priors.x_m.x_max_fixed,
+            blended_price_per_mtok=blended_price,
+            fx_cop_per_usd=self.fx_cop_per_usd,
             random_seed=random_seed,
         )
 
@@ -375,7 +496,21 @@ class CohortEmitter:
         qcop_arr = np.asarray(pp["q_t_cop"].values).ravel()[:n_rows]
 
         if tier_assignments is None:
-            tier_idx_arr = np.asarray(post["tier_idx"].values).ravel()[:n_rows]
+            # tier_idx may be scalar (chain, draw) or vector
+            # (chain, draw, n_builders) per BLOCK-5 fix. Ravel → flat (one
+            # tier per row); when vector, the (chain, draw) row indexes
+            # one builder slot via simulation_id % n_builders.
+            tier_raw = np.asarray(post["tier_idx"].values)
+            if tier_raw.ndim == 3:
+                # (chain, draw, n_builders) — flatten across (chain, draw)
+                # and pick builder slot 0 for each row. The n_builders
+                # latent tier vector is exposed in cohort_prior emission;
+                # synthetic_tau_t is keyed per (chain, draw) following
+                # the v0.2 layout.
+                n_chain, n_draw, _n_b = tier_raw.shape
+                tier_idx_arr = tier_raw[:, :, 0].reshape(n_chain * n_draw)[:n_rows]
+            else:
+                tier_idx_arr = tier_raw.ravel()[:n_rows]
         else:
             tier_idx_arr = np.asarray(tier_assignments, dtype=np.int64)
             if tier_idx_arr.shape[0] != n_rows:

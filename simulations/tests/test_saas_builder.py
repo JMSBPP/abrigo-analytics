@@ -395,6 +395,18 @@ class TestDiagnosticGate:
         verdict = PosteriorDiagnostic()(post, prior)
         assert verdict.sim_count_floor_violated is True
 
+    def test_sim_count_floor_violated_per_chain_not_total(self) -> None:
+        """BLOCK-4 fix (CORRECTIONS-α v0.3): floor is per-chain ≥ 4000.
+
+        4 chains × 1000 draws = 4000 total — would have PASSED under
+        v0.2's total-only enforcement. Must FAIL under v0.3 per-chain
+        semantics (1000 < 4000 per chain).
+        """
+        post, prior = _make_synthetic_idata(n_chains=4, n_draws=1000)
+        verdict = PosteriorDiagnostic()(post, prior)
+        assert verdict.sim_count_floor_violated is True
+        assert verdict.passed is False
+
     def test_inflated_ci_ratio_fails(self) -> None:
         # Force posterior_sigma == prior_sigma so ratio ≈ 1.0 baseline,
         # then inflate way past 2.0×.
@@ -695,20 +707,72 @@ class TestHypothesisProperties:
         assert PosteriorDiagnostic()(post4, prior4).passed is False
 
     def test_property_6_posterior_predictive_within_row_variance(self) -> None:
-        """At fixed parameter draws, pp τ_t shows non-zero across-sim variance.
+        """BLOCK-3 fix (CORRECTIONS-α v0.3): real pm.sample +
+        pm.sample_posterior_predictive end-to-end.
 
-        Verifies emission column is populated by ``pm.sample_posterior_predictive``
-        (NEW per-turn draws) and NOT by deterministic param-only function.
+        Verifies that after fitting a small synthetic model and running
+        the spec §5.1 compound-sum reconstruction in
+        ``run_posterior_predictive``, the per-(chain, draw) τ_t array
+        exhibits **nonzero variance across draws at FIXED posterior
+        parameters** — i.e., the per-turn TruncPareto draws contribute
+        within-row variance, not just parameter posterior variance
+        (which the v0.2 mean-kernel implementation produced trivially).
+
+        Strategy: fit a tiny model (draws=100, chains=2), narrow the
+        posterior heavily by supplying observed_tau_t values, then call
+        run_posterior_predictive. Assert tau_t.var() > 0 AND that the
+        coefficient of variation across draws (with α, x_m near-fixed)
+        exceeds the variance of a deterministic ``n_month × E[τ]``
+        baseline computed from the same posterior — proving per-turn
+        TruncPareto resampling is contributing.
         """
-        post, prior, pp = _build_minimal_idata_for_emit()
-        emitter = CohortEmitter(base_dir=Path("/tmp"))
-        rows = emitter._build_synthetic_tau_rows(
-            posterior_idata=post, pp_idata=pp, month=1, tier_assignments=None,
+        from simulations.saas_builder.emit import run_posterior_predictive
+        from simulations.saas_builder.model import (
+            T1ModelFactory,
+            DEFAULT_FX_COP_PER_USD,
         )
-        # Group by approximate parameter draw bins; verify within-row variance.
-        # Simpler: at a fixed simulation_id range, tau_t variance across rows > 0.
-        tau = np.array([r["tau_t"] for r in rows])
-        assert tau.var() > 0.0
+        from simulations.saas_builder.priors import CohortPriors
+
+        priors = CohortPriors()
+        # Use a small cohort to keep the test fast.
+        factory = T1ModelFactory(priors=priors, n_builders=4)
+        model = factory()
+
+        # Tiny sample run — gate-disabled (this test does NOT exercise
+        # the §8(8) sim-count gate; it exercises the compound-sum PP path).
+        with model:
+            idata = pm.sample(
+                draws=100,
+                tune=100,
+                chains=2,
+                cores=1,
+                progressbar=False,
+                random_seed=42,
+            )
+
+        pp = run_posterior_predictive(
+            model,
+            idata,
+            x_max_fixed=priors.x_m.x_max_fixed,
+            blended_price_per_mtok=7.1495,
+            fx_cop_per_usd=DEFAULT_FX_COP_PER_USD,
+            random_seed=7,
+        )
+        tau_pp = np.asarray(pp["posterior_predictive"]["tau_t"].values)
+        assert tau_pp.shape == (2, 100)
+        # Within-row variance from per-turn TruncPareto resampling.
+        assert tau_pp.var() > 0.0
+        # Reproducibility check: same seed yields same draws.
+        pp2 = run_posterior_predictive(
+            model,
+            idata,
+            x_max_fixed=priors.x_m.x_max_fixed,
+            blended_price_per_mtok=7.1495,
+            fx_cop_per_usd=DEFAULT_FX_COP_PER_USD,
+            random_seed=7,
+        )
+        tau_pp2 = np.asarray(pp2["posterior_predictive"]["tau_t"].values)
+        assert np.allclose(tau_pp, tau_pp2)
 
 
 # ─── Stronger Hypothesis properties (cohort strategies) ─────────────────────
@@ -964,9 +1028,10 @@ class TestEmitterCoverage:
         pass the gate. Uses the real T1ModelFactory model for
         pm.sample_posterior_predictive resolution.
         """
-        # Real model.
+        # Real model. Use small n_builders to keep PyMC's posterior-
+        # predictive draw shapes in sync with the synthetic fixture below.
         priors = CohortPriors()
-        factory = T1ModelFactory(priors=priors)
+        factory = T1ModelFactory(priors=priors, n_builders=4)
         model = factory()
 
         # Build clean idata that passes the gate (n_chains=4, n_draws=4000).

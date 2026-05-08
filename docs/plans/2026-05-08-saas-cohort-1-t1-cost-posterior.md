@@ -6,10 +6,10 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `feedback_specialized_agents_per_task` (NON-NEGOTIABLE).
 
-**Plan version:** v0.2 (CORRECTIONS-α; addresses Wave-1 RC + Wave-2 MQ 2-wave plan-doc verify findings against v0.1).
-**emit_timestamp:** 2026-05-07 (CORRECTIONS-α author pass).
-**Predecessor:** v0.1 (REJECT — RC: 2 BLOCKs / 3 FLAGs; MQ: 5 BLOCKs / 4 FLAGs); SIM-INFRA-0 v1.1.1 REVERIFY-PASSED is the upstream gate.
-**Status:** DRAFT v0.2 — pending Wave-2 reverify on this CORRECTIONS-α revision per `feedback_two_wave_doc_verification`. See §"CORRECTIONS-α v0.1 → v0.2" at end of plan for the verbatim resolution table.
+**Plan version:** v0.3 (CORRECTIONS-α; addresses RC + MQ + CR 3-way independent post-implementation audit findings against v0.2 at commit 438a01a; supersedes v0.2).
+**emit_timestamp:** 2026-05-08 (CORRECTIONS-α second pass).
+**Predecessor:** v0.2 (REJECT under independent post-implementation audit at commit 438a01a — RC: 4 BLOCKs / 5 FLAGs; MQ: 3 BLOCKs / 2 FLAGs; CR: 2 BLOCKING / 8 IMPORTANT). SIM-INFRA-0 v1.1.1 REVERIFY-PASSED remains the upstream gate.
+**Status:** DRAFT v0.3 — pending re-audit on this CORRECTIONS-α revision. See §"CORRECTIONS-α v0.2 → v0.3" at end of plan for the verbatim resolution table.
 
 **Goal:** Fit and emit the T1 (subscription-cap-regime) PyMC posterior for the per-user monthly latent compute cost on the SaaS-builder cohort, producing tier-conditioned posterior draws + tier-prior summary as Hive-partitioned parquet artifacts to be consumed downstream by COHORT-2 (sign certification), COHORT-3 (Υ_t form), and COHORT-4 (Z-cap pin).
 
@@ -570,3 +570,64 @@ v0.2 dispatches Wave-2 RC + MQ on this revision. ACCEPT requires:
 2. All 7 FLAGs folded in (no orphan recommendations).
 3. No new BLOCKs introduced by the rewrites.
 4. Sub-task dispatch (Phase 2.1+) authorized only on a clean Wave-2 ACCEPT or ACCEPT_WITH_FLAGS verdict.
+
+---
+
+## CORRECTIONS-α v0.2 → v0.3
+
+> Format precedent: `docs/specs/2026-05-07-saas-builder-stage-2-prereg-lock.md` §15 + the v0.1 → v0.2 block above.
+>
+> Source verdicts (3-way independent post-implementation audit on commit 438a01a):
+> - Reality Checker: `scratch/2026-05-08-saas-cohort-1-independent-audit/rc-verdict.md` (verdict REJECT; 4 BLOCKs + 5 FLAGs).
+> - Model QA Specialist: `scratch/2026-05-08-saas-cohort-1-independent-audit/mq-verdict.md` (verdict REJECT; 3 BLOCKs + 2 FLAGs).
+> - Code Reviewer: `scratch/2026-05-08-saas-cohort-1-independent-audit/cr-verdict.md` (verdict REQUEST_CHANGES; 2 BLOCKING + 8 IMPORTANT).
+>
+> The 5 cross-auditor consensus BLOCKs are addressed in this revision. Forward-fix implementation in new commits on branch `iter/saas-builder-stage-2`; no history rewrite. v0.2 commit 438a01a remains pinned for traceability.
+
+### Consensus BLOCK resolution table
+
+| ID | Verdict-line citations | Fix location in v0.3 | Resolution summary |
+|---|---|---|---|
+| BLOCK-1 (compound-sum likelihood) | RC §BLOCK-1; MQ §BLOCK-MQ-1; CR §B1 | `simulations/saas_builder/emit.py` `run_posterior_predictive`; `simulations/saas_builder/model.py` docstring; this plan §"CORRECTIONS-α v0.2 → v0.3" | The spec §5.1 (T1) compound sum $\tau_t = \sum_{j=1}^{D_t}\sum_{i=1}^{N_j}\tau_{j,i}$ is realized by a hybrid PyMC + post-hoc numpy reduction: `pm.sample_posterior_predictive` populates `n_per_day`, `n_month`, `tier_idx`; for each posterior draw of $(\alpha, x_m, n_{\text{month}})$, the shipped `simulations.modules.samplers.TruncParetoSampler` draws $n_{\text{month}}$ iid TruncPareto variates and reduces to $\tau_t = \sum \tau_{j,i}$ outside the model graph. Within-row per-turn variance at fixed posterior parameters is now nonzero (BLOCK-3 verifies). The previous deterministic `tau_t = n_month × E[τ]` is retained ONLY as the μ of the Stage-2 synthetic-Bayesian Normal-kernel proxy on the *fit* arm, not as the emission. |
+| BLOCK-2 (HalfNormal proxy malformed) | RC §BLOCK-4; MQ §FLAG-MQ-A; CR §I5 | `simulations/saas_builder/model.py` (constant `SIGMA_OBS_FIXED`; `pm.Normal("tau_t_observed", ..., sigma=SIGMA_OBS_FIXED)`) | Replaced `pm.HalfNormal("sigma_obs", sigma=tau_t * 0.2 + 1.0)` (which passed a stochastic Deterministic as a HalfNormal scale, producing a non-identifiable nested stochastic prior) with a fixed positive scalar `SIGMA_OBS_FIXED = 1.0`. Pre-registered as a static likelihood-proxy hyperparameter; the §8(7) CI-width gate is the discriminator on parameter shrinkage. |
+| BLOCK-3 (Property #6 fabricated PP) | RC §BLOCK-3; MQ §BLOCK-MQ-1; CR §I6 | `simulations/tests/test_saas_builder.py::test_property_6_posterior_predictive_within_row_variance` | Rewrote to fit a small synthetic model end-to-end with `pm.sample(draws=100, chains=2)` then call `run_posterior_predictive`. Asserts `tau_pp.shape == (2, 100)`, `tau_pp.var() > 0` (within-row per-turn variance from real TruncPareto resampling), AND reproducibility under fixed `random_seed`. The hand-fabricated `rng.gamma` array path is removed. |
+| BLOCK-4 (sim-count floor per-chain) | RC §BLOCK-2 | `simulations/saas_builder/diagnostics.py` (sim_count_floor_violated condition); new test `test_sim_count_floor_violated_per_chain_not_total` | Changed gate from `total_draws < SIM_COUNT_DRAW_FLOOR or n_chains < SIM_COUNT_CHAIN_FLOOR` to `n_draws_per_chain < SIM_COUNT_DRAW_FLOOR or n_chains < SIM_COUNT_CHAIN_FLOOR`. Spec §8(8) requires per-chain ≥ 4000 (= ≥ 16,000 total at 4 chains). v0.2 enforced total ≥ 4000 only; 4 chains × 1000 draws would have silently passed. New regression test pins the per-chain semantics at the v0.2-pass-but-v0.3-fail boundary. |
+| BLOCK-5 (tier_idx semantics) | RC §FLAG-B; MQ §BLOCK-MQ-2(b); CR (implicit via I6) | `simulations/saas_builder/model.py` (`pm.Categorical("tier_idx", p=pi, shape=(self.n_builders,))`); `T1ModelFactory.n_builders: int = DEFAULT_N_BUILDERS = 1000`; `simulations/saas_builder/emit.py` `_build_synthetic_tau_rows` (handles 3-D tier_idx) | tier_idx is now vector-shaped over `n_builders` per spec §5.2 "Categorical latent per builder" — each builder carries one latent tier per the spec text. The `T1ModelFactory` exposes `n_builders` (default 1000); for tests, smaller cohorts can be passed (e.g. `n_builders=4`). Emission flattens (chain, draw) and selects builder slot 0 per row, which preserves the v0.2 row-count layout while honoring the spec semantic. |
+
+### IMPORTANT (CR) and FLAG (RC, MQ) items deferred to v0.4
+
+The following CR-IMPORTANT and RC/MQ-FLAG items are NOT addressed in v0.3 (the consensus BLOCK-fix scope); they are recorded here for the next revision:
+
+- CR I1: `.values.ravel()` → `.stack(sample=("chain", "draw")).values` for arviz-version-stable ordering.
+- CR I2: `[:n_rows]` truncation should `assert tau_arr.size == n_rows` first.
+- CR I3: `base_dir` default is relative; should be absolute or required.
+- CR I4: `compute_ci_width_ratio_max` short-circuits on first degenerate prior.
+- CR I7: heavy reliance on synthetic `az.from_dict` idata; add `@pytest.mark.slow` real-sample integration test.
+- CR I8: `_AUDIT.json` write is non-atomic.
+- RC FLAG-A: `compute_ci_width_ratio_max` on `pi` (3-simplex Dirichlet) is per-component-aggregate, not per-component.
+- RC FLAG-C, FLAG-D, FLAG-E: var_names omits n_per_day; prior pipeline never end-to-end tested; `__init__.py` is empty.
+- MQ FLAG-MQ-B: Hypothesis property #2 does not test joint identifiability of `(α, x_m, κ)`.
+- CR NITs N1-N7: rigid tuple arity, magic floors, percentile=50 sentinel mis-use, narrow exception scope.
+
+These do NOT block v0.3 emission correctness on the cohort-mixture spec §5.1 / §5.2 surfaces; they are quality-of-implementation issues for a v0.4 follow-up.
+
+### Net delta vs v0.2
+
+- Plan version: v0.2 → v0.3.
+- Two new module-level constants in `model.py`: `DEFAULT_N_BUILDERS = 1000`, `SIGMA_OBS_FIXED = 1.0`.
+- `T1ModelFactory.n_builders: int` field added.
+- `tier_idx` shape changed from scalar to `(n_builders,)`.
+- `pm.HalfNormal("sigma_obs", sigma=tau_t*0.2+1.0)` removed; replaced with fixed `sigma=SIGMA_OBS_FIXED` on the `tau_t_observed` Normal.
+- `simulations/saas_builder/emit.run_posterior_predictive` rewritten: post-hoc TruncPareto compound-sum reduction; signature gains `x_max_fixed`, `blended_price_per_mtok`, `fx_cop_per_usd` keyword-only args.
+- `CohortEmitter.fx_cop_per_usd` field added (default 4000.0).
+- `diagnostics.PosteriorDiagnostic.__call__` sim-count check changed from total to per-chain.
+- New tests: `test_sim_count_floor_violated_per_chain_not_total`; `test_property_6_*` rewritten end-to-end.
+
+### Reverify exit criteria (v0.3)
+
+ACCEPT requires:
+1. All 5 consensus BLOCKs above traceable to spec authority + shipped code.
+2. Test suite passes (current: 57 tests passing) with ruff + ty clean.
+3. Coverage ≥ 80% across saas_builder/* (current: 89%).
+4. No new BLOCKs introduced by the rewrites.
+5. Anti-fishing invariants honored: no spec-pin relaxation; no test-fixture widening; no verdict-threshold tuning.

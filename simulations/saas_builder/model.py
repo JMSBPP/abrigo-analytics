@@ -28,13 +28,26 @@ Pin enforcement at this layer:
   SITE (RC-B2: not in ``__post_init__``, which only validates the
   params struct). Drift here is a Phase-4 BLOCK.
 
-Posterior-predictive emission surface (MQ-B4):
+Posterior-predictive emission surface (MQ-B4 + CORRECTIONS-α v0.2 → v0.3):
 
-    ``τ_t``, ``q_t_usd``, ``q_t_cop`` are declared as ``pm.Deterministic``
-    nodes inside the model context so they are populated by
-    ``pm.sample_posterior_predictive`` in ``emit.py`` (NOT raw
-    ``idata.posterior`` slicing, which would yield zero within-row
-    variance at fixed parameter draws).
+    The compound sum τ_t = Σ_j Σ_i τ_{j,i} is **NOT** representable as a
+    PyTensor Deterministic over a fixed-shape per-turn TruncPareto tensor
+    because per-day turn counts ``N_j`` are themselves random. Two
+    posterior-predictive emissions are exposed:
+
+    1. ``mean_tau_per_turn`` — Deterministic, used as the mean μ of the
+       Stage-2 synthetic-Bayesian Normal-kernel proxy on the *fit* arm.
+    2. ``tau_t_pp`` — produced **outside** the model graph by the emit
+       pipeline (``simulations.saas_builder.emit.run_posterior_predictive``)
+       which, for each posterior draw of ``(μ, φ, α, x_m, n_per_day,
+       tier_idx)``, draws ``n_month = Σ n_per_day`` iid TruncPareto
+       variates and reduces to τ_t. This is the spec §5.1 (T1) verbatim
+       compound sum (BLOCK-1 fix). Within-row per-turn variance is
+       nonzero at fixed parameters.
+
+    The latent tier label ``tier_idx`` is vector-shaped over
+    ``n_builders`` so each builder carries one latent tier per spec §5.2
+    "Categorical latent per builder" (BLOCK-5 fix).
 
 This file is the layer where PyMC enters the codebase. Imports are limited
 to PyMC + the read-only Value/Callable upstream of cohort code.
@@ -77,6 +90,18 @@ M3_BLENDED_PRICE_ABS_TOL: Final[float] = 0.01
 #: Default FX rate (X/Y) — COP/USD. Used for the q_t_cop deterministic.
 #: Pinned at the spec §3 stationary mean ``X̄/Ȳ`` for COP/USD ≈ 4000 COP/USD.
 DEFAULT_FX_COP_PER_USD: Final[float] = 4000.0
+
+#: Spec §5.2 "Categorical latent per builder". Default cohort size for
+#: the latent tier vector when no explicit ``n_builders`` is supplied.
+#: Pinned at 1000 to match plan v0.3 CORRECTIONS-α §"BLOCK-5 fix".
+DEFAULT_N_BUILDERS: Final[int] = 1000
+
+#: Stage-2 synthetic-Bayesian Normal-kernel proxy noise scale. Pre-registered
+#: in plan v0.3 CORRECTIONS-α §"BLOCK-2 fix" as a fixed positive scalar (NOT
+#: stochastically tied to ``tau_t``). Documented as a static likelihood-proxy
+#: hyperparameter; the §8(7) CI-width gate is the discriminator on parameter
+#: shrinkage, not this scale.
+SIGMA_OBS_FIXED: Final[float] = 1.0
 
 
 def _build_sonnet_blended_price() -> float:
@@ -153,9 +178,12 @@ class T1ModelFactory:
         priors: bundle of prior-hyperparameter Value containers.
         fx_cop_per_usd: stationary FX rate for ``q_t_cop = q_t_usd · FX``;
             default :data:`DEFAULT_FX_COP_PER_USD`.
-        n_simulations: shape of the per-month posterior-predictive draw
-            tensor (rows of ``synthetic_tau_t.parquet`` per (tier, month)).
-            Default 1.
+        n_builders: cohort size — number of latent tier draws. Spec §5.2
+            "Categorical latent per builder" requires one ``tier_idx`` per
+            builder (BLOCK-5 fix). Default :data:`DEFAULT_N_BUILDERS`.
+        n_simulations: deprecated alias for legacy callers; ignored when
+            ``n_builders`` is supplied. Retained as a frozen-dc field for
+            backwards-compatible construction. Default 1.
 
     Behavior contract:
 
@@ -166,9 +194,15 @@ class T1ModelFactory:
         - ``alpha_pareto`` — TruncatedNormal[1.5, 2.5] (M1).
         - ``x_m`` — HalfNormal prior on TruncPareto floor.
         - ``pi`` — Dirichlet([2.0, 5.0, 3.0]) over TIER_IDS (spec §5.2).
-        - ``tau_t`` — Deterministic (posterior-predictive emission column).
-        - ``q_t_usd`` — Deterministic (USD cost per month).
-        - ``q_t_cop`` — Deterministic (COP cost per month, via FX).
+        - ``n_per_day`` — NegBin(μ, φ) of shape ``(D_t,)`` (per active day).
+        - ``n_month`` — Deterministic sum over ``n_per_day``.
+        - ``mean_tau_per_turn`` — Deterministic E[τ | α, x_m] (TruncPareto mean).
+        - ``tau_t`` — Deterministic ``n_month × mean_tau_per_turn`` (used as
+          the μ of the Stage-2 synthetic-Bayesian Normal-kernel proxy on the
+          *fit* arm; **NOT** the spec §5.1 compound sum). The compound sum is
+          built post-hoc by ``emit.run_posterior_predictive`` (BLOCK-1 fix).
+        - ``tier_idx`` — Categorical(``π``) of **shape (n_builders,)** —
+          one latent tier per builder per spec §5.2 (BLOCK-5 fix).
     - The Sonnet $/MTok closed form is asserted at construction
       (M3 BLOCK on drift > 0.01) before any pm.* node is built.
     - No imports from ``simulations.utils``.
@@ -176,6 +210,7 @@ class T1ModelFactory:
 
     priors: CohortPriors = field(default_factory=CohortPriors)
     fx_cop_per_usd: float = DEFAULT_FX_COP_PER_USD
+    n_builders: int = DEFAULT_N_BUILDERS
     n_simulations: int = 1
 
     def __post_init__(self) -> None:
@@ -191,6 +226,11 @@ class T1ModelFactory:
             raise ValueError(
                 f"T1ModelFactory.n_simulations = {self.n_simulations}"
                 f" must be > 0"
+            )
+        if self.n_builders <= 0:
+            raise ValueError(
+                f"T1ModelFactory.n_builders = {self.n_builders}"
+                f" must be > 0 (spec §5.2 — one latent tier per builder)"
             )
 
     def __call__(self, *, observed_tau_t: np.ndarray | None = None) -> pm.Model:
@@ -344,26 +384,39 @@ class T1ModelFactory:
                     raise ValueError(
                         f"observed_tau_t must be 1-D; got shape {obs_arr.shape}"
                     )
-                # Use a HalfNormal noise scale; the model is identifiable
-                # via the τ_t deterministic mean.
-                sigma_obs = pm.HalfNormal("sigma_obs", sigma=tau_t * 0.2 + 1.0)
+                # BLOCK-2 fix (CORRECTIONS-α v0.3): replace stochastic
+                # HalfNormal scale ``sigma=tau_t * 0.2 + 1.0`` (which was
+                # malformed — passed a Deterministic random variable as a
+                # HalfNormal scale, producing a non-identifiable nested
+                # stochastic prior) with a fixed positive scalar pin
+                # ``SIGMA_OBS_FIXED``. Pre-registered in plan v0.3
+                # CORRECTIONS-α §"BLOCK-2 fix".
                 pm.Normal(
                     "tau_t_observed",
                     mu=tau_t,
-                    sigma=sigma_obs,
+                    sigma=SIGMA_OBS_FIXED,
                     observed=obs_arr,
                 )
 
-            # Tier categorical (latent label per simulation row).
-            # Used downstream by emit.py to attach tier_id partition keys.
-            pm.Categorical("tier_idx", p=pi)
+            # Tier categorical — vector-shaped over n_builders per spec
+            # §5.2 "Categorical latent per builder" (BLOCK-5 fix).
+            # Each builder carries one latent tier index; the cohort-level
+            # mixture is captured by π (Dirichlet) AND by the n_builders
+            # realized tier draws.
+            pm.Categorical(
+                "tier_idx",
+                p=pi,
+                shape=(self.n_builders,),
+            )
 
         return model
 
 
 __all__ = [
     "DEFAULT_FX_COP_PER_USD",
+    "DEFAULT_N_BUILDERS",
     "M3_BLENDED_PRICE_ABS_TOL",
     "M3_SONNET_BLENDED_PRICE_EXPECTED",
+    "SIGMA_OBS_FIXED",
     "T1ModelFactory",
 ]

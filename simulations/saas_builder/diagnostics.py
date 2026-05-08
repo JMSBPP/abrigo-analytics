@@ -14,10 +14,13 @@ and the consumer at :mod:`emit` raises
      heavy-tailed TruncPareto α posterior is the most likely tail-ESS
      violator given §8(6) α-floor proximity);
    - divergences ≤ 0.5 % of post-warmup draws;
-   - sim-count floor: ≥ 4000 post-warmup draws × ≥ 4 chains
-     (Stage-2 PyMC pin per spec §8(8) line 432-439; MQ-FLAG-D — NOT
-     CLAUDE.md ``N_MIN=75``, which is a Stage-3 cohort-survey invariant
-     and is OUT OF SCOPE for this Stage-2 synthetic-Bayesian fit).
+   - sim-count floor: ≥ 4000 post-warmup draws **per chain** AND ≥ 4
+     chains — total ≥ 16,000 draws (Stage-2 PyMC pin per spec §8(8)
+     line 432-439; MQ-FLAG-D + BLOCK-4 fix — NOT CLAUDE.md ``N_MIN=75``,
+     which is a Stage-3 cohort-survey invariant and is OUT OF SCOPE for
+     this Stage-2 synthetic-Bayesian fit). Plan v0.3 CORRECTIONS-α
+     §"BLOCK-4 fix" tightens the per-chain semantics (v0.2 enforced
+     total-only, allowing 4 chains × 1000 draws to silently pass).
 
 2. **§8(7) posterior-CI-width invariant** — for every monitored
    parameter, posterior 95 % CI width ≤ 2× prior 95 % CI width. If
@@ -58,7 +61,10 @@ ESS_TAIL_GATE: Final[float] = 400.0
 #: Spec §8(8) divergence rate ceiling (fraction of post-warmup draws).
 DIVERGENCE_FRAC_GATE: Final[float] = 0.005
 
-#: Spec §8(8) Stage-2 PyMC sim-count floor — post-warmup draws.
+#: Spec §8(8) Stage-2 PyMC sim-count floor — post-warmup draws **per chain**.
+#: BLOCK-4 fix (plan v0.3 CORRECTIONS-α): the threshold is per-chain, NOT
+#: total; the total minimum is :data:`SIM_COUNT_CHAIN_FLOOR` × this constant
+#: (= 16,000 with the default 4-chain pin).
 SIM_COUNT_DRAW_FLOOR: Final[int] = 4000
 
 #: Spec §8(8) Stage-2 PyMC sim-count floor — chain count.
@@ -89,8 +95,9 @@ class DiagnosticVerdict:
         ess_bulk_min: min ESS_bulk over monitored parameters.
         ess_tail_min: min ESS_tail over monitored parameters.
         divergence_frac: divergences / post-warmup draws.
-        sim_count_floor_violated: True iff total post-warmup draws
-            < SIM_COUNT_DRAW_FLOOR or n_chains < SIM_COUNT_CHAIN_FLOOR.
+        sim_count_floor_violated: True iff per-chain post-warmup draws
+            < SIM_COUNT_DRAW_FLOOR (= 4000 per BLOCK-4 fix) OR
+            n_chains < SIM_COUNT_CHAIN_FLOOR (= 4).
             (Renamed from v0.1 ``n_min_violated`` per MQ-FLAG-D —
             ``N_MIN=75`` is a Stage-3 cohort-survey invariant, NOT a
             Stage-2 thinning guard.)
@@ -355,9 +362,11 @@ class PosteriorDiagnostic:
             else 0.0
         )
 
-        # Sim-count floor.
+        # Sim-count floor — BLOCK-4 fix: enforce per-chain ≥ 4000 AND
+        # n_chains ≥ 4 (NOT total ≥ 4000, which silently passed
+        # 4 chains × 1000 draws under v0.2). Plan v0.3 CORRECTIONS-α.
         sim_count_floor_violated = (
-            total_draws < SIM_COUNT_DRAW_FLOOR
+            n_draws_per_chain < SIM_COUNT_DRAW_FLOOR
             or n_chains < SIM_COUNT_CHAIN_FLOOR
         )
 
