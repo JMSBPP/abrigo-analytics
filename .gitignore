@@ -52,3 +52,6 @@ mutants/
 # SAAS-COHORT-1 emission outputs (Hive-partitioned + JSON sidecar)
 simulations/saas_builder/data/
 
+# Private project memories (strategic / not for public repo)
+memory/project_uhi9_hookathon_june_11.md
+

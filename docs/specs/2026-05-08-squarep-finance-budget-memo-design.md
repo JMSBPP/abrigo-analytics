@@ -8,7 +8,7 @@
 **Sunk cost (excluded from envelope)**: Existing Cloud Code $100 top-up
 already paid; $17 session credit remaining as of memo date. Future Cloud Code
 top-ups *do* count against the envelope as a contingent line item.
-**Hard deadline**: Uniswap hackathon submission **June 11, 2026** (34 days from memo date)
+**Hard deadline**: UHI9 capstone Hookathon submission **June 11, 2026** (34 days from memo date) — Atrium Academy / Uniswap Foundation cohort 9, theme "Impermanent Loss & Yield Systems," Reactive Network as named sponsor track.
 
 ## 1. Purpose
 
@@ -23,37 +23,69 @@ named trigger to revisit, not silently dropped.
 
 Every dollar in May/June must be defensible as either:
 
-- (a) directly improving the **June 11 hackathon submission**, or
-- (b) serving the **research-paper / grants channel** at near-zero marginal
-  cost on top of (a).
+- (a) directly improving the **UHI9 June 11 Hookathon submission** (primary), or
+- (b) serving a **secondary recovery channel** at near-zero marginal cost on
+  top of (a).
 
 The brand surface (domain, email, X presence) qualifies under (b) — same
-artifacts serve both channels. Paid Colombian macro data does *not* qualify
-under (b) — it serves only the paper channel and at high marginal cost.
-Therefore deferred.
+artifacts serve hackathon credibility, Celo Proof of Ship public-shipping
+reputation, future grant applications, and the eventual research paper. Paid
+Colombian macro data does *not* qualify under (b) — single-channel benefit at
+high marginal cost. Therefore deferred.
 
 ## 3. Recovery-channel architecture
 
-| Category | What's in it | Recovery channel | Funded? |
+The cycle has **multiple concurrent recovery channels** sharing one codebase
+and one brand surface:
+
+| Channel | Type | Deadline | Status |
 |---|---|---|---|
-| Hackathon-critical | Solidity demo infra, RPC, AWS for control proofs, Cloud Code buffer | Uniswap prize (June 11) | Primary claim |
-| Brand surface | `squarep.finance` domain + email, Vercel host, X Basic | Shared: hackathon credibility + paper + grants | Small fixed cost |
-| Research-paper data | Paid Colombian macro feeds | Paper / grants | **Deferred** — out of cycle |
-| Operating buffer | Cross-vendor float so jobs don't die | All channels (continuity) | Explicit 18.75% of envelope |
+| **UHI9 capstone Hookathon** | Primary, single-shot | June 11 | User enrolled in cohort |
+| **Celo Proof of Ship** | Continuous, monthly | Rolling ($5k cUSD/mo) | User enrolled |
+| **Somnia Agentathon** | Secondary reskin | TBD (URL pending) | Provisional — same reactive-contract codebase as UHI9 |
+| **UHI10 application** (reserve) | Cohort gate | May 15 / June 21 late | Fires only if June 11 missed |
+| **Algebra / Panoptic / Mento direct** | Partner outreach | After June 19 demo day | Free; post-demo grant/partnership pitch |
 
-## 4. Recovery-channel mapping rationale
+| Spend category | What's in it | Funded? |
+|---|---|---|
+| Hookathon-critical | Solidity hook + reactive contract, RPC, AWS for control proofs, agent compute | Primary claim on funds |
+| Brand surface | `squarep.finance` domain + email, Vercel host, X Basic | Small fixed cost; serves all channels |
+| Research-paper data | Paid Colombian macro feeds | **Deferred** — single-channel, out of cycle |
+| Operating buffer | Cross-vendor float so jobs don't die | All channels (continuity) |
 
-**Uniswap hackathon (June 11)** — concentrated, single-shot remuneration.
-Funds: Solidity prototype, demo UI, on-chain data (Alchemy/RPC), control-proof
-compute (AWS bursts), agent compute (Cloud Code).
+## 4. Recovery-channel rationale
 
-**Research paper / grants** — diffuse, longer horizon. Funds: paid Colombian
-macro data when paper deadline becomes concrete. Not in this cycle.
+**UHI9 capstone (June 11) — primary.** Concentrated single-shot. UHI9 theme
+"Impermanent Loss & Yield Systems" is verbatim Abrigo's premium-funded ratchet
+over a Panoptic-style LP position. Reactive Network is a named sponsor; their
+reactive smart contract primitive is architecturally central to the
+ratchet (oracle/time-triggered position management). Judges include Variant,
+a16z, Dragonfly, USV — narrative legibility for VC audience matters.
 
-**Shared overhead (brand surface)** — `squarep.finance` domain, Cloudflare
-email routing, Vercel hobby site, X Basic — serves both channels at low total
-cost. Built now because the hackathon submission benefits from a public
-landing page and an X account with 4+ weeks of post history before judging.
+**Celo Proof of Ship — continuous.** $5k cUSD/month, AI-evaluated on shipping
+cadence via Karma GAP + Farcaster. Tension with UHI9: Proof of Ship rewards
+public progress shipping; UHI9 rewards a final reveal. Resolution: ship the
+*Celo/Mento-side infrastructure* (cCOP integration, agent identity primitives,
+deployment scripts) publicly for Proof of Ship reputation; hold the *Panoptic
+settlement / capstone hook narrative* for the June 11 reveal. Two artifacts,
+one codebase.
+
+**Somnia Agentathon — secondary reskin.** The `reactive-smart-contracts`
+skill explicitly covers dual-instance deployment to both Reactive Network
+(UHI9 sponsor target) and Somnia L1. Marginal engineering cost is low —
+chain-specific deployment differences only. Conditional on (a) URL confirming
+deadline gives ≥4 days post-June 11, and (b) Somnia's specific track fitting
+the architecture.
+
+**UHI10 reserve.** May 15 application deadline; September capstone. Fires
+*only* if June 11 capstone is missed. Application costs $0; no budget impact.
+
+**Direct partner outreach (Algebra, Panoptic, Mento).** None has an active
+hackathon in the May–July 2026 window. Channel = direct grant/partnership
+pitch *after* June 19 demo day, leveraging the UHI9 capstone artifact.
+Highest fit: Mento (cCOP/COPm alignment with Pair-D positioning); they
+explicitly seek builders deploying with their local-currency stablecoins.
+Zero budget cost; pure attention/outreach work.
 
 ## 5. May 2026 allocation (cap $400 new spend)
 
@@ -125,6 +157,8 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 | Vercel Pro ($20/mo) | Demo site needs custom analytics, password protection, or team seat |
 | AWS commitment plans | Compute usage stable across 2+ months |
 | LinkedIn Premium / sponsored | B2B-grant pipeline opens |
+| Mantle Turing Test submission | Out — engineering scope (Agentic Wallets / ERC-8004) is a third architecture, not a reskin |
+| ETHGlobal NY / Lisbon | Out — travel cost from Colombia exceeds full $800 envelope |
 
 ## 8. Risk reserves and failure-mode coverage
 
@@ -190,10 +224,37 @@ Colombian macro data once the paper deadline becomes concrete.
 
 ## 12. Out of scope for this memo
 
-- The hackathon project's *technical* design (Solidity scope, demo
-  architecture) — separate spec.
-- The research paper's submission target and editorial timeline — separate
-  doc.
+- The hackathon project's *technical* design (Solidity hook scope, reactive
+  contract architecture, simulation work, analytics) — **user's own domain**;
+  not part of this memo or its implementation plan
+- The research paper's submission target and editorial timeline — separate doc
 - Legal entity / tax handling for hackathon prize money — premature; revisit
-  if/when prize is awarded.
-- Post-hackathon cycle (July+) budget — separate memo when this cycle closes.
+  if/when prize is awarded
+- Post-hackathon cycle (July+) budget — separate memo when this cycle closes
+
+## 13. Implementation-plan scope
+
+The implementation plan derived from this memo is a **prioritized TODO list**
+covering admin / marketing / off-chain backend work *only*. It explicitly does
+not cover:
+
+- Solidity hook development (user-driven)
+- Reactive contract development (user-driven)
+- Simulation / analytics work (user-driven)
+- Smart contract testing (user-driven)
+
+It *does* cover, with agents doing the heavy lifting where possible:
+
+- Domain registration, DNS, email routing setup
+- Vercel landing page scaffolding and copy
+- X account setup, posting cadence, marketing-thread drafts
+- Karma GAP project listing + Farcaster account for Celo Proof of Ship
+- Alchemy / AWS account provisioning (when triggers fire)
+- UHI10 application drafting (reserve)
+- Post-demo outreach drafts to Algebra / Panoptic / Mento
+- Spend-tracking ledger maintenance against the $800 envelope
+
+Sequencing in the plan respects the user's stated bias: marketing copy, UI,
+and off-chain backend are *not* the user's strong suits, so those tasks are
+structured as agent-executable TODOs the user reviews and approves rather
+than tasks the user authors directly.
