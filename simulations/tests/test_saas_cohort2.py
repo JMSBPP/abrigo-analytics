@@ -374,7 +374,7 @@ class TestSignCertificationGate:
         assert len(verdict.evidence) == 1
         # Δ_med must be strictly negative.
         assert verdict.evidence[0].delta_median < 0.0
-        assert verdict.evidence[0].delta_upper_bound_95 < 0.0
+        assert verdict.evidence[0].delta_upper_bound_quantile < 0.0
 
     def test_gate_fail_when_any_bracket_violates_sign(self) -> None:
         """Force Δ > 0 deterministically by inverting the FX-path sign.
@@ -561,8 +561,8 @@ class TestVerdictAlphabetAndIO:
         ev_pass = SignVerdict(
             bracket_index=0,
             delta_median=-1.0,
-            delta_lower_bound_95=-2.0,
-            delta_upper_bound_95=-0.5,
+            delta_lower_bound_quantile=-2.0,
+            delta_upper_bound_quantile=-0.5,
             sign_strictly_negative=True,
         )
         # PASS works.
@@ -595,8 +595,8 @@ class TestVerdictAlphabetAndIO:
         ev = SignVerdict(
             bracket_index=0,
             delta_median=-1.0,
-            delta_lower_bound_95=-2.0,
-            delta_upper_bound_95=-0.5,
+            delta_lower_bound_quantile=-2.0,
+            delta_upper_bound_quantile=-0.5,
             sign_strictly_negative=True,
         )
         with pytest.raises(ValueError):
@@ -614,8 +614,8 @@ class TestVerdictAlphabetAndIO:
         ev = SignVerdict(
             bracket_index=0,
             delta_median=-1.0,
-            delta_lower_bound_95=-2.0,
-            delta_upper_bound_95=-0.5,
+            delta_lower_bound_quantile=-2.0,
+            delta_upper_bound_quantile=-0.5,
             sign_strictly_negative=True,
         )
         v = CohortGateVerdict(
@@ -638,8 +638,8 @@ class TestVerdictAlphabetAndIO:
         ev_fail = SignVerdict(
             bracket_index=0,
             delta_median=1.0,
-            delta_lower_bound_95=0.5,
-            delta_upper_bound_95=2.0,
+            delta_lower_bound_quantile=0.5,
+            delta_upper_bound_quantile=2.0,
             sign_strictly_negative=False,
         )
         with pytest.raises(ValueError):

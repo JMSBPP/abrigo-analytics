@@ -230,15 +230,24 @@ class SignVerdict:
     """Per-bracket-point sign-certification record (Pin Δ-cohort).
 
     Records the posterior-predictive credible-interval bound used by the
-    gate to certify ``Δ^(a_s) < 0``: when ``delta_upper_bound_95 < 0``
-    strictly, the bracket point passes; otherwise ``sign_strictly_negative
-    == False`` and the gate emits FAIL.
+    gate to certify ``Δ^(a_s) < 0``: when ``delta_upper_bound_quantile <
+    0`` strictly, the bracket point passes; otherwise
+    ``sign_strictly_negative == False`` and the gate emits FAIL.
+
+    Phase-3 close (CR I1 v0.3 sweep): the prior field name
+    ``delta_upper_bound_95`` lied when ``ci_level`` ≠ 0.95. The bound
+    fields are renamed to ``delta_{lower,upper}_bound_quantile`` and a
+    ``ci_level`` field is added so the credible level is part of the
+    record itself, not a hard-coded suffix.
 
     Validation contract:
 
     - ``delta_median`` finite;
-    - ``delta_lower_bound_95`` ≤ ``delta_median`` ≤ ``delta_upper_bound_95``;
-    - ``sign_strictly_negative`` is True iff ``delta_upper_bound_95 < 0``;
+    - ``delta_lower_bound_quantile`` ≤ ``delta_median`` ≤
+      ``delta_upper_bound_quantile``;
+    - ``sign_strictly_negative`` is True iff
+      ``delta_upper_bound_quantile < 0``;
+    - ``ci_level`` ∈ (0, 1) (default 0.95 — Pin BRACKET-M5 baseline).
     - ``audit_block`` is a 64-char lowercase sha256 hex string (or empty
       for in-memory test verdicts; the IO Boundary class fills it in
       before persistence).
@@ -247,9 +256,10 @@ class SignVerdict:
 
     bracket_index: int
     delta_median: float
-    delta_lower_bound_95: float
-    delta_upper_bound_95: float
+    delta_lower_bound_quantile: float
+    delta_upper_bound_quantile: float
     sign_strictly_negative: bool
+    ci_level: float = 0.95
     audit_block: str = ""
 
     def __post_init__(self) -> None:
@@ -257,32 +267,36 @@ class SignVerdict:
             raise ValueError(
                 f"SignVerdict.bracket_index = {self.bracket_index} must be ≥ 0"
             )
+        if not (0.0 < self.ci_level < 1.0):
+            raise ValueError(
+                f"SignVerdict.ci_level = {self.ci_level} must lie in (0, 1)"
+            )
         for name, val in (
             ("delta_median", self.delta_median),
-            ("delta_lower_bound_95", self.delta_lower_bound_95),
-            ("delta_upper_bound_95", self.delta_upper_bound_95),
+            ("delta_lower_bound_quantile", self.delta_lower_bound_quantile),
+            ("delta_upper_bound_quantile", self.delta_upper_bound_quantile),
         ):
             if not math.isfinite(val):
                 raise ValueError(f"SignVerdict.{name} = {val} must be finite")
         if not (
-            self.delta_lower_bound_95
+            self.delta_lower_bound_quantile
             <= self.delta_median
-            <= self.delta_upper_bound_95
+            <= self.delta_upper_bound_quantile
         ):
             raise ValueError(
-                "SignVerdict: must satisfy delta_lower_bound_95 ≤ delta_median"
-                " ≤ delta_upper_bound_95;"
-                f" got ({self.delta_lower_bound_95},"
-                f" {self.delta_median}, {self.delta_upper_bound_95})"
+                "SignVerdict: must satisfy delta_lower_bound_quantile ≤"
+                " delta_median ≤ delta_upper_bound_quantile;"
+                f" got ({self.delta_lower_bound_quantile},"
+                f" {self.delta_median}, {self.delta_upper_bound_quantile})"
             )
         # The boolean is a derived field; require consistency with the bound.
-        derived = self.delta_upper_bound_95 < 0.0
+        derived = self.delta_upper_bound_quantile < 0.0
         if derived != self.sign_strictly_negative:
             raise ValueError(
                 "SignVerdict.sign_strictly_negative must equal"
-                " (delta_upper_bound_95 < 0);"
+                " (delta_upper_bound_quantile < 0);"
                 f" got flag={self.sign_strictly_negative},"
-                f" upper_bound={self.delta_upper_bound_95}"
+                f" upper_bound={self.delta_upper_bound_quantile}"
             )
         if self.audit_block != "" and not _AUDIT_BLOCK_RE.fullmatch(
             self.audit_block

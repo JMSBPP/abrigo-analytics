@@ -138,8 +138,9 @@ class GateVerdictWriter:
                 {
                     "bracket_index": ev.bracket_index,
                     "delta_median": ev.delta_median,
-                    "delta_lower_bound_95": ev.delta_lower_bound_95,
-                    "delta_upper_bound_95": ev.delta_upper_bound_95,
+                    "delta_lower_bound_quantile": ev.delta_lower_bound_quantile,
+                    "delta_upper_bound_quantile": ev.delta_upper_bound_quantile,
+                    "ci_level": ev.ci_level,
                     "sign_strictly_negative": ev.sign_strictly_negative,
                 }
                 for ev in verdict.evidence
@@ -224,15 +225,16 @@ def _format_robustness_section(
         f"- n_sign_violations: {verdict.n_sign_violations}",
         f"- audit_block: `{verdict.audit_block}`",
         "",
-        "| bracket_index | Δ median | 95% lower | 95% upper | strict<0 |",
-        "|---|---|---|---|---|",
+        "| bracket_index | Δ median | CI lower | CI upper | ci_level | strict<0 |",
+        "|---|---|---|---|---|---|",
     ]
     for ev in verdict.evidence:
         lines.append(
             f"| {ev.bracket_index}"
             f" | {ev.delta_median:+.6e}"
-            f" | {ev.delta_lower_bound_95:+.6e}"
-            f" | {ev.delta_upper_bound_95:+.6e}"
+            f" | {ev.delta_lower_bound_quantile:+.6e}"
+            f" | {ev.delta_upper_bound_quantile:+.6e}"
+            f" | {ev.ci_level:.2f}"
             f" | {'YES' if ev.sign_strictly_negative else 'NO'} |"
         )
     lines.append("")

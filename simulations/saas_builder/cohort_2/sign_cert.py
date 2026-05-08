@@ -6,7 +6,7 @@ Implements:
   ``BracketGrid``, evaluates Δ^(a_s) over posterior τ_t draws,
   computes the posterior-predictive 95% credible interval (NOT
   bootstrap; spec §9 row TODO-COHORT-2), and certifies
-  ``delta_upper_bound_95 < 0`` strictly per Pin BRACKET-M5.
+  ``delta_upper_bound_quantile < 0`` strictly per Pin BRACKET-M5.
 - :class:`PPCQuantileCoverageCheck` — computes empirical coverage of
   the nominal 95% credible interval at τ_t quantiles ``{50, 90, 99}``-pct
   and raises :class:`PPCQuantileMiscoverageError` when any falls outside
@@ -159,7 +159,7 @@ class SignCertificationGate:
     For each ``BracketPoint`` supplied at call time, computes Δ^(a_s)
     over the posterior τ_t draws (shape ``(n_draws, T)``), then certifies
     via posterior-predictive 95% credible interval that
-    ``delta_upper_bound_95 < 0`` strictly. A single failure flips the
+    ``delta_upper_bound_quantile < 0`` strictly. A single failure flips the
     verdict to ``FAIL`` and records ``n_sign_violations``.
 
     Verdict alphabet (spec §10 line 520): ``PASS|WEAK|MARGINAL|FAIL|
@@ -267,9 +267,10 @@ class SignCertificationGate:
             verdict_evidence = SignVerdict(
                 bracket_index=idx,
                 delta_median=median,
-                delta_lower_bound_95=lower,
-                delta_upper_bound_95=upper,
+                delta_lower_bound_quantile=lower,
+                delta_upper_bound_quantile=upper,
                 sign_strictly_negative=strict,
+                ci_level=self.ci_level,
             )
             evidence.append(verdict_evidence)
 
@@ -282,9 +283,10 @@ class SignCertificationGate:
                     (
                         ev.bracket_index,
                         ev.delta_median,
-                        ev.delta_lower_bound_95,
-                        ev.delta_upper_bound_95,
+                        ev.delta_lower_bound_quantile,
+                        ev.delta_upper_bound_quantile,
                         ev.sign_strictly_negative,
+                        ev.ci_level,
                     )
                     for ev in evidence
                 ),
