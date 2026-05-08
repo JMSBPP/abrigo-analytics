@@ -23,7 +23,7 @@ import math
 import re
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
-from typing import Final, Mapping
+from typing import Final, Literal, Mapping
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,7 +42,22 @@ _AUDIT_BLOCK_RE: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
 # ─── Module-level constants ───────────────────────────────────────────────────
 
 #: Default schema version for emission artifacts (Phase 1 reconciliation §2.4).
+#:
+#: SAAS-COHORT-CLOSE Phase 4 — schema v1.0 → v1.1 additive bump:
+#: v1.1 adds the optional ``sign_verdicts`` field on ``ZCapPinned``
+#: (per-test-point sign certification absorbed from the prior
+#: ``Z_cap_pinned.SIGN_VERDICTS.md`` sidecar). v1.0 readers continue
+#: to work unchanged — the new field defaults to ``None`` and is
+#: emitted by the writer only when populated. v1.1 writers MUST set
+#: ``schema_version="v1.1"``; v1.0 writers MUST set ``"v1.0"`` and
+#: leave ``sign_verdicts`` as ``None``.
 DEFAULT_SCHEMA_VERSION: Final[str] = "v1.0"
+
+#: SAAS-COHORT-CLOSE Phase 4 — v1.1 emission tag for writers that
+#: populate the new ``sign_verdicts`` field. Backward-compat invariant:
+#: a v1.1 file with ``sign_verdicts`` omitted is indistinguishable from
+#: a v1.0 file at the byte level (additive semantics).
+SCHEMA_VERSION_V1_1: Final[str] = "v1.1"
 
 #: Spec §9 pinned percentile grid for monthly $/mo CDF.
 DEFAULT_CDF_PERCENTILES: Final[tuple[float, float, float, float]] = (
@@ -170,6 +185,81 @@ class MonthlyCDF:
             )
 
 
+#: SAAS-COHORT-CLOSE Phase 4 — closed alphabet for per-TP sign-verdict
+#: labels (mirrors ``simulations.saas_builder.cohort_4.types.TestPointLabel``
+#: but without re-importing across the cohort_4 boundary into the
+#: schema-Value tier).
+SignVerdictLabel = Literal["TP1", "TP2", "TP3", "TP4", "TP5"]
+
+
+@dataclass(frozen=True)
+class SignVerdictEntry:
+    """One per-test-point sign-verdict record (schema v1.1 ``ZCapPinned`` field).
+
+    SAAS-COHORT-CLOSE Phase 4 — additive schema bump v1.0 → v1.1.
+
+    Carries the per-TP outputs that v1.0 published as a sidecar
+    ``Z_cap_pinned.SIGN_VERDICTS.md`` Markdown table. Now first-class
+    on ``ZCapPinned`` so consumers can audit per-TP sign-pass status
+    without parsing Markdown.
+
+    Validation contract:
+
+    - ``label`` ∈ ``("TP1","TP2","TP3","TP4","TP5")``;
+    - ``z`` finite (NOT required > 0 — pre-HALT verdicts may record
+      sign violations for the disposition memo);
+    - ``ci_95_lo ≤ z ≤ ci_95_hi``; both finite;
+    - ``sign`` ∈ ``("PASS","FAIL")``; consistent with ``ci_95_lo > 0``
+      (PASS iff lo > 0, else FAIL);
+    - ``identity_residual`` finite, ≥ 0;
+    - ``identity_passes`` is the boolean form of the pass/fail flag.
+    """
+
+    label: SignVerdictLabel
+    z: float
+    ci_95_lo: float
+    ci_95_hi: float
+    sign: Literal["PASS", "FAIL"]
+    identity_residual: float
+    identity_passes: bool
+
+    def __post_init__(self) -> None:
+        if self.label not in ("TP1", "TP2", "TP3", "TP4", "TP5"):
+            raise ValueError(
+                f"SignVerdictEntry.label = {self.label!r} must be TP1..TP5"
+            )
+        for name, val in (
+            ("z", self.z),
+            ("ci_95_lo", self.ci_95_lo),
+            ("ci_95_hi", self.ci_95_hi),
+            ("identity_residual", self.identity_residual),
+        ):
+            if not math.isfinite(val):
+                raise ValueError(
+                    f"SignVerdictEntry.{name} = {val} must be finite"
+                )
+        if not (self.ci_95_lo <= self.z <= self.ci_95_hi):
+            raise ValueError(
+                "SignVerdictEntry: must satisfy ci_95_lo ≤ z ≤ ci_95_hi;"
+                f" got ({self.ci_95_lo}, {self.z}, {self.ci_95_hi})"
+            )
+        if self.sign not in ("PASS", "FAIL"):
+            raise ValueError(
+                f"SignVerdictEntry.sign = {self.sign!r} must be 'PASS' or 'FAIL'"
+            )
+        derived_pass = self.ci_95_lo > 0.0
+        if derived_pass != (self.sign == "PASS"):
+            raise ValueError(
+                "SignVerdictEntry.sign must equal 'PASS' iff ci_95_lo > 0;"
+                f" got sign={self.sign!r}, ci_95_lo={self.ci_95_lo}"
+            )
+        if self.identity_residual < 0.0:
+            raise ValueError(
+                f"SignVerdictEntry.identity_residual = {self.identity_residual}"
+                " must be ≥ 0"
+            )
+
+
 @dataclass(frozen=True)
 class ZCapPinned:
     """Pinned Z-cap emission Value for ``estimates/Z_cap_pinned.json`` (spec §10).
@@ -207,6 +297,14 @@ class ZCapPinned:
         default_factory=lambda: {"pro": 0.20, "max_5x": 0.50, "max_20x": 0.30}
     )
     schema_version: str = DEFAULT_SCHEMA_VERSION
+    #: SAAS-COHORT-CLOSE Phase 4 — schema v1.1 additive field. ``None``
+    #: under v1.0 (sidecar-only emission); a 5-tuple under v1.1 (one
+    #: ``SignVerdictEntry`` per test point TP1..TP5). Backward-compat
+    #: invariant: v1.0 readers see ``None`` (field absent on disk);
+    #: v1.1 readers materialise the tuple. The field is intentionally
+    #: ``Optional`` rather than required so v1.0 callers continue to
+    #: construct ``ZCapPinned`` with the original 5-arg signature.
+    sign_verdicts: tuple[SignVerdictEntry, ...] | None = None
 
     def __post_init__(self) -> None:
         if not _is_finite_positive(self.Z_cop_per_month):
@@ -255,6 +353,33 @@ class ZCapPinned:
             )
         if not self.schema_version:
             raise ValueError("ZCapPinned.schema_version must be non-empty")
+        # SAAS-COHORT-CLOSE Phase 4 — sign_verdicts (v1.1) validation.
+        #
+        # Backward-compat invariant: ``None`` (the v1.0 default) is
+        # always admissible regardless of ``schema_version``. When
+        # populated, the tuple must contain exactly 5 entries, one
+        # per TP1..TP5, with no duplicate labels.
+        if self.sign_verdicts is not None:
+            if not isinstance(self.sign_verdicts, tuple):
+                raise TypeError(
+                    f"ZCapPinned.sign_verdicts must be a tuple"
+                    f" (got {type(self.sign_verdicts).__name__})"
+                )
+            if len(self.sign_verdicts) != 5:
+                raise ValueError(
+                    "ZCapPinned.sign_verdicts must have exactly 5 entries"
+                    f" (one per TP1..TP5); got {len(self.sign_verdicts)}"
+                )
+            labels = tuple(sv.label for sv in self.sign_verdicts)
+            if set(labels) != {"TP1", "TP2", "TP3", "TP4", "TP5"}:
+                raise ValueError(
+                    "ZCapPinned.sign_verdicts labels must be exactly"
+                    f" {{TP1..TP5}}; got {sorted(labels)}"
+                )
+            if len(set(labels)) != len(labels):
+                raise ValueError(
+                    f"ZCapPinned.sign_verdicts contains duplicate labels: {labels}"
+                )
 
 
 # ─── Free-function accessors ──────────────────────────────────────────────────

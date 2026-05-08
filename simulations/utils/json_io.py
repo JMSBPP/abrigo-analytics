@@ -12,15 +12,24 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Final, cast
+from typing import Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from simulations.types.posterior import DEFAULT_SCHEMA_VERSION, ZCapPinned
+from simulations.types.posterior import (
+    DEFAULT_SCHEMA_VERSION,
+    SignVerdictEntry,
+    SignVerdictLabel,
+    ZCapPinned,
+)
 from simulations.types.tier import TIER_IDS, TierID
 from simulations.utils.errors import SchemaMismatchError
 
-#: M4 ``Z_cap_pinned.json`` field set (spec §10 + Phase 1 reconciliation §2.4).
+#: M4 ``Z_cap_pinned.json`` REQUIRED field set (schema v1.0 + v1.1).
+#:
+#: Both schemas require these fields. SAAS-COHORT-CLOSE Phase 4 added
+#: ``sign_verdicts`` as an OPTIONAL field for v1.1; see
+#: ``Z_CAP_PINNED_OPTIONAL_FIELDS`` below.
 Z_CAP_PINNED_FIELDS: Final[tuple[str, ...]] = (
     "Z_cop_per_month",
     "ci_95_lo",
@@ -30,6 +39,34 @@ Z_CAP_PINNED_FIELDS: Final[tuple[str, ...]] = (
     "schema_version",
 )
 
+#: SAAS-COHORT-CLOSE Phase 4 — schema v1.1 additive optional fields.
+#:
+#: A field-set check that allows ANY of these as extras (but no others)
+#: keeps both v1.0 (none present) and v1.1 (``sign_verdicts`` present)
+#: readable by the same reader. Adding a new optional field for a
+#: future v1.2 bump amounts to extending this tuple.
+Z_CAP_PINNED_OPTIONAL_FIELDS: Final[tuple[str, ...]] = ("sign_verdicts",)
+
+
+class _SignVerdictEntryJsonModel(BaseModel):
+    """Transient Pydantic validator for one ``sign_verdicts`` entry (private).
+
+    SAAS-COHORT-CLOSE Phase 4 — schema v1.1 additive type. Mirrors
+    ``simulations.types.posterior.SignVerdictEntry`` exactly; the
+    reader converts each instance to the frozen-dc Value before
+    surfacing the result to consumers.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: str
+    z: float
+    ci_95_lo: float
+    ci_95_hi: float
+    sign: str
+    identity_residual: float
+    identity_passes: bool
+
 
 class _ZCapPinnedJsonModel(BaseModel):
     """Transient Pydantic validator for ``Z_cap_pinned.json`` (private).
@@ -37,6 +74,11 @@ class _ZCapPinnedJsonModel(BaseModel):
     Not exported; never returned to consumers. Constructed by the JSON
     reader, converted to ``ZCapPinned`` (frozen-dc Value), then discarded
     per Phase 1 reconciliation §2.2.
+
+    SAAS-COHORT-CLOSE Phase 4 — accepts BOTH schema v1.0 (no
+    ``sign_verdicts``) AND v1.1 (``sign_verdicts`` is a 5-list of
+    ``_SignVerdictEntryJsonModel``). v1.0 readers continue to work
+    unchanged because the field defaults to ``None``.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -47,6 +89,7 @@ class _ZCapPinnedJsonModel(BaseModel):
     audit_block: str = Field(min_length=64, max_length=64)
     tier_mix: dict[str, float]
     schema_version: str = Field(default=DEFAULT_SCHEMA_VERSION, min_length=1)
+    sign_verdicts: list[_SignVerdictEntryJsonModel] | None = None
 
 
 def _coerce_tier_mix(raw: Mapping[str, float]) -> dict[TierID, float]:
@@ -116,15 +159,43 @@ class ZCapPinnedReader:
                 f" got {type(parsed).__name__}"
             )
         actual = set(parsed.keys())
-        expected = set(Z_CAP_PINNED_FIELDS)
-        if actual != expected:
+        required = set(Z_CAP_PINNED_FIELDS)
+        optional = set(Z_CAP_PINNED_OPTIONAL_FIELDS)
+        missing = required - actual
+        # SAAS-COHORT-CLOSE Phase 4 — extras are unauthorized UNLESS they
+        # appear in the optional-field set (schema v1.1 backward-compat).
+        unauthorized_extra = actual - required - optional
+        if missing or unauthorized_extra:
             raise SchemaMismatchError(
                 f"Z_cap_pinned.json: field set mismatch."
-                f" missing={sorted(expected - actual)!r}"
-                f" extra={sorted(actual - expected)!r}"
+                f" missing={sorted(missing)!r}"
+                f" extra={sorted(unauthorized_extra)!r}"
             )
         validated = _ZCapPinnedJsonModel.model_validate_json(raw_text)
         # Convert transient Pydantic model → frozen-dc Value before returning.
+        sign_verdicts: tuple[SignVerdictEntry, ...] | None
+        if validated.sign_verdicts is None:
+            sign_verdicts = None
+        else:
+            # SAAS-COHORT-CLOSE Phase 4 — v1.1 path: lift each transient
+            # Pydantic entry into the frozen-dc Value.
+            # SignVerdictEntry.__post_init__ rejects any out-of-alphabet
+            # ``label`` / ``sign`` value, so the cast is provably safe at
+            # the dataclass boundary; we cast here only to satisfy the
+            # static checker (Pydantic returns ``str``, the frozen-dc
+            # expects ``Literal``).
+            sign_verdicts = tuple(
+                SignVerdictEntry(
+                    label=cast("SignVerdictLabel", sv.label),
+                    z=sv.z,
+                    ci_95_lo=sv.ci_95_lo,
+                    ci_95_hi=sv.ci_95_hi,
+                    sign=cast('Literal["PASS", "FAIL"]', sv.sign),
+                    identity_residual=sv.identity_residual,
+                    identity_passes=sv.identity_passes,
+                )
+                for sv in validated.sign_verdicts
+            )
         return ZCapPinned(
             Z_cop_per_month=validated.Z_cop_per_month,
             ci_95_lo=validated.ci_95_lo,
@@ -132,6 +203,7 @@ class ZCapPinnedReader:
             audit_block=validated.audit_block,
             tier_mix=_coerce_tier_mix(validated.tier_mix),
             schema_version=validated.schema_version,
+            sign_verdicts=sign_verdicts,
         )
 
 
@@ -172,6 +244,22 @@ class ZCapPinnedWriter:
             "tier_mix": dict(z.tier_mix),
             "schema_version": z.schema_version,
         }
+        # SAAS-COHORT-CLOSE Phase 4 — schema v1.1 additive emission.
+        # Only emit the field when populated; absence on disk is
+        # indistinguishable from a v1.0 file (additive semantics).
+        if z.sign_verdicts is not None:
+            payload["sign_verdicts"] = [
+                {
+                    "label": sv.label,
+                    "z": sv.z,
+                    "ci_95_lo": sv.ci_95_lo,
+                    "ci_95_hi": sv.ci_95_hi,
+                    "sign": sv.sign,
+                    "identity_residual": sv.identity_residual,
+                    "identity_passes": sv.identity_passes,
+                }
+                for sv in z.sign_verdicts
+            ]
         target.write_text(
             json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
         )

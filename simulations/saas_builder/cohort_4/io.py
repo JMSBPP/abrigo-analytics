@@ -44,7 +44,11 @@ from simulations.saas_builder.cohort_4.types import (
     ZEvaluationResult,
 )
 from simulations.saas_builder.cohort_4.z_cap import ZCapRunner
-from simulations.types.posterior import ZCapPinned
+from simulations.types.posterior import (
+    SCHEMA_VERSION_V1_1,
+    SignVerdictEntry,
+    ZCapPinned,
+)
 from simulations.types.tier import TIER_IDS, TierID
 from simulations.utils.audit_block import compute_audit_block
 from simulations.utils.json_io import ZCapPinnedReader, ZCapPinnedWriter
@@ -169,10 +173,31 @@ class SignVerdictSidecarWriter:
 # ─── Top-level pin-and-emit orchestrator (IO Boundary) ───────────────────────
 
 
+def _to_sign_verdict_entry(sv: SignVerdict) -> SignVerdictEntry:
+    """Convert cohort_4 SignVerdict (Value) → posterior SignVerdictEntry (schema).
+
+    SAAS-COHORT-CLOSE Phase 4 — bridge from the cohort_4 internal
+    Value type to the schema-Value emitted on ``ZCapPinned`` v1.1.
+    The two types carry identical information; the duplication keeps
+    the schema-tier (``simulations.types.posterior``) free of cohort_4
+    imports per the tier-import discipline (CLAUDE.md).
+    """
+    return SignVerdictEntry(
+        label=sv.label,
+        z=sv.z_value,
+        ci_95_lo=sv.ci_95_lo,
+        ci_95_hi=sv.ci_95_hi,
+        sign="PASS" if sv.passes else "FAIL",
+        identity_residual=sv.identity_residual,
+        identity_passes=sv.identity_passes,
+    )
+
+
 def _build_z_cap_pinned(
     results: Sequence[ZEvaluationResult],
     audit_block: str,
     tier_mix: Mapping[TierID, float] = DEFAULT_TIER_MIX,
+    sign_verdicts: Sequence[SignVerdict] | None = None,
 ) -> ZCapPinned:
     """Build the ``ZCapPinned`` Value from the per-TP results.
 
@@ -180,6 +205,11 @@ def _build_z_cap_pinned(
     bracket) posterior-predictive mean; the 95% CI is TP1's per-draw
     percentile pair. This matches the spec §5.2 LOCKED brackets pin —
     other TPs are sign-certification straddles, not the cap-of-record.
+
+    SAAS-COHORT-CLOSE Phase 4 — when ``sign_verdicts`` is supplied, the
+    returned ``ZCapPinned`` carries schema v1.1 with the per-TP entries
+    populated; otherwise the v1.0 default (None / sidecar-only) is
+    preserved.
 
     Validation: TP1 ``ci_95_lo`` MUST be > 0 (else the upstream sign
     gate would have already raised). The frozen-dc ``__post_init__``
@@ -192,12 +222,28 @@ def _build_z_cap_pinned(
             " plan v0.2 §M2 requires TP1 as the primary cap-of-record"
         )
     tp1 = by_label["TP1"]
+    sv_field: tuple[SignVerdictEntry, ...] | None
+    schema_version: str
+    if sign_verdicts is None:
+        sv_field = None
+        # v1.0 default flows from ZCapPinned default; explicit for clarity.
+        return ZCapPinned(
+            Z_cop_per_month=tp1.z_mean,
+            ci_95_lo=tp1.ci_95_lo,
+            ci_95_hi=tp1.ci_95_hi,
+            audit_block=audit_block,
+            tier_mix=tier_mix,
+        )
+    sv_field = tuple(_to_sign_verdict_entry(sv) for sv in sign_verdicts)
+    schema_version = SCHEMA_VERSION_V1_1
     return ZCapPinned(
         Z_cop_per_month=tp1.z_mean,
         ci_95_lo=tp1.ci_95_lo,
         ci_95_hi=tp1.ci_95_hi,
         audit_block=audit_block,
         tier_mix=tier_mix,
+        schema_version=schema_version,
+        sign_verdicts=sv_field,
     )
 
 
@@ -253,8 +299,13 @@ def pin_and_emit(
     )
 
     # Step 4 — build ZCapPinned (TP1 = cap-of-record).
+    # SAAS-COHORT-CLOSE Phase 4: pass sign_verdicts so the emitted
+    # ZCapPinned carries schema v1.1 with per-TP entries populated.
     z_cap = _build_z_cap_pinned(
-        results, audit_block=audit_block, tier_mix=tier_mix
+        results,
+        audit_block=audit_block,
+        tier_mix=tier_mix,
+        sign_verdicts=sign_verdicts,
     )
 
     # Step 5 — write JSON.
@@ -304,6 +355,37 @@ def z_cap_pinned_equal(a: ZCapPinned, b: ZCapPinned) -> bool:
     for k in a.tier_mix:
         if abs(a.tier_mix[k] - b.tier_mix[k]) > 1e-12:
             return False
+    # SAAS-COHORT-CLOSE Phase 4 — schema v1.1 sign_verdicts comparison.
+    # Both None (v1.0) is equal; mixed None / not-None is unequal;
+    # both populated requires per-entry field-by-field equality (with
+    # float tolerance on the numeric fields, exact match on labels /
+    # sign / identity_passes).
+    if (a.sign_verdicts is None) != (b.sign_verdicts is None):
+        return False
+    if a.sign_verdicts is not None and b.sign_verdicts is not None:
+        if len(a.sign_verdicts) != len(b.sign_verdicts):
+            return False
+        # Compare sorted-by-label so insertion-order drift does not break
+        # equality (the dataclass labels are a closed alphabet — set
+        # equality on labels is enforced upstream by __post_init__).
+        a_by_label = {sv.label: sv for sv in a.sign_verdicts}
+        b_by_label = {sv.label: sv for sv in b.sign_verdicts}
+        if set(a_by_label.keys()) != set(b_by_label.keys()):
+            return False
+        for label, sva in a_by_label.items():
+            svb = b_by_label[label]
+            if sva.sign != svb.sign:
+                return False
+            if sva.identity_passes != svb.identity_passes:
+                return False
+            for fa, fb in (
+                (sva.z, svb.z),
+                (sva.ci_95_lo, svb.ci_95_lo),
+                (sva.ci_95_hi, svb.ci_95_hi),
+                (sva.identity_residual, svb.identity_residual),
+            ):
+                if not (abs(fa - fb) <= 1e-12 * max(1.0, abs(fa))):
+                    return False
     return True
 
 
