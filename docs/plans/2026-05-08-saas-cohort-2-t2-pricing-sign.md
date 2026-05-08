@@ -6,7 +6,7 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `feedback_specialized_agents_per_task` (NON-NEGOTIABLE).
 
-**Plan version:** v0.2 (CORRECTIONS-α; addresses 2 RC BLOCKs + 5 FLAGs from 2-wave plan-doc verify)
+**Plan version:** v0.3 (CORRECTIONS-α; addresses 5 BLOCKs + 9 FLAGs from 3-wave post-impl independent audit)
 **Emit timestamp:** 2026-05-07T18:45:17-04:00
 **Predecessor:** v0.1 (REJECT verdict from RC; ACCEPT_WITH_FLAGS from MQ — see `scratch/2026-05-08-cohort-plans-review/cohort-2-{rc,mq}-verdict.md`)
 **Status:** PATCHED — CORRECTIONS-α v0.1→v0.2 block at end of plan documents each BLOCK/FLAG resolution.
@@ -573,3 +573,34 @@ This block documents resolution of 2 RC BLOCKs + 5 FLAGs (3 MQ + 2 RC) raised in
 **Verification.** All seven items addressed in-line; no threshold relaxed; spec §8 anti-fishing invariants preserved. RC wave-2 may re-verify v0.2; MQ already issued ACCEPT_WITH_FLAGS — flags now resolved.
 
 End of plan v0.2.
+
+---
+
+## CORRECTIONS-α v0.2 → v0.3
+
+This block documents resolution of 5 convergent BLOCKs and 9 FLAGs raised in the post-implementation 3-wave independent audit (`scratch/2026-05-08-saas-cohort-2-independent-audit/{rc,mq,cr}-verdict.md`).
+
+**MQ-BLOCK-2 = primary BLOCK — bracket re-orientation (STRUCTURAL).** RESOLVED. v0.2 wrongly framed the gate as sweeping the FX-path values `(ε, ω)` while holding cost params fixed. Per spec §5.2 lines 383–388 + line 502, the gate must certify Δ^(a_s) < 0 at the **parameter brackets**: `tier_id × p̄_sub ∈ {20, 100, 200} × κ_per_tier × α ∈ {1.5, 2.5} × p_t (h_cache ∈ {0.80, 0.95}) × κ-doubling-arm ∈ {κ, 2κ}`. The `(ε=0.1, ω=1)` FX-path values `(4200, 3800, 4200)` at `t∈{0, π/2, π}` are the **fixed synthetic FX path** under which the parameter brackets are evaluated — not the brackets themselves. v0.3 re-orients `BracketGrid` to enumerate the spec §5.2 Cartesian product (24 bracket points: 3 tiers × 2 α × 2 cache × 2 κ-arm) at the canonical M5 FX path. The M5 anchor recovery is now asserted **once** at grid construction (the shared FX path); each BracketPoint differs only in `T2CostParams`. Anti-fishing: bracket count is now visible and matches the spec-mandated parameter family — silent re-definition of "what counts as a bracket" is closed off.
+
+**MQ-BLOCK-1 — numerical-stability methodology pin.** PARTIAL-RESOLVED. Re-derivation of the analytic Δ magnitude shows MQ's back-of-envelope (assumed `q_t ~ 1e4`) is incorrect for the canonical regime: with C1's actual τ_t draws (p99 ~ 1.1e5, max ~ 2e5, all τ << κ=1.6e6 for Pro tier), softplus(τ−κ) ≈ 0 and `q_t ≈ p̄_sub ≈ 20 USD`. The signal Δ ~ -1e-8 IS the correct analytic estimate at q=20 (see `scratch/2026-05-08-saas-cohort-2-independent-audit/numerical_check.md`). Cancellation factor `|Σ f_t / max f_t| ≈ 1`; per-term magnitude ~6e-7, summed to ~7e-7, prefactor ~0.014, Δ ≈ -1e-8. Float64 noise floor on this sum is ~1.6e-21 (12 terms × 2.2e-16 × 6e-7) — there is **>13 decades of headroom**. The signal is real, not catastrophic-cancellation noise. Defensive fixes still landed: (a) `numpy.logaddexp` already used in softplus and reconciler — confirmed; (b) `numerical_stability_check` primitive added: asserts `|Δ_med| ≥ NUMERICAL_STABILITY_FLOOR_FACTOR · macheps · |q_max| · sum|f_t/(X/Y)²|` per bracket; FAIL-routed (NOT silently widened) when violated; (c) Δ kept at float64 — mpmath upgrade rejected as unjustified for this magnitude regime. Anti-fishing: floor is computed from inputs (no hardcoded threshold to coax PASS).
+
+**MQ-BLOCK-3 / CR-BLOCKING-1 — `object.__new__` frozen-dc bypass.** RESOLVED via choice-β (gate-API refactor). `SignCertificationGate.__call__` now accepts `tuple[BracketPoint, ...]` directly (it already iterated `grid.points`). The primary path constructs a validated `BracketGrid`, calls `gate(grid.points, ...)`. The robustness arm constructs overlaid `BracketPoint`s (no anchor-recovery requirement; multiplicative bank-spread shifts the mean) and calls the gate with the raw tuple. No new sibling type, no `object.__new__`, no `_skip_anchor_check` flag. The frozen-dataclass invariant on `BracketGrid` is now strictly enforced for primary path; robustness path bypasses **type construction**, not invariants (the gate itself does not depend on the M5 anchor for its math).
+
+**CR-BLOCKING-2 — tautological PASS/FAIL tests.** RESOLVED. v0.2 tests asserted `verdict.verdict in {full alphabet}` which is always true. v0.3 replaces with deterministic input fixtures: (a) PASS test uses τ_t = constant ≪ κ (so q_t ≈ p̄_sub > 0) and the canonical M5 FX path where `Σ f_t / (X/Y)_t² < 0` is mathematically forced; assert `verdict == "PASS"` exactly. (b) FAIL test forces sign-flip by inverting the FX path: synthetic non-anchor `f_t` such that `Σ f_t/(X/Y)² > 0`, multiplied by positive q_t ⇒ Δ > 0 ⇒ `verdict == "FAIL"`.
+
+**CR-BLOCKING-3 — PPC quantile coverage runs same check 3×.** RESOLVED. v0.2 looped over `("p50","p90","p99")` but `del`-ed the level variable, computing the same per-replicate CI three times on three independent observation arrays. v0.3 computes the per-quantile τ_q on the posterior draws (q-th percentile of τ_t per posterior draw column), then checks empirical PPC coverage of the held-out τ_q observations at each quantile. The keys now drive distinct quantile-conditional coverage computations.
+
+**FLAG fold-ins.**
+- RC-FLAG-1 (BlendedPriceFn invocation): `cohort_2.pricing.composed_p_t` helper added; tests/notebook compute p_t via `BlendedPriceFn` instead of hardcoding 7.15.
+- RC-FLAG-2 / MQ-FLAG-3: PRIMITIVES.md eq. (8) ↔ eq. (11) re-labeling note in `derivatives.py` docstring updated to a single-line citation; documentation drift acknowledged.
+- RC-FLAG-3: subsumed by MQ-BLOCK-3 fix.
+- RC-FLAG-4: subsumed by CR-BLOCKING-2 fix.
+- RC-FLAG-5 / MQ-FLAG-2: tests revert to default `SoftplusBetaFitter` defaults; analytic optimum β·κ ≈ 50 fits inside `[0.01/κ, 100/κ]` at all canonical κ values. `_TEST_FITTER_OVERRIDE` deleted.
+- MQ-FLAG-1: `_l1_deviation_softplus_relu` deleted (dead code); single primitive `tightness_l1_deviation` retained. Docstring "double-validation" wording reworded.
+- MQ-FLAG-4: docstring of `M2TightnessNotAchievedError` clarifies it lives in `cohort_2/_errors.py`.
+
+**Out of scope (deferred).** Spec amendment for `Det+churn S_t` is a separate user adjudication — not addressed by this CORRECTIONS-α.
+
+**Verification.** All BLOCKs and FLAGs addressed in-line. No spec §8 threshold relaxed. The bracket count grew from 5 (mis-oriented (ε, ω) sweep) to 24 (spec §5.2 parameter family); this is bracket **completion**, not bracket-tightening to coax PASS. Sign expectation Δ < 0 remains the immutable pre-pin per spec §8(1); a single bracket-point sign-flip after re-orientation HALTs.
+
+End of plan v0.3.
