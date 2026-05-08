@@ -1,3 +1,7 @@
+- [Self-grading vs independent grading](feedback_self_grading_vs_independent.md) — 17+ BLOCKs caught only by independent RC+MQ+CR; self-grading caught 0. Always dispatch independent verifies before downstream propagation
+- [Post-hoc fit anti-fishing pattern](feedback_post_hoc_fit_anti_fishing_pattern.md) — Detect fabricated factors (e.g., C4 1/κ) via free-symbol audit + derivation-anchor citation check; never introduce a factor solely to satisfy a sign expectation
+- [Worktree agents lack sub-dispatch](feedback_worktree_agents_no_subdispatch.md) — Worktree-isolated agents don't have Agent/Task tools; long multi-phase plans must be orchestrated from main session
+- [SaaS-builder Stage-2 COMPLETE](project_saas_builder_stage_2_complete.md) — 2026-05-09: Δ<0 across 24/24 brackets; Z_cap=4688 COP/mo; π is ~99.99% of cap; spec v1.2.1; verdict memo at docs/specs/2026-05-09-...; HEAD 9fd92e5
 - [No code in specs or plans](feedback_no_code_in_specs_or_plans.md) — Specs AND implementation plans must be 100% code-agnostic; implementation is super-progressive and supervised
 - [Activate venv before forge --ffi](feedback_venv_activation.md) — source contracts/.venv/bin/activate before any forge test --ffi in the angstrom worktree
 - [Research output folder](feedback_research_output_folder.md) — Research agent reports go to scratch/ in the active worktree, not repo root
