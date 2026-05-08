@@ -47,14 +47,19 @@ SYMBOLIC_IDENTITY_TOL: Final[float] = 1e-10
 #: Pin M2 — numerical identity-tolerance ceiling (Path A v0 §10.4 inheritance).
 NUMERICAL_IDENTITY_TOL: Final[float] = 1e-6
 
-#: Plan v0.2 §M1 — canonical free-symbol set for π(t) (cap at 6 per RC-FLAG-3).
+#: Plan v0.3 §M1 — canonical free-symbol set for π(t) (cap at 6 per RC-FLAG-3).
+#:
+#: CORRECTIONS-α v0.2 → v0.3 (MQ-BLOCK-1 + FLAG-1 fix): ``kappa`` REMOVED
+#: from the 6-tuple (κ ∉ free_symbols(π) under the honest derivation per
+#: PRIMITIVES.md §6→§8.1→§10→§15). ``xy_bar`` (X̄/Ȳ) ADDED to restore the
+#: silently-dropped (X̄/Ȳ)² prefactor on σ_T (PRIMITIVES.md §6).
 PI_T_CANONICAL_SYMBOLS: Final[tuple[str, ...]] = (
     "K_star",
     "sigma_0",
     "epsilon",
     "omega",
     "t",
-    "kappa",
+    "xy_bar",
 )
 
 #: Pin M3 — audit-block hex regex (mirror posterior.ZCapPinned).
@@ -91,14 +96,19 @@ class PiTSymbolic:
     §10 (Carr-Madan: Π ≈ K̂ · σ_T, K̂ = K\*/(2√σ_0)) → variance proxy
     along the deterministic FX path → π(t) = dΠ/dt.
 
-    Symbol map (the canonical 6-tuple per plan v0.2 RC-FLAG-3):
+    Symbol map (the canonical 6-tuple per plan v0.3 RC-FLAG-3):
 
     - ``K_star`` (K⋆) — equilibrium strike (PRIMITIVES.md §8.1).
     - ``sigma_0`` (σ₀) — pinned variance (Carr-Madan linearization point).
     - ``epsilon`` (ε) — FX-path amplitude (PRIMITIVES.md §6).
     - ``omega`` (ω) — FX-path frequency (PRIMITIVES.md §6).
     - ``t`` — time (continuous).
-    - ``kappa`` (κ) — token cap (spec §5.1 (T2)).
+    - ``xy_bar`` (X̄/Ȳ) — TRM-pinned FX mean (PRIMITIVES.md §6).
+
+    Note (CORRECTIONS-α v0.3): ``kappa`` is NOT a free symbol of π(t)
+    under the honest derivation. κ enters Z only via the spec §5.1 (T2)
+    softplus channel ``q_t^USD = p̄_sub + p_t·softplus_β(τ_t − κ)``,
+    already C2-marginalized into the C1 posterior-predictive draws.
 
     ``free_symbols`` is the sympy free-symbol set extracted from ``expr``
     at construction; the Pin-M1 contract requires this set ⊆
@@ -397,65 +407,120 @@ def stderr_ratio(result: ZEvaluationResult) -> float:
     return float(result.z_stderr / result.z_mean)
 
 
+#: Spec §6 / PRIMITIVES.md §6 — default ε for σ₀ closed form (mid-bracket).
+DEFAULT_FX_EPSILON_FOR_SIGMA0: Final[float] = 0.1
+
+
+def sigma_0_from_primitives_section_6(
+    x_over_y_bar: float,
+    epsilon: float = DEFAULT_FX_EPSILON_FOR_SIGMA0,
+) -> float:
+    r"""Return σ₀ from PRIMITIVES.md §6 large-t asymptotic closed form.
+
+    CORRECTIONS-α v0.3 (MQ-BLOCK-4 fix): the v0.2 default σ₀ = 1e4 was a
+    free parameter unanchored to PRIMITIVES.md / spec. The closed form
+    σ_T(t) = (X̄/Ȳ)²·ε²·[1/8 + sin(4ωt)/(32ωt)] has large-t asymptote
+    (X̄/Ȳ)²·ε²/8. Pinning σ₀ to this asymptote makes the Carr-Madan
+    linearization a deterministic function of (X̄/Ȳ, ε) rather than a
+    free parameter, removing the calibration abdication MQ-BLOCK-4
+    flagged.
+
+    With X̄/Ȳ = 4000, ε = 0.1: σ₀ = 4000²·0.01/8 = 2000 (NOT 1e4).
+    """
+    if not (x_over_y_bar > 0.0 and math.isfinite(x_over_y_bar)):
+        raise ValueError(
+            "sigma_0_from_primitives_section_6: x_over_y_bar must be"
+            f" finite > 0; got {x_over_y_bar}"
+        )
+    if not (0.0 < epsilon < 1.0):
+        raise ValueError(
+            "sigma_0_from_primitives_section_6: epsilon must lie in (0, 1)"
+            f" per spec §6; got {epsilon}"
+        )
+    return float(x_over_y_bar**2 * epsilon**2 / 8.0)
+
+
 def make_default_test_point_grid(
     kappa_0: float = 6_500_000.0,
     x_over_y_bar_0: float = DEFAULT_X_OVER_Y_BAR,
-    sigma_0: float = 1.0e4,
+    epsilon: float = DEFAULT_FX_EPSILON_FOR_SIGMA0,
 ) -> tuple[TestPoint, ...]:
-    """Return the canonical Pin-M2 5-tuple of TestPoints (default cohort).
+    r"""Return the canonical Pin-M2 5-tuple of TestPoints (default cohort).
 
-    Defaults match plan v0.2 §M2:
+    Defaults match plan v0.3 §M2:
 
     - TP1: primary κ₀ at TRM-mean (max_5x κ₀ = 6.5M tok/mo per spec §5.2).
-    - TP2: 0.5·κ₀ at TRM-mean (low-cap straddle).
-    - TP3: 1.5·κ₀ at TRM-mean (high-cap straddle).
+    - TP2: 0.5·κ₀ at TRM-mean (low-cap straddle, retained for spec
+      compatibility — though κ does NOT enter π in v0.3 honest, so |π|
+      is identical TP1=TP2=TP3 by construction).
+    - TP3: 1.5·κ₀ at TRM-mean (high-cap straddle, ditto).
     - TP4: κ₀ at FX-high (4200 COP/USD).
     - TP5: κ₀ at FX-low (3800 COP/USD).
 
-    σ₀ default = 1e4 (FX-variance proxy units; the closed-form π(t) value
-    scales linearly in K\\* / √σ₀ so the absolute value is informative
-    only via Pin M2 monotonicity).
+    σ₀ is computed per X̄/Ȳ via the PRIMITIVES.md §6 large-t closed form
+    (CORRECTIONS-α v0.3 MQ-BLOCK-4 fix); each TP carries its own σ₀
+    consistent with its FX bracket.
+
+    Plan v0.3 §M2 monotonicity: ``∂|π|/∂(X̄/Ȳ) > 0`` strict (replaces
+    v0.2's ``∂|π|/∂κ < 0`` which is structurally unsatisfiable since
+    κ ∉ free_symbols(π) — anti-fishing remediation).
     """
+    s0_mid = sigma_0_from_primitives_section_6(x_over_y_bar_0, epsilon)
+    s0_hi = sigma_0_from_primitives_section_6(FX_HIGH_BRACKET, epsilon)
+    s0_lo = sigma_0_from_primitives_section_6(FX_LOW_BRACKET, epsilon)
     return (
         TestPoint(
             label="TP1",
             kappa=kappa_0,
             x_over_y_bar=x_over_y_bar_0,
-            sigma_0=sigma_0,
-            rationale="spec §5.2 LOCKED bracket, primary",
+            sigma_0=s0_mid,
+            rationale="spec §5.2 LOCKED bracket, primary; σ₀ per §6",
         ),
         TestPoint(
             label="TP2",
             kappa=0.5 * kappa_0,
             x_over_y_bar=x_over_y_bar_0,
-            sigma_0=sigma_0,
-            rationale="low-cap straddle of (T2) kink (plan v0.2 §M2)",
+            sigma_0=s0_mid,
+            rationale=(
+                "low-cap κ straddle (spec §5.2); v0.3: κ ∉ π so |π|"
+                " unchanged from TP1 — retained for Z gate via q channel"
+            ),
         ),
         TestPoint(
             label="TP3",
             kappa=1.5 * kappa_0,
             x_over_y_bar=x_over_y_bar_0,
-            sigma_0=sigma_0,
-            rationale="high-cap straddle of (T2) kink (plan v0.2 §M2)",
+            sigma_0=s0_mid,
+            rationale=(
+                "high-cap κ straddle (spec §5.2); v0.3: κ ∉ π so |π|"
+                " unchanged from TP1 — retained for Z gate via q channel"
+            ),
         ),
         TestPoint(
             label="TP4",
             kappa=kappa_0,
             x_over_y_bar=FX_HIGH_BRACKET,
-            sigma_0=sigma_0,
-            rationale="M5 FX upper bracket (4200 COP/USD; plan v0.2 §M2)",
+            sigma_0=s0_hi,
+            rationale=(
+                "M5 FX upper bracket (4200 COP/USD); v0.3 monotonicity"
+                " endpoint: |π|_TP4 > |π|_TP1"
+            ),
         ),
         TestPoint(
             label="TP5",
             kappa=kappa_0,
             x_over_y_bar=FX_LOW_BRACKET,
-            sigma_0=sigma_0,
-            rationale="M5 FX lower bracket (3800 COP/USD; plan v0.2 §M2)",
+            sigma_0=s0_lo,
+            rationale=(
+                "M5 FX lower bracket (3800 COP/USD); v0.3 monotonicity"
+                " endpoint: |π|_TP5 < |π|_TP1"
+            ),
         ),
     )
 
 
 __all__ = [
+    "DEFAULT_FX_EPSILON_FOR_SIGMA0",
     "DEFAULT_X_OVER_Y_BAR",
     "FX_HIGH_BRACKET",
     "FX_LOW_BRACKET",
@@ -473,5 +538,6 @@ __all__ = [
     "TestPointLabel",
     "ZEvaluationResult",
     "make_default_test_point_grid",
+    "sigma_0_from_primitives_section_6",
     "stderr_ratio",
 ]

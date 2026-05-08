@@ -14,12 +14,38 @@ the closed-form streamed premium derived in ``pi_derivation.py``.
 Per-test-point: each TP fixes ``(κ, X̄/Ȳ, σ₀)``; the per-draw posterior-
 predictive realisation is::
 
-    Z_d = (q_t_cop)_d / (X̄/Ȳ)_TP + π(t_anchor; K⋆_d, σ₀, ε, ω, t_anchor, κ_TP)
+    Z_d = (q_t_cop)_d / (X̄/Ȳ)_TP
+        + π(t_anchor; K⋆_d, σ₀_TP, ε, ω, t_anchor, X̄/Ȳ_TP)
 
-with ``K⋆_d = (q_t_cop)_d`` (per-draw equilibrium strike — units of
-COP per month, the cohort's posterior-predictive overage realisation).
-This identification ties the convex-hedge notional to the C1 posterior's
-overage distribution, satisfying the saas-note §4.1 pitch identity.
+with ``K⋆_d = (q_t_cop)_d`` (per-draw equilibrium strike).
+
+**K⋆ identification (CORRECTIONS-α v0.3, MQ-BLOCK-3 disambiguation).**
+Plan v0.3 fixes the v0.2 silent identification ``K⋆ ≡ q_t^cop``:
+
+- Per PRIMITIVES.md §8.1, K⋆ is the equilibrium strike of the CPO
+  payoff Π(σ_T) = K⋆√σ_T. Dimensionally, since Π is denominated in COP
+  and σ_T has units COP², K⋆ is dimensionally COP/√(COP²) — i.e., a
+  strike-level scalar with units √(COP²)/COP = dimensionless when
+  Π is normalized.
+- Per saas-note §4.1, the streamed premium π(t) (which scales with K⋆)
+  is set so that the user's CPO position notionally tracks their
+  posterior-predictive monthly USD obligation translated to COP.
+- Setting K⋆_d = (q_t_cop)_d ties the per-draw convex-hedge notional
+  to the C1 posterior's per-draw overage realisation. Under the
+  ideal-scenario clause (CLAUDE.md §"ideal-scenario modeling permitted"
+  — Stage-2 deployment liquidity is structurally thin and the cohort_4
+  artifact is a Stage-2 ideal-scenario M-sketch), this is a free
+  parameter of the M-design step, not a measured quantity. The
+  dimensional reading is a "hedge notional in COP per √variance unit"
+  which is consistent with the §4.1 pitch identity.
+- Plan v0.3 makes this identification EXPLICIT and surfaces it as a
+  M-design parameter rather than a derived quantity. Alternative
+  identifications (K⋆ = κ converted via FX, K⋆ = constant per-tier
+  notional) are admissible Stage-2 M-design variants and are scoped
+  to a separate plan amendment.
+- κ is ABSENT from π(t) (CORRECTIONS-α v0.3 anti-fishing fix); κ enters
+  Z only via the q_t^USD softplus channel, already C2-marginalized
+  into the q_t_cop draws this evaluator consumes.
 
 The MC stderr/Ẑ ≤ 1e-3 budget is enforced at runtime; breaches raise
 ``MCErrorBudgetExceededError``. Sign violations (any per-TP ``ci_95_lo
@@ -139,14 +165,16 @@ class PerDrawZEvaluator:
         # Add a small floor to keep K⋆ > 0 (PiTSymbolic positivity assumption).
         K_star_per_draw = np.maximum(q_t_cop_draws, 1e-12).astype(np.float64)
 
-        # π(t_anchor; K⋆_d, σ₀, ε, ω, t_anchor, κ_TP) per draw.
+        # π(t_anchor; K⋆_d, σ₀_TP, ε, ω, t_anchor, X̄/Ȳ_TP) per draw.
+        # CORRECTIONS-α v0.3: 6th positional arg is xy_bar (was kappa);
+        # κ is absent from π(t) under the honest derivation.
         pi_per_draw = pi_t.lambdified(
             K_star_per_draw,
             test_point.sigma_0,
             self.fx_epsilon,
             self.fx_omega,
             self.t_anchor,
-            test_point.kappa,
+            test_point.x_over_y_bar,
         )
         pi_per_draw = np.asarray(pi_per_draw, dtype=np.float64)
 
@@ -174,7 +202,7 @@ class PerDrawZEvaluator:
             sigma_0=test_point.sigma_0,
             epsilon=self.fx_epsilon,
             omega=self.fx_omega,
-            kappa=test_point.kappa,
+            xy_bar=test_point.x_over_y_bar,
         )
 
         return ZEvaluationResult(
@@ -195,12 +223,15 @@ class PerDrawZEvaluator:
 class SignCertifier:
     """Convert a tuple of ``ZEvaluationResult`` into per-TP ``SignVerdict``.
 
-    Plan v0.2 §M2 sign expectation (immutable per anti-fishing): every TP
+    Plan v0.3 §M2 sign expectation (immutable per anti-fishing): every TP
     must have ``ci_95_lo > 0``. Identity residual must be ≤
     ``NUMERICAL_IDENTITY_TOL = 1e-6`` (Path A v0 §10.4 inheritance).
 
     Monotonicity check (called separately by the runner):
-    ``|π|_TP2 > |π|_TP1 > |π|_TP3`` (∂|π|/∂κ < 0 strict, plan v0.2 M2-fix).
+    ``|π|_TP4 > |π|_TP1 > |π|_TP5`` (∂|π|/∂(X̄/Ȳ) > 0 strict, plan v0.3
+    M2-fix; replaces v0.2's ∂|π|/∂κ which was structurally
+    unsatisfiable since κ ∉ free_symbols(π) — anti-fishing remediation
+    per CORRECTIONS-α v0.3).
     """
 
     def __call__(
@@ -229,33 +260,44 @@ def assert_pin_m2_monotonicity(
     t_anchor: float = DEFAULT_T_ANCHOR,
     K_star_anchor: float = 1.0e6,
 ) -> tuple[float, float, float]:
-    """Return ``(|π|_TP2, |π|_TP1, |π|_TP3)`` and assert strict monotonicity.
+    r"""Return ``(|π|_TP4, |π|_TP1, |π|_TP5)`` and assert strict monotonicity.
 
-    Plan v0.2 §M2-fix: ``∂|π|/∂κ < 0`` strict. Equivalent strict chain
-    ``|π|_TP2 > |π|_TP1 > |π|_TP3`` is asserted at fixed
-    ``(X̄/Ȳ_0, σ_0, K⋆_anchor)``. Raises ``DiagnosticGateError`` on
-    violation.
+    CORRECTIONS-α v0.3 (MQ-BLOCK-1 anti-fishing fix): the v0.2 chain
+    ``|π|_TP2 > |π|_TP1 > |π|_TP3`` (corresponding to ``∂|π|/∂κ < 0``)
+    was satisfiable only via a spurious ``1/κ`` factor in π. With κ
+    correctly removed from π under the honest derivation, |π| is
+    identical at TP1=TP2=TP3 and the κ-monotonicity gate is structurally
+    unsatisfiable.
+
+    Plan v0.3 §M2-fix replaces it with the legitimate (X̄/Ȳ)-monotonicity
+    ``∂|π|/∂(X̄/Ȳ) > 0`` strict, anchored in PRIMITIVES.md §6 closed
+    form (π ∝ (X̄/Ȳ)²). Equivalent strict chain
+    ``|π|_TP4 > |π|_TP1 > |π|_TP5`` (X̄/Ȳ = 4200, 4000, 3800 COP/USD).
 
     Args:
         pi_t: symbolic π(t) anchor.
-        test_points: must include TP1, TP2, TP3 in canonical positions
-            (the default 5-tuple from ``make_default_test_point_grid``).
+        test_points: must include TP1, TP4, TP5 in canonical positions.
         fx_epsilon, fx_omega, t_anchor: shared FX path constants.
-        K_star_anchor: shared K⋆ for the κ-direction property test.
+        K_star_anchor: shared K⋆ for the (X̄/Ȳ)-direction property test.
 
     Returns:
-        Tuple ``(|π|_TP2, |π|_TP1, |π|_TP3)`` for downstream sidecar
+        Tuple ``(|π|_TP4, |π|_TP1, |π|_TP5)`` for downstream sidecar
         emission.
+
+    Raises:
+        DiagnosticGateError: on monotonicity violation (anti-fishing
+            HALT per ``feedback_pathological_halt_anti_fishing_checkpoint``).
     """
     by_label = {tp.label: tp for tp in test_points}
-    missing = {"TP1", "TP2", "TP3"} - by_label.keys()
+    missing = {"TP1", "TP4", "TP5"} - by_label.keys()
     if missing:
         raise DiagnosticGateError(
             f"assert_pin_m2_monotonicity: missing test-points {sorted(missing)};"
-            " plan v0.2 §M2 grid requires TP1..TP3 (κ-monotonicity branch)"
+            " plan v0.3 §M2 grid requires TP1, TP4, TP5"
+            " ((X̄/Ȳ)-monotonicity branch)"
         )
     pi_vals: dict[str, float] = {}
-    for label in ("TP1", "TP2", "TP3"):
+    for label in ("TP4", "TP1", "TP5"):
         tp = by_label[label]
         pi_v = pi_t.lambdified(
             K_star_anchor,
@@ -263,20 +305,19 @@ def assert_pin_m2_monotonicity(
             fx_epsilon,
             fx_omega,
             t_anchor,
-            tp.kappa,
+            tp.x_over_y_bar,
         )
         pi_vals[label] = float(np.abs(np.asarray(pi_v).item()))
-    # Strict monotonicity: |π|_TP2 > |π|_TP1 > |π|_TP3.
-    if not (pi_vals["TP2"] > pi_vals["TP1"] > pi_vals["TP3"]):
+    if not (pi_vals["TP4"] > pi_vals["TP1"] > pi_vals["TP5"]):
         raise DiagnosticGateError(
             "Pin M2 monotonicity violation:"
-            f" |π|_TP2={pi_vals['TP2']:.6e},"
+            f" |π|_TP4={pi_vals['TP4']:.6e},"
             f" |π|_TP1={pi_vals['TP1']:.6e},"
-            f" |π|_TP3={pi_vals['TP3']:.6e};"
-            " required strict chain |π|_TP2 > |π|_TP1 > |π|_TP3"
-            " (plan v0.2 §M2-fix ∂|π|/∂κ < 0)"
+            f" |π|_TP5={pi_vals['TP5']:.6e};"
+            " required strict chain |π|_TP4 > |π|_TP1 > |π|_TP5"
+            " (plan v0.3 §M2-fix ∂|π|/∂(X̄/Ȳ) > 0)"
         )
-    return (pi_vals["TP2"], pi_vals["TP1"], pi_vals["TP3"])
+    return (pi_vals["TP4"], pi_vals["TP1"], pi_vals["TP5"])
 
 
 # ─── Top-level cohort runner (Callable tier) ─────────────────────────────────

@@ -121,18 +121,40 @@ class TestM1SymbolicPiT:
         assert "4.1" in pi_t.saas_note_anchor
 
     def test_lambdified_callable(self, pi_t: PiTSymbolic) -> None:
-        out = pi_t.lambdified(1.0e6, 1.0e4, 0.1, 1.0, 6.0, 6.5e6)
+        # v0.3 honest signature: (K_star, sigma_0, eps, omega, t, xy_bar).
+        # σ₀ pinned per PRIMITIVES.md §6 closed form: (4000²·0.1²)/8 = 2000.
+        out = pi_t.lambdified(1.0e6, 2.0e3, 0.1, 1.0, 6.0, 4000.0)
         assert np.isfinite(out)
-        # Pin M1 + Step 1 coupling: 1/κ → π > 0 for positive K⋆.
-        assert float(out) > 0.0
+        # At t=6, ω=1, ε=0.1, X̄/Ȳ=4000, σ₀=2e3, K⋆=1e6:
+        # numerator (4·6·cos(24) − sin(24)) ≈ −11.88 < 0?
+        # cos(24 rad) ≈ -0.5328, sin(24 rad) ≈ -0.9056 → 24·-0.533+0.906 ≈ -11.88
+        # Wait: numerator = 4ωt·cos(4ωt) − sin(4ωt) = 24·-0.5328 − (-0.9056) ≈ -11.88
+        # So π < 0 at this anchor. Don't assert sign — surface honest output.
+        # (Sign of π(t) varies in t per the closed-form trig kernel; sign
+        # cert at the cap level operates on Z = q/(X/Y) + π, not on π
+        # alone — Z > 0 follows from q/(X/Y) dominating |π| at the
+        # per-draw level when K⋆_d = q_t_cop_d ∼ O(1500 COP).)
 
     def test_lambdified_broadcasts_K_star(self, pi_t: PiTSymbolic) -> None:
         K_arr = np.array([1.0e5, 1.0e6, 1.0e7], dtype=np.float64)
-        out = pi_t.lambdified(K_arr, 1.0e4, 0.1, 1.0, 6.0, 6.5e6)
+        out = pi_t.lambdified(K_arr, 2.0e3, 0.1, 1.0, 6.0, 4000.0)
         out = np.asarray(out)
         assert out.shape == (3,)
-        # Strict monotone in K⋆ (linear).
-        assert out[0] < out[1] < out[2]
+        # Strict monotone in |π| under K⋆ (linear scaling).
+        assert abs(out[0]) < abs(out[1]) < abs(out[2])
+
+    def test_kappa_not_in_free_symbols(self, pi_t: PiTSymbolic) -> None:
+        # CORRECTIONS-α v0.3: κ MUST NOT appear in π(t).
+        assert "kappa" not in pi_t.free_symbols
+        assert "xy_bar" in pi_t.free_symbols
+
+    def test_perpetual_identity_symbolic(self, pi_t: PiTSymbolic) -> None:
+        # Non-tautological identity check: π(t) ≡ dΠ_lin/dt symbolically.
+        from simulations.saas_builder.cohort_4.pi_derivation import (
+            assert_perpetual_identity_symbolic,
+        )
+        # Raises ValueError on drift; does nothing on success.
+        assert_perpetual_identity_symbolic(pi_t)
 
 
 # ─── M2 — 5-test-point sign cert ─────────────────────────────────────────────
@@ -179,7 +201,8 @@ class TestM2FiveTestPointSignCert:
         for sv in sign_verdicts:
             assert sv.passes is True
             assert sv.identity_passes is True
-        # Strict mono chain: |π|_TP2 > |π|_TP1 > |π|_TP3.
+        # v0.3 strict mono chain: |π|_TP4 > |π|_TP1 > |π|_TP5
+        # (∂|π|/∂(X̄/Ȳ) > 0; replaces v0.2 κ-chain).
         assert mono[0] > mono[1] > mono[2]
 
 
@@ -196,18 +219,19 @@ class TestM2Monotonicity:
     def test_violation_raises_DiagnosticGateError(
         self, pi_t: PiTSymbolic
     ) -> None:
-        # Build a malformed grid where TP2 has HIGHER κ than TP3 (inverted).
+        # v0.3: monotonicity is now in (X̄/Ȳ); invert TP4 and TP5 brackets.
         bad_grid = (
             TestPoint(label="TP1", kappa=6.5e6, x_over_y_bar=4000.0,
-                      sigma_0=1.0e4, rationale="primary"),
-            TestPoint(label="TP2", kappa=10.0e6, x_over_y_bar=4000.0,
-                      sigma_0=1.0e4, rationale="inverted-low"),
-            TestPoint(label="TP3", kappa=5.0e6, x_over_y_bar=4000.0,
-                      sigma_0=1.0e4, rationale="inverted-high"),
-            TestPoint(label="TP4", kappa=6.5e6, x_over_y_bar=4200.0,
-                      sigma_0=1.0e4, rationale="fx-high"),
-            TestPoint(label="TP5", kappa=6.5e6, x_over_y_bar=3800.0,
-                      sigma_0=1.0e4, rationale="fx-low"),
+                      sigma_0=2.0e3, rationale="primary"),
+            TestPoint(label="TP2", kappa=3.25e6, x_over_y_bar=4000.0,
+                      sigma_0=2.0e3, rationale="low-cap"),
+            TestPoint(label="TP3", kappa=9.75e6, x_over_y_bar=4000.0,
+                      sigma_0=2.0e3, rationale="high-cap"),
+            # Inverted: TP4 has LOWER X̄/Ȳ than TP5.
+            TestPoint(label="TP4", kappa=6.5e6, x_over_y_bar=3800.0,
+                      sigma_0=1.805e3, rationale="inverted-fx-low-as-high"),
+            TestPoint(label="TP5", kappa=6.5e6, x_over_y_bar=4200.0,
+                      sigma_0=2.205e3, rationale="inverted-fx-high-as-low"),
         )
         with pytest.raises(DiagnosticGateError, match="monotonicity violation"):
             assert_pin_m2_monotonicity(pi_t, bad_grid)
@@ -224,10 +248,10 @@ class TestM2IdentityTolerance:
         residual = ev(
             pi_t,
             K_star=1.0e6,
-            sigma_0=1.0e4,
+            sigma_0=2.0e3,  # v0.3: per PRIMITIVES §6 closed form (X̄/Ȳ=4000, ε=0.1)
             epsilon=0.1,
             omega=1.0,
-            kappa=6.5e6,
+            xy_bar=4000.0,
         )
         # Carr-Madan linearization is exact in σ_T to first order so the
         # discrete π·Δt ≈ ΔΠ identity holds tightly via the trapezoid rule.
@@ -477,14 +501,18 @@ class TestPinAndEmitPipeline:
 @st.composite
 def _test_point_strategy(draw: st.DrawFn) -> TestPoint:
     label = draw(st.sampled_from(("TP1", "TP2", "TP3", "TP4", "TP5")))
+    xy = draw(st.floats(min_value=3000.0, max_value=5000.0,
+                        allow_nan=False, allow_infinity=False))
+    eps = draw(st.floats(min_value=0.05, max_value=0.5,
+                         allow_nan=False, allow_infinity=False))
+    # σ₀ pinned per PRIMITIVES.md §6 closed form (CORRECTIONS-α v0.3).
+    s0 = (xy**2) * (eps**2) / 8.0
     return TestPoint(
         label=label,
         kappa=draw(st.floats(min_value=1e5, max_value=1e8,
                              allow_nan=False, allow_infinity=False)),
-        x_over_y_bar=draw(st.floats(min_value=3000.0, max_value=5000.0,
-                                    allow_nan=False, allow_infinity=False)),
-        sigma_0=draw(st.floats(min_value=1.0, max_value=1e6,
-                               allow_nan=False, allow_infinity=False)),
+        x_over_y_bar=xy,
+        sigma_0=s0,
         rationale="hypothesis-strategy",
     )
 
@@ -503,22 +531,31 @@ class TestHypothesisProperties:
         assert tp.sign_expectation == "positive"
 
     @given(
-        kappa=st.floats(min_value=1e5, max_value=1e8,
-                        allow_nan=False, allow_infinity=False),
+        xy_bar=st.floats(min_value=3000.0, max_value=5000.0,
+                         allow_nan=False, allow_infinity=False),
     )
     @settings(max_examples=50, deadline=None)
-    def test_pi_strict_decreasing_in_kappa(self, kappa: float) -> None:
-        """Joint-identifiability: ∂|π|/∂κ < 0 (plan v0.2 §M2-fix)."""
+    def test_pi_strict_increasing_in_xy_bar(self, xy_bar: float) -> None:
+        """Joint-identifiability: ∂|π|/∂(X̄/Ȳ) > 0 (plan v0.3 §M2-fix).
+
+        CORRECTIONS-α v0.3: replaces v0.2's ∂|π|/∂κ < 0 property which
+        was structurally unsatisfiable (κ ∉ free_symbols(π)) and was
+        only "passing" in v0.2 via a spurious 1/κ post-hoc factor.
+        """
         pi_t = derive_pi_t_symbolic()
-        # Two κ values; assert |π| strictly larger at smaller κ.
-        kappa2 = kappa * 1.1  # 10% higher
+        xy2 = xy_bar * 1.1  # 10% higher
+        # σ₀ pinned per X̄/Ȳ via PRIMITIVES.md §6 closed form.
+        s0_1 = (xy_bar**2) * 0.01 / 8.0
+        s0_2 = (xy2**2) * 0.01 / 8.0
         v1 = float(np.abs(np.asarray(
-            pi_t.lambdified(1.0e6, 1.0e4, 0.1, 1.0, 6.0, kappa)
+            pi_t.lambdified(1.0e6, s0_1, 0.1, 1.0, 6.0, xy_bar)
         ).item()))
         v2 = float(np.abs(np.asarray(
-            pi_t.lambdified(1.0e6, 1.0e4, 0.1, 1.0, 6.0, kappa2)
+            pi_t.lambdified(1.0e6, s0_2, 0.1, 1.0, 6.0, xy2)
         ).item()))
-        assert v1 > v2, f"Expected |π|({kappa}) > |π|({kappa2}); got {v1} vs {v2}"
+        assert v2 > v1, (
+            f"Expected |π|({xy2}) > |π|({xy_bar}); got {v2} vs {v1}"
+        )
 
 
 # ─── Smoke test against real C1 outputs (if present) ─────────────────────────

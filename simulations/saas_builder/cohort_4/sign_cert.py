@@ -24,12 +24,15 @@ from simulations.saas_builder.cohort_4.types import (
 class SignVerdictMarkdownRenderer:
     """Render the per-TP sign-verdict table to Markdown (Callable tier).
 
-    Layout (plan v0.2 Pin M3 sidecar):
+    Layout (plan v0.3 Pin M3 sidecar):
 
     - Header citing plan + spec.
     - Per-TP table: label, κ, X̄/Ȳ, σ₀, Z_mean, CI_lo, CI_hi, sign-pass,
       identity-residual, identity-pass, rationale.
-    - Monotonicity row: |π|_TP2 > |π|_TP1 > |π|_TP3 verdict.
+    - Monotonicity row: ``|π|_TP4 > |π|_TP1 > |π|_TP5`` verdict
+      (CORRECTIONS-α v0.3: replaced v0.2's TP2/TP1/TP3 κ-chain with
+      the (X̄/Ȳ)-chain since κ ∉ free_symbols(π) under the honest
+      derivation).
     - Audit-block citation (foreign-key into ``Z_cap_pinned.json``).
     """
 
@@ -58,7 +61,7 @@ class SignVerdictMarkdownRenderer:
         lines: list[str] = [
             "# SAAS-COHORT-4 — Z_cap_pinned Sign Verdicts (Pin M2 Sidecar)",
             "",
-            "Plan: docs/plans/2026-05-08-saas-cohort-4-z-cap-derivation.md (v0.2)",
+            "Plan: docs/plans/2026-05-08-saas-cohort-4-z-cap-derivation.md (v0.3)",
             "Spec: docs/specs/2026-05-07-saas-builder-stage-2-prereg-lock.md (v1.1.1)",
             "Foreign-key (audit_block): " + f"`{audit_block}`",
             "",
@@ -91,12 +94,18 @@ class SignVerdictMarkdownRenderer:
             "",
             "## Pin M2 monotonicity check",
             "",
-            "Plan v0.2 §M2-fix: ``∂|π|/∂κ < 0`` strict; equivalent chain"
-            " ``|π|_TP2 > |π|_TP1 > |π|_TP3``.",
+            "Plan v0.3 §M2-fix (CORRECTIONS-α anti-fishing): "
+            "``∂|π|/∂(X̄/Ȳ) > 0`` strict; equivalent chain"
+            " ``|π|_TP4 > |π|_TP1 > |π|_TP5`` (FX brackets 4200/4000/3800).",
             "",
-            f"- |π|_TP2 = {monotonicity_triple[0]:.6e}",
+            "Note: v0.2's ``∂|π|/∂κ < 0`` chain was structurally"
+            " unsatisfiable since κ ∉ free_symbols(π) under the honest"
+            " PRIMITIVES.md §6→§8.1→§10→§15 derivation; the v0.2 1/κ"
+            " coupling was a post-hoc fit (anti-fishing violation).",
+            "",
+            f"- |π|_TP4 = {monotonicity_triple[0]:.6e}",
             f"- |π|_TP1 = {monotonicity_triple[1]:.6e}",
-            f"- |π|_TP3 = {monotonicity_triple[2]:.6e}",
+            f"- |π|_TP5 = {monotonicity_triple[2]:.6e}",
             (
                 "- verdict: "
                 + (
