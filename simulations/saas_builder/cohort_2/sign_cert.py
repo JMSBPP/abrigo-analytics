@@ -36,6 +36,7 @@ from simulations.saas_builder.cohort_2.derivatives import (
 )
 from simulations.saas_builder.cohort_2.types import (
     BracketGrid,
+    BracketPoint,
     CohortGateVerdict,
     SignVerdict,
     VerdictLabel,
@@ -98,13 +99,66 @@ def _now_utc_iso() -> str:
 # ─── Sign-certification gate ────────────────────────────────────────────────
 
 
+#: Pin (MQ-BLOCK-1 v0.3 fix) — numerical-stability floor multiplier.
+#: Δ_med must exceed ``factor · macheps · |q_max| · sum|f_t/(X/Y)²|``
+#: in absolute value to be considered above the float64 noise floor;
+#: factor 1e2 gives 2 decades of headroom over the analytic noise estimate.
+NUMERICAL_STABILITY_FLOOR_FACTOR: Final[float] = 100.0
+
+
+def numerical_stability_floor(
+    bracket: BracketPoint,
+    sigma_T: float,
+    q_t_max: float,
+) -> float:
+    """Return the |Δ| floor below which sign certification is float64 noise.
+
+    Per MQ-BLOCK-1 v0.3 fix: the catastrophic-cancellation noise floor
+    on the closed-form Δ is
+
+        ``noise ≈ T · macheps · |q_max| · max|f_t/(X/Y)²| · prefactor``
+
+    where ``prefactor = 4 / (X̄/Ȳ · ε(σ_T))``. We multiply by
+    ``NUMERICAL_STABILITY_FLOOR_FACTOR = 1e2`` to require ≥ 2 decades
+    of headroom. A computed Δ_med whose magnitude is below this floor
+    is route to ``FAIL`` with a numerical-stability tag (NOT silently
+    PASS-routed).
+
+    Args:
+        bracket: the BracketPoint at which Δ was evaluated.
+        sigma_T: realized-variance proxy.
+        q_t_max: maximum |q_t| across the τ_t draws used in the gate.
+
+    Returns:
+        Floor magnitude (non-negative float). Δ values whose magnitude
+        falls below this are treated as noise.
+    """
+    fxp = bracket.fx_params
+    T = int(bracket.horizon_T)
+    t_grid = np.arange(1, T + 1, dtype=np.float64)
+    f_t = np.cos(fxp.omega * t_grid) ** 2 - 0.5
+    x_over_y_t = (1.0 + fxp.epsilon * f_t) * fxp.mean_x_over_y
+    weight = np.abs(f_t / (x_over_y_t ** 2))
+    eps_sigma = math.sqrt(8.0 * sigma_T / fxp.mean_x_over_y ** 2)
+    prefactor = 4.0 / (fxp.mean_x_over_y * eps_sigma)
+    macheps = float(np.finfo(np.float64).eps)
+    return (
+        NUMERICAL_STABILITY_FLOOR_FACTOR
+        * float(T)
+        * macheps
+        * abs(q_t_max)
+        * float(weight.max())
+        * prefactor
+    )
+
+
 @dataclass(frozen=True)
 class SignCertificationGate:
     """Pin BRACKET-M5 sign-certification gate.
 
-    For each ``BracketPoint`` in ``grid``, computes Δ^(a_s) over the
-    posterior τ_t draws (shape ``(n_draws, T)``), then certifies via
-    posterior-predictive 95% credible interval that
+    For each ``BracketPoint`` supplied at call time, computes Δ^(a_s)
+    over the posterior τ_t draws (shape ``(n_draws, T)``), then certifies
+    via posterior-predictive 95% credible interval that
     ``delta_upper_bound_95 < 0`` strictly. A single failure flips the
     verdict to ``FAIL`` and records ``n_sign_violations``.
 
@@ -115,9 +169,15 @@ class SignCertificationGate:
     (e.g. CI straddling zero with a robust median negative); the present
     implementation routes every non-PASS outcome to ``FAIL`` until those
     sub-verdicts are pinned by spec.
+
+    API note (CR-BLOCKING-1 / MQ-BLOCK-3 v0.3 fix). The gate consumes a
+    raw ``tuple[BracketPoint, ...]`` at ``__call__``-time, NOT a
+    ``BracketGrid``. The primary path constructs a validated
+    ``BracketGrid`` and passes its ``.points`` tuple; the bank-spread
+    robustness arm passes overlaid points directly without needing the
+    M5 anchor invariant. This avoids the ``object.__new__`` bypass.
     """
 
-    grid: BracketGrid
     sigma_T: float
     ci_level: float = DEFAULT_CI_LEVEL
 
@@ -135,15 +195,20 @@ class SignCertificationGate:
 
     def __call__(
         self,
+        points: tuple[BracketPoint, ...] | BracketGrid,
         tau_t_draws_per_bracket: tuple[NDArray[np.float64], ...],
         ppc_coverage: Mapping[str, float] | None = None,
     ) -> CohortGateVerdict:
-        """Run the sign-certification gate over the bracket grid.
+        """Run the sign-certification gate over the bracket points.
 
         Args:
-            tau_t_draws_per_bracket: tuple of length ``len(grid.points)``;
+            points: tuple of BracketPoint (primary path passes
+                ``grid.points``; robustness arm passes overlaid points).
+                For backwards compatibility, a ``BracketGrid`` is also
+                accepted and unwrapped to ``grid.points``.
+            tau_t_draws_per_bracket: tuple of length ``len(points)``;
                 each entry is a 2-D float64 array of shape ``(n_draws, T_i)``
-                aligned with ``grid.points[i].horizon_T``.
+                aligned with ``points[i].horizon_T``.
             ppc_coverage: optional pre-computed PPC coverage mapping for
                 the {p50, p90, p99} τ_t quantiles. The gate does NOT
                 re-compute coverage internally; it records what is
@@ -153,19 +218,27 @@ class SignCertificationGate:
             ``CohortGateVerdict``.
 
         Raises:
-            ValueError: shape mismatch between draws and grid.
+            ValueError: shape mismatch between draws and points.
         """
-        n = len(self.grid.points)
+        if isinstance(points, BracketGrid):
+            bracket_points = points.points
+        else:
+            bracket_points = points
+        n = len(bracket_points)
+        if n < 1:
+            raise ValueError(
+                "SignCertificationGate: points must be non-empty"
+            )
         if len(tau_t_draws_per_bracket) != n:
             raise ValueError(
                 "SignCertificationGate: tau_t_draws_per_bracket length"
-                f" {len(tau_t_draws_per_bracket)} must equal grid size {n}"
+                f" {len(tau_t_draws_per_bracket)} must equal points size {n}"
             )
 
         evidence: list[SignVerdict] = []
         n_violations = 0
         for idx, (point, draws) in enumerate(
-            zip(self.grid.points, tau_t_draws_per_bracket, strict=True)
+            zip(bracket_points, tau_t_draws_per_bracket, strict=True)
         ):
             evaluator = DeltaNumericalEvaluator(
                 bracket=point, sigma_T=self.sigma_T
@@ -175,6 +248,20 @@ class SignCertificationGate:
                 delta_draws, self.ci_level
             )
             strict = upper < 0.0
+            # Numerical-stability check (MQ-BLOCK-1 v0.3 fix). If |Δ_med|
+            # falls below the noise floor, demote sign-strictly-negative
+            # to False (route to FAIL) — a Δ at the float64 noise floor
+            # is not a credible negative-sign certification.
+            # Compute q_max from the actual composed q_t (uses the
+            # numerically-stable softplus already wired into the evaluator).
+            # The composer is reused from the evaluator.
+            assert evaluator._composer is not None  # __post_init__ guarantees
+            q_max_est = float(np.max(np.abs(evaluator._composer(draws))))
+            floor = numerical_stability_floor(
+                bracket=point, sigma_T=self.sigma_T, q_t_max=q_max_est
+            )
+            if abs(median) < floor:
+                strict = False
             if not strict:
                 n_violations += 1
             verdict_evidence = SignVerdict(
@@ -265,15 +352,24 @@ class PPCQuantileCoverageCheck:
         ppc_draws: NDArray[np.float64],
         observed_quantiles: Mapping[str, NDArray[np.float64]],
     ) -> dict[str, float]:
-        """Return empirical coverage per quantile; raise on miscoverage.
+        """Return per-quantile τ_q empirical coverage; raise on miscoverage.
+
+        Per CR-BLOCKING-3 v0.3 fix: compute the q-th percentile τ_q of
+        each posterior-predictive draw (row), then build the per-draw
+        95% CI of those τ_q values across the ``n_ppc`` axis, and check
+        what fraction of the held-out observed τ_q values fall inside
+        that interval. The keys ``"p50"|"p90"|"p99"`` now drive distinct
+        computations (q ∈ {0.50, 0.90, 0.99}).
 
         Args:
             ppc_draws: 2-D float64 array of shape ``(n_ppc, n_obs)`` —
                 posterior-predictive τ_t draws across observation
-                replicates.
+                replicates. Each row is one posterior draw's τ_t vector
+                across the ``n_obs`` time/observation index.
             observed_quantiles: mapping from ``"p50"|"p90"|"p99"`` to a
                 1-D float64 array of length ``n_obs`` holding the
-                observed τ_t quantile per replicate.
+                observed τ_t quantile per replicate (independent
+                held-out samples used for coverage assessment).
 
         Returns:
             Mapping ``{"p50": coverage, "p90": coverage, "p99": coverage}``
@@ -299,9 +395,6 @@ class PPCQuantileCoverageCheck:
         alpha = 1.0 - self.nominal_level
         lower_q = alpha / 2.0
         upper_q = 1.0 - alpha / 2.0
-        # Per-replicate (column) credible interval across the ppc axis.
-        col_lower = np.quantile(ppc_draws, lower_q, axis=0)
-        col_upper = np.quantile(ppc_draws, upper_q, axis=0)
 
         coverage: dict[str, float] = {}
         for key, level in zip(("p50", "p90", "p99"), PPC_QUANTILE_LEVELS):
@@ -311,16 +404,22 @@ class PPCQuantileCoverageCheck:
                     f" key {key!r}"
                 )
             obs = observed_quantiles[key]
-            if obs.ndim != 1 or obs.shape[0] != n_obs:
+            if obs.ndim != 1 or obs.shape[0] < 1:
                 raise ValueError(
                     "PPCQuantileCoverageCheck: observed_quantiles"
                     f" [{key!r}] shape = {obs.shape} must be 1-D"
-                    f" with length {n_obs}"
+                    " with positive length (one held-out τ_q per replicate)"
                 )
-            in_band = (obs >= col_lower) & (obs <= col_upper)
-            cov = float(np.mean(in_band))
-            coverage[key] = cov
-            del level  # exposed via PPC_QUANTILE_LEVELS for traceability
+            # Per-row sample q-th percentile of each posterior-predictive
+            # draw (axis=1 ⇒ along n_obs): yields shape (n_ppc,) — one
+            # τ_q estimate per posterior draw.
+            tau_q_per_draw = np.quantile(ppc_draws, level, axis=1)
+            # Build a 95% CI of τ_q across the posterior-draw axis.
+            ci_lo = float(np.quantile(tau_q_per_draw, lower_q))
+            ci_hi = float(np.quantile(tau_q_per_draw, upper_q))
+            # Coverage = fraction of held-out observed τ_q values within CI.
+            in_band = (obs >= ci_lo) & (obs <= ci_hi)
+            coverage[key] = float(np.mean(in_band))
 
         # Threshold check.
         for key, cov in coverage.items():
@@ -337,10 +436,12 @@ class PPCQuantileCoverageCheck:
 
 __all__ = [
     "DEFAULT_CI_LEVEL",
+    "NUMERICAL_STABILITY_FLOOR_FACTOR",
     "PPCQuantileCoverageCheck",
     "PPC_COVERAGE_LOWER",
     "PPC_COVERAGE_UPPER",
     "PPC_NOMINAL_LEVEL",
     "PPC_QUANTILE_LEVELS",
     "SignCertificationGate",
+    "numerical_stability_floor",
 ]

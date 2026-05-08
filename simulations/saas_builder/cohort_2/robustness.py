@@ -60,17 +60,15 @@ class BankSpreadRobustnessRunner:
     The resulting verdict is *separate* from the primary; callers persist
     it to ``ROBUSTNESS_RESULTS.md``, NEVER to ``gate_verdict.json``.
 
-    Note on M5 path-reconstruction: the M5 anchor values ``(4200, 3800,
-    4200)`` are only recovered when ``X̄/Ȳ = 4000`` and ``ε = 0.1``
-    (and ``ω`` does not perturb cos² at the anchors). After the
-    bank-spread mutation, ``X̄/Ȳ_overlaid = 4000 · (1 + s)``; the M5
-    anchor reconstruction will NO LONGER hold for the overlaid path —
-    this is BY DESIGN. The robustness arm constructs a sibling
-    ``BracketGrid`` whose anchor check is bypassed (we cannot pin to
-    ``4200, 3800, 4200`` post-mutation). Therefore we route the
-    overlaid points through ``SignCertificationGate`` directly via a
-    *manual* per-point ``DeltaNumericalEvaluator`` invocation, NOT
-    through ``BracketGrid`` construction.
+    Note on M5 path-reconstruction (CR-BLOCKING-1 / MQ-BLOCK-3 v0.3 fix):
+    the M5 anchor values ``(4200, 3800, 4200)`` are only recovered when
+    ``X̄/Ȳ = 4000`` and ``ε = 0.1``. After the bank-spread mutation,
+    ``X̄/Ȳ_overlaid = 4000 · (1 + s)``; the M5 anchor reconstruction
+    will NO LONGER hold — this is BY DESIGN. v0.3 routes the overlaid
+    points through ``SignCertificationGate`` via the new tuple-of-points
+    call signature (``gate(points, draws, ...)``); no ``BracketGrid``
+    construction, no ``object.__new__`` bypass, no frozen-dataclass
+    invariant violation.
     """
 
     bank_spread: float = DEFAULT_BANK_SPREAD
@@ -117,26 +115,24 @@ class BankSpreadRobustnessRunner:
         Raises:
             ValueError: shape mismatch.
         """
-        # Construct sibling BracketPoints; bypass BracketGrid M5 anchor
-        # check by NOT constructing a BracketGrid here — instead, build a
-        # one-anchor stub grid that retains the original primary grid's
-        # M5-recovering point and runs gate evaluation point-by-point on
-        # the overlaid path.
+        # Construct sibling BracketPoints with overlaid FX-mean. We do
+        # NOT wrap them in a BracketGrid: anchor recovery would fail
+        # (mean·(1+s) ≠ 4000) — and the gate's new v0.3 API takes a raw
+        # tuple of points directly, so no BracketGrid construction nor
+        # object.__new__ bypass is needed. The frozen-dataclass invariant
+        # on BracketGrid is preserved.
         overlaid_points = tuple(
             _overlay_bracket_point(p, self.bank_spread)
             for p in primary_grid.points
         )
-        # We cannot wrap overlaid_points in a BracketGrid (anchor check
-        # would fail). The sign-cert gate doesn't strictly need a
-        # BracketGrid — it iterates over ``grid.points``. We therefore
-        # construct a *spoofed* grid by building a custom grid type via
-        # ``object.__new__`` and bypassing __post_init__.
-        spoofed_grid = object.__new__(BracketGrid)
-        object.__setattr__(spoofed_grid, "points", overlaid_points)
         gate = SignCertificationGate(
-            grid=spoofed_grid, sigma_T=sigma_T, ci_level=self.ci_level
+            sigma_T=sigma_T, ci_level=self.ci_level
         )
-        return gate(tau_t_draws_per_bracket, ppc_coverage=ppc_coverage)
+        return gate(
+            overlaid_points,
+            tau_t_draws_per_bracket,
+            ppc_coverage=ppc_coverage,
+        )
 
 
 def _overlay_bracket_point(

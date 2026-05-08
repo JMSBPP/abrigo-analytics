@@ -595,7 +595,7 @@ This block documents resolution of 5 convergent BLOCKs and 9 FLAGs raised in the
 - RC-FLAG-2 / MQ-FLAG-3: PRIMITIVES.md eq. (8) ↔ eq. (11) re-labeling note in `derivatives.py` docstring updated to a single-line citation; documentation drift acknowledged.
 - RC-FLAG-3: subsumed by MQ-BLOCK-3 fix.
 - RC-FLAG-4: subsumed by CR-BLOCKING-2 fix.
-- RC-FLAG-5 / MQ-FLAG-2: tests revert to default `SoftplusBetaFitter` defaults; analytic optimum β·κ ≈ 50 fits inside `[0.01/κ, 100/κ]` at all canonical κ values. `_TEST_FITTER_OVERRIDE` deleted.
+- RC-FLAG-5 / MQ-FLAG-2: REVERIFY-RETAINED. The forward-fix author re-verified empirically: at κ=1.6M (Pro tier), the smallest β satisfying L¹ deviation < 1e-3·κ on [0, 2κ] is β ≈ 0.022 (β·κ ≈ 35000), well above `100/κ ≈ 6.3e-5`. MQ-FLAG-2's "β·κ ≈ 50 covered by default" claim is empirically wrong (verified via direct `tightness_l1_deviation` call). The test override `_TEST_FITTER_OVERRIDE = {beta_max_factor: 1e6}` is RETAINED with comment block documenting empirical justification. Anti-fishing-conformant: the override is bounded, FAIL still fires on infeasible grid, no silent post-hoc widening. The production default in `pricing.py` should be re-derived in a separate spec amendment (out of scope here).
 - MQ-FLAG-1: `_l1_deviation_softplus_relu` deleted (dead code); single primitive `tightness_l1_deviation` retained. Docstring "double-validation" wording reworded.
 - MQ-FLAG-4: docstring of `M2TightnessNotAchievedError` clarifies it lives in `cohort_2/_errors.py`.
 

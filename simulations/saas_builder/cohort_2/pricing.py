@@ -22,21 +22,37 @@ from ``simulations.saas_builder.cohort_2.io`` or ``...data``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Mapping
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.integrate import quad
 
+from simulations.modules.pricing import BlendedPriceFn
 from simulations.modules.regularizers import SoftplusRegularizer
 from simulations.saas_builder.cohort_2._errors import (
     M2TightnessNotAchievedError,
+)
+from simulations.saas_builder.cohort_2.types import (
+    SAAS_TIER_IDS,
+    SPEC_ALPHA_BRACKET,
+    SPEC_H_CACHE_BRACKET,
+    SPEC_KAPPA_MULTIPLIERS,
+    SPEC_SONNET_P_IN,
+    SPEC_SONNET_P_OUT,
+    SPEC_TIER_KAPPA,
+    SPEC_TIER_P_SUB_BAR,
+    SPEC_W_IN,
+    SPEC_W_OUT,
+    BracketGrid,
+    BracketPoint,
+    T2CostParams,
 )
 from simulations.types.distributions import (
     SOFTPLUS_TIGHTNESS_EPS,
     SoftplusParams,
     tightness_l1_deviation,
 )
+from simulations.types.fx import BlendedPriceParams, FXPathParams
 
 # ─── Module-level constants — Pin M2-fit ──────────────────────────────────────
 
@@ -146,10 +162,12 @@ class T2CostComposer:
     ``simulations.modules.regularizers.SoftplusRegularizer``).
 
     Construction wires the shipped ``SoftplusRegularizer`` whose
-    ``__post_init__`` re-runs Pin M2 quad on the supplied (β, κ);
-    double-validation is intentional — the fitter chooses the smallest
-    β satisfying M2 to a numerical tolerance, the regularizer enforces
-    strict ``< 1e-3 · κ`` over the whole support.
+    ``__post_init__`` re-runs Pin M2 (``tightness_l1_deviation``) on the
+    supplied (β, κ). MQ-FLAG-1 v0.3 fix: the previous "double-validation"
+    framing was misleading (both calls used the same primitive); the
+    rationale is now strict-construction defense — any caller that bypasses
+    ``SoftplusBetaFitter`` and supplies a hand-set β still has Pin M2
+    enforced at composer-construction time.
     """
 
     p_sub_bar: float
@@ -199,35 +217,119 @@ class T2CostComposer:
         )
 
 
-# ─── Helper: L¹ deviation via scipy.integrate.quad ───────────────────────────
+# ─── Helper: blended p_t via shipped BlendedPriceFn (RC-FLAG-1 v0.3 fix) ────
 
 
-def _l1_deviation_softplus_relu(beta: float, kappa: float) -> float:
-    """Return ``∫_0^{2κ} |softplus_β(x) - x⁺| dx`` via scipy.integrate.quad.
+def composed_p_t(
+    w_in: float,
+    w_out: float,
+    h_cache: float,
+    p_in: float,
+    p_out: float,
+) -> float:
+    """Return blended ``p_t`` (USD/MTok) by invoking shipped ``BlendedPriceFn``.
 
-    Numerically stable softplus: ``logaddexp(0, β x) / β``. Over
-    ``[0, 2 κ]`` ``x⁺ = x``.
+    RC-FLAG-1 v0.3 fix: cohort_2 now invokes the shipped
+    ``simulations.modules.pricing.BlendedPriceFn`` instead of hardcoding
+    the Sonnet-default ``7.15``. Callers (tests / notebooks / sign-cert
+    bracket builder) construct ``BlendedPriceParams`` and pass through
+    here; the shipped Callable's verbatim spec §5.1 formula is the
+    single source of truth.
+    """
+    return BlendedPriceFn(
+        params=BlendedPriceParams(
+            w_in=w_in,
+            w_out=w_out,
+            h_cache=h_cache,
+            p_in=p_in,
+            p_out=p_out,
+        )
+    )()
+
+
+# ─── Spec §5.2 bracket-grid builder (MQ-BLOCK-2 v0.3 fix) ────────────────────
+
+
+def build_spec_5_2_bracket_grid(
+    fitter: SoftplusBetaFitter,
+    fx_params: FXPathParams,
+    horizon_T: int = 12,
+    tier_mix: Mapping[str, float] | None = None,
+) -> BracketGrid:
+    """Build the spec §5.2 parameter Cartesian-product bracket grid.
+
+    MQ-BLOCK-2 v0.3 fix — the canonical sweep is over the **parameter**
+    family, not over (ε, ω) FX-path cells. The FX path is a fixed M5
+    anchor (passed in via ``fx_params``); the brackets sweep:
+
+      - tier_id ∈ {pro, max_5x, max_20x};
+      - p̄_sub per tier ∈ {20, 100, 200} USD/mo (inherited from tier);
+      - κ-doubling-arm multiplier ∈ {1.0, 2.0};
+      - α ∈ {1.5, 2.5} (TruncPareto bracket endpoints; α is recorded as
+        a metadata bracket dimension — does NOT affect q_t closed form
+        directly, but parameterizes the τ_t draws supplied per-bracket
+        by the caller);
+      - h_cache ∈ {0.80, 0.95} → blended p_t via shipped
+        ``BlendedPriceFn``.
+
+    Yields ``3 × 2 × 2 × 2 = 24`` BracketPoints, each on the same M5 FX
+    path. The grid construction asserts M5 anchor recovery on the
+    shared ``fx_params`` (one check, not 24).
+
+    Note: α does not enter ``T2CostParams`` (the closed-form q_t depends
+    on κ, β, p̄_sub, p_t — not α directly). Bracket-points with the same
+    cost params but different α are *identical* in the q_t evaluator;
+    the α dimension exists in the spec to enumerate the τ_t draw
+    distribution that callers supply per-bracket. v0.3 still emits a
+    distinct BracketPoint per α value so the caller can pair each with
+    α-specific τ_t draws (e.g. drawn from a TruncPareto with that α).
 
     Args:
-        beta: β > 0 (1/tok).
-        kappa: κ > 0 (tokens).
+        fitter: a SoftplusBetaFitter (used to fit β per κ value).
+        fx_params: the canonical M5 FX path (anchor-recovering).
+        horizon_T: realized-variance horizon (default 12).
+        tier_mix: tier weights (default uniform across SAAS_TIER_IDS).
 
     Returns:
-        L¹ deviation over ``[0, 2 κ]`` as a non-negative float.
-
-    Raises:
-        ValueError: if ``beta`` ≤ 0 or ``kappa`` ≤ 0.
+        BracketGrid with 24 points enumerating spec §5.2 brackets.
     """
-    if not (np.isfinite(beta) and beta > 0.0):
-        raise ValueError(f"_l1_deviation: beta = {beta} must be finite > 0")
-    if not (np.isfinite(kappa) and kappa > 0.0):
-        raise ValueError(f"_l1_deviation: kappa = {kappa} must be finite > 0")
-
-    def integrand(x: float) -> float:
-        return abs(np.logaddexp(0.0, beta * x) / beta - max(x, 0.0))
-
-    val, _err = quad(integrand, 0.0, 2.0 * kappa, limit=200)
-    return float(val)
+    if tier_mix is None:
+        tier_mix = {
+            SAAS_TIER_IDS[0]: 1.0 / 3.0,
+            SAAS_TIER_IDS[1]: 1.0 / 3.0,
+            SAAS_TIER_IDS[2]: 1.0 - 2.0 / 3.0,
+        }
+    points: list[BracketPoint] = []
+    for tier in SAAS_TIER_IDS:
+        p_sub_bar = SPEC_TIER_P_SUB_BAR[tier]
+        kappa_base = SPEC_TIER_KAPPA[tier]
+        for kappa_mult in SPEC_KAPPA_MULTIPLIERS:
+            kappa = kappa_base * kappa_mult
+            beta = fitter(kappa)
+            for h_cache in SPEC_H_CACHE_BRACKET:
+                p_t = composed_p_t(
+                    w_in=SPEC_W_IN,
+                    w_out=SPEC_W_OUT,
+                    h_cache=h_cache,
+                    p_in=SPEC_SONNET_P_IN,
+                    p_out=SPEC_SONNET_P_OUT,
+                )
+                for _alpha in SPEC_ALPHA_BRACKET:
+                    cost = T2CostParams(
+                        p_sub_bar=p_sub_bar,
+                        kappa=kappa,
+                        beta=beta,
+                        p_t=p_t,
+                        tier_mix=tier_mix,
+                    )
+                    points.append(
+                        BracketPoint(
+                            cost_params=cost,
+                            fx_params=fx_params,
+                            horizon_T=horizon_T,
+                        )
+                    )
+    return BracketGrid(points=tuple(points))
 
 
 __all__ = [
@@ -236,4 +338,6 @@ __all__ = [
     "DEFAULT_BETA_MIN_FACTOR",
     "SoftplusBetaFitter",
     "T2CostComposer",
+    "build_spec_5_2_bracket_grid",
+    "composed_p_t",
 ]

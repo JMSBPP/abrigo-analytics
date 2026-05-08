@@ -450,6 +450,36 @@ def _reconstructs_m5_anchors(params: FXPathParams) -> bool:
     )
 
 
+#: Spec §5.2 — per-tier subscription cost p̄_sub (USD/mo).
+SPEC_TIER_P_SUB_BAR: Final[Mapping[str, float]] = {
+    "pro": 20.0,
+    "max_5x": 100.0,
+    "max_20x": 200.0,
+}
+
+#: Spec §5.2 — per-tier baseline κ (tokens/mo, pre-doubling).
+SPEC_TIER_KAPPA: Final[Mapping[str, float]] = {
+    "pro": 1_600_000.0,
+    "max_5x": 6_500_000.0,
+    "max_20x": 14_500_000.0,
+}
+
+#: Spec §5.2 — TruncPareto α bracket endpoints.
+SPEC_ALPHA_BRACKET: Final[tuple[float, float]] = (1.5, 2.5)
+
+#: Spec §5.2 — h_cache values (primary 0.95, sensitivity 0.80).
+SPEC_H_CACHE_BRACKET: Final[tuple[float, float]] = (0.80, 0.95)
+
+#: Spec §5.2 — κ-doubling-arm multipliers (primary, post-doubling).
+SPEC_KAPPA_MULTIPLIERS: Final[tuple[float, float]] = (1.0, 2.0)
+
+#: Spec §5.2 — Sonnet 4.6 default per-tier p_in / p_out (USD/MTok).
+SPEC_SONNET_P_IN: Final[float] = 3.0
+SPEC_SONNET_P_OUT: Final[float] = 15.0
+SPEC_W_IN: Final[float] = 0.539
+SPEC_W_OUT: Final[float] = 0.461
+
+
 def n_evidence(verdict: CohortGateVerdict) -> int:
     """Return the number of SignVerdict rows in a CohortGateVerdict."""
     return len(verdict.evidence)
@@ -465,6 +495,15 @@ __all__ = [
     "M5_ANCHOR_VALUES",
     "M5_RECONSTRUCTION_ATOL",
     "SAAS_TIER_IDS",
+    "SPEC_ALPHA_BRACKET",
+    "SPEC_H_CACHE_BRACKET",
+    "SPEC_KAPPA_MULTIPLIERS",
+    "SPEC_SONNET_P_IN",
+    "SPEC_SONNET_P_OUT",
+    "SPEC_TIER_KAPPA",
+    "SPEC_TIER_P_SUB_BAR",
+    "SPEC_W_IN",
+    "SPEC_W_OUT",
     "TIER_MIX_SUM_ATOL",
     "BracketGrid",
     "BracketPoint",
