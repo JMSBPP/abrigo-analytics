@@ -102,9 +102,11 @@ likely mid-to-late May.
 | Alchemy Free tier | $0 | Sufficient until rate limits hit during demo polish |
 | AWS | $0 | Don't spin up until a control-proof job is queued |
 | Cloud Code top-up (contingent, when $17 session depletes) | $100 | Fires when balance < $10; likely mid-to-late May |
-| Hackathon-discretionary slack | ~$242 | Unallocated; absorbs unexpected May needs and rolls forward |
+| thirdweb free tier | $0 | Faucets, contract deploy SDK, on-chain tooling — sufficient at hackathon volume |
+| Mainnet deploy gas — Celo (Proof of Ship) | $10 | Initial deploys + monthly cadence updates; <$1/deploy on Celo |
+| Hackathon-discretionary slack | ~$232 | Unallocated; absorbs unexpected May needs and rolls forward |
 | **May spend ceiling** | **$400** | |
-| **May spend floor** (if Cloud Code top-up defers to June) | **$58** | Domain + X only |
+| **May spend floor** (if Cloud Code top-up defers to June) | **$68** | Domain + X + Celo gas |
 
 **Key choices:**
 
@@ -133,10 +135,11 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 | Alchemy Growth | $49 | **Committed** (was conditional) — removes RPC-throttling risk in polish week |
 | AWS control-proof bursts | $100 | **Committed budget** (was $50–100 conditional) — symbolic verification headroom |
 | Cloud Code top-up (contingent, if needed) | $0–100 | Only if May top-up depletes before June 11 |
+| Mainnet deploy gas — Celo + occasional Unichain L2 polish | $30 | $10 Celo + $20 reserve for Unichain mainnet demo polish if judges request it |
 | Submission-week emergency reserve (June 4–11) | $50 | Last-week bug fixes, surprise paid tooling |
-| Hackathon-discretionary slack | ~$93–193 | Absorbs Cloud Code top-up if it fires; rolls forward otherwise |
+| Hackathon-discretionary slack | ~$63–163 | Absorbs Cloud Code top-up if it fires; rolls forward otherwise |
 | **June spend ceiling** | **$400** | |
-| **June spend floor** (no Cloud Code top-up) | **$207** | Predictable committed lines only |
+| **June spend floor** (no Cloud Code top-up) | **$237** | Predictable committed lines only |
 
 **Key choices:**
 
@@ -159,6 +162,9 @@ contingent-not-recurring: Alchemy and a portion of AWS shift from
 | LinkedIn Premium / sponsored | B2B-grant pipeline opens |
 | Mantle Turing Test submission | Out — engineering scope (Agentic Wallets / ERC-8004) is a third architecture, not a reskin |
 | ETHGlobal NY / Lisbon | Out — travel cost from Colombia exceeds full $800 envelope |
+| thirdweb paid tier ($99/mo) | Free-tier rate limits hit during demo polish, OR gasless meta-tx volume justifies upgrade |
+| Ethereum mainnet deployment | UHI9 judges explicitly request mainnet (rare; testnet is standard for capstones) |
+| Unichain mainnet deployment | Mainnet polish becomes a competitive differentiator (rare); $20 budgeted in June already |
 
 ## 8. Risk reserves and failure-mode coverage
 
@@ -199,20 +205,38 @@ flagged so they're not invisible:
 |---|---|---|---|
 | Brand surface (domain + X + email + Vercel) | $58 | $8 | $66 |
 | Hackathon infra committed (Alchemy, AWS) | $0 | $149 | $149 |
+| Mainnet deploy gas (Celo + Unichain reserve) | $10 | $30 | $40 |
 | Cloud Code top-ups (contingent — likely 1, possibly 2) | $0–100 | $0–100 | $100–200 |
 | Submission-week reserve | $0 | $50 | $50 |
-| Discretionary slack | $242–342 | $93–193 | $335–535 |
+| Discretionary slack | $232–332 | $63–163 | $295–495 |
 | **Total per month ceiling** | **$400** | **$400** | **$800** |
-| **Total per month floor** | **$58** | **$207** | **$265** |
+| **Total per month floor** | **$68** | **$237** | **$305** |
 
 **Realistic point estimate** (one Cloud Code top-up across cycle, full
-committed June infra used, ~$100 of slack absorbs misc surprises):
-**~$465 of $800** = **58% utilization**, ~$335 underspend rolling to
-post-hackathon cycle.
+committed June infra used, $40 mainnet gas, ~$100 of slack absorbs misc
+surprises): **~$505 of $800** = **63% utilization**, ~$295 underspend
+rolling to post-hackathon cycle.
 
 Underspend is **expected and intentional**, not a planning failure. The
-$335 rolling forward is what funds the *next* cycle's first-look at paid
+~$295 rolling forward is what funds the *next* cycle's first-look at paid
 Colombian macro data once the paper deadline becomes concrete.
+
+## 10a. Chain deployment policy
+
+Testnet-primary deploys for all Hookathon-side work; mainnet-secondary for
+Celo Proof of Ship only.
+
+| Channel | Primary deploy target | Mainnet trigger |
+|---|---|---|
+| UHI9 capstone | Unichain Sepolia (free) | Judge feedback requests mainnet polish (~$20 reserved June) |
+| Reactive Network sponsor track | Reactive testnet (free) | Demo Day mainnet showcase only if explicitly required |
+| Somnia Agentathon | Somnia testnet (free) | None — testnet sufficient |
+| Celo Proof of Ship | **Celo mainnet** (cents per deploy) | Required — Karma GAP/Farcaster expects real mainnet artifacts |
+| Mento integration (post-demo outreach) | Celo mainnet (cents per deploy) | Required for credible Mento conversation |
+
+**thirdweb** (the third-web provider) is the standardization layer across
+all chains: free tier provides faucets, deploy SDK, and on-chain tooling
+sufficient for hackathon volume. Upgrade triggers are in Section 7.
 
 ## 11. Decision points needing live confirmation
 
