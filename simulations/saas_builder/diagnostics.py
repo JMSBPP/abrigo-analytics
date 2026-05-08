@@ -208,8 +208,17 @@ def compute_ci_width_ratio_max(
       samples from ``prior.prior[name]`` (both shape (chain, draw, *event)).
     - Compute 95 % CI widths of flattened arrays.
     - Compute ratio ``posterior_width / prior_width``; if prior_width is
-      0 (degenerate prior), fall through with ratio +inf.
+      0 (degenerate prior), record ratio +inf for that parameter.
     - Track maximum over monitored params.
+
+    CR-IMPORTANT (v0.3 → v0.4 sweep): all monitored parameters are
+    visited — no short-circuit on the first degenerate prior — so a
+    full per-parameter map of ratios can be produced via
+    :func:`compute_ci_width_ratio_per_param`. The aggregate function
+    here returns ``max(ratios)`` after every parameter has been
+    measured, preserving the v0.2 monotone HALT semantic (any +inf
+    forces the max to +inf) while removing the silent first-failure
+    early-return that masked downstream violations.
 
     Args:
         posterior: ``arviz.InferenceData`` with ``.posterior`` group.
@@ -222,20 +231,47 @@ def compute_ci_width_ratio_max(
     Raises:
         KeyError: if a monitored name is missing from either group.
     """
-    max_ratio = 0.0
+    per_param = compute_ci_width_ratio_per_param(posterior, prior, monitored)
+    if not per_param:
+        return 0.0
+    return max(per_param.values())
+
+
+def compute_ci_width_ratio_per_param(
+    posterior: az.InferenceData,
+    prior: az.InferenceData,
+    monitored: Iterable[str],
+) -> dict[str, float]:
+    """Return per-parameter posterior/prior 95 % CI width ratio map.
+
+    Companion to :func:`compute_ci_width_ratio_max`. Visits every
+    monitored parameter (no short-circuit) so callers can surface a
+    full violation map. Used by the ``_AUDIT.json`` writer to emit
+    per-parameter ``ci_width_ratio`` fields (CR-IMPORTANT v0.3 sweep).
+
+    Args:
+        posterior: ``arviz.InferenceData`` with ``.posterior`` group.
+        prior: ``arviz.InferenceData`` with ``.prior`` group.
+        monitored: parameter names; each must appear in both groups.
+
+    Returns:
+        Mapping ``{param_name: ratio}``. Ratio is +inf where the prior
+        95 % CI width is 0 (degenerate prior); otherwise
+        ``post_width / prior_width``.
+
+    Raises:
+        KeyError: if a monitored name is missing from either group.
+    """
     posterior_group = posterior["posterior"]
     prior_group = prior["prior"]
+    ratios: dict[str, float] = {}
     for name in monitored:
         post_samples = np.asarray(posterior_group[name].values)
         prior_samples = np.asarray(prior_group[name].values)
         post_w = _ci_width_95(post_samples)
         prior_w = _ci_width_95(prior_samples)
-        if prior_w <= 0.0:
-            return float("inf")
-        ratio = post_w / prior_w
-        if ratio > max_ratio:
-            max_ratio = ratio
-    return max_ratio
+        ratios[name] = float("inf") if prior_w <= 0.0 else post_w / prior_w
+    return ratios
 
 
 @dataclass(frozen=True)
@@ -409,4 +445,5 @@ __all__ = [
     "DiagnosticVerdict",
     "PosteriorDiagnostic",
     "compute_ci_width_ratio_max",
+    "compute_ci_width_ratio_per_param",
 ]

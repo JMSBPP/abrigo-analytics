@@ -1108,14 +1108,22 @@ class TestEmitterCoverage:
         self, tmp_path: Path,
     ) -> None:
         """_build_cohort_prior_rows emits 5 percentiles × 4 params + 3
-        Dirichlet rows + 1 active-days row = 24 rows."""
+        Dirichlet rows + 1 active-days row = 24 rows; +15 if prior
+        carries the 3-component ``pi`` Dirichlet draws (RC-FLAG v0.3
+        sweep — per-component percentile emission)."""
         post, prior, _ = _build_minimal_idata_for_emit()
         priors = CohortPriors()
         emitter = CohortEmitter(base_dir=tmp_path)
         rows = emitter._build_cohort_prior_rows(
             priors=priors, prior_idata=prior,
         )
-        assert len(rows) == 5 * 4 + 3 + 1
+        param_names = {row["param"] for row in rows}
+        has_pi = "pi" in prior["prior"]
+        expected = 5 * 4 + 3 + 1 + (15 if has_pi else 0)
+        assert len(rows) == expected
+        if has_pi:
+            for k in range(3):
+                assert f"pi[{k}]" in param_names
         # All rows have the spec source tag.
         for row in rows:
             assert row["source"] == "spec-v1.1.1-§5.1-§5.2"
@@ -1212,3 +1220,68 @@ class TestNegBinTurnsPriorAlwaysValidForMuPhi:
         # Round-trip: NegBinParams construction must succeed.
         nb = NegBinParams(r=r, p=p)
         assert nb.r == r and nb.p == p
+
+
+# ─── Phase-3 sweep: tau_t_observed branch + prior-predictive integration ──────
+
+
+class TestTauTObservedBranch:
+    """Coverage for the optional ``observed_tau_t`` model-arm (model.py:414+).
+
+    Plan v0.2 Phase 3 — RC-FLAG sweep: the model.py ``observed_tau_t``
+    branch (the synthetic-Bayesian Normal-kernel likelihood arm) was
+    untested at HEAD ec26317. Test asserts (a) the branch builds with
+    a valid observed array and (b) ``ndim != 1`` raises ``ValueError``.
+    """
+
+    def test_observed_tau_t_branch_builds(self) -> None:
+        """Supplying observed_tau_t adds a tau_t_observed observed RV."""
+        observed = np.array([1.0e6, 1.2e6, 0.9e6, 1.1e6], dtype=np.float64)
+        factory = T1ModelFactory()
+        model = factory(observed_tau_t=observed)
+        observed_rv_names = {rv.name for rv in model.observed_RVs}
+        assert "tau_t_observed" in observed_rv_names
+
+    def test_observed_tau_t_rejects_2d(self) -> None:
+        """ndim != 1 hits the explicit ValueError in the observed branch."""
+        observed_2d = np.zeros((3, 4), dtype=np.float64)
+        factory = T1ModelFactory()
+        with pytest.raises(ValueError, match="must be 1-D"):
+            factory(observed_tau_t=observed_2d)
+
+
+class TestPriorPredictiveCohortEmission:
+    """Integration: ``pm.sample_prior_predictive`` → CohortEmitter._build_cohort_prior_rows.
+
+    Plan v0.2 Phase 3 — RC-FLAG sweep: prior emission was tested only
+    via hand-fabricated idata. This integration test runs the shipped
+    ``T1ModelFactory()`` through real ``pm.sample_prior_predictive``
+    and verifies the cohort-prior row builder consumes the result.
+    """
+
+    def test_prior_predictive_drives_cohort_prior_rows(
+        self, tmp_path: Path,
+    ) -> None:
+        """Real prior_predictive draws → percentile rows for monitored params."""
+        factory = T1ModelFactory()
+        model = factory()
+        with model:
+            prior = pm.sample_prior_predictive(
+                draws=200, random_seed=42,
+            )
+        emitter = CohortEmitter(base_dir=tmp_path)
+        rows = emitter._build_cohort_prior_rows(
+            priors=factory.priors, prior_idata=prior,
+        )
+        # Each of mu / phi / alpha / x_m emits 5 percentiles.
+        param_names = {row["param"] for row in rows}
+        assert {"mu", "phi", "alpha", "x_m"} <= param_names
+        # Dirichlet alpha components emit as documentary single-percentile rows.
+        for k in range(3):
+            assert f"dirichlet_alpha[{k}]" in param_names
+        # active_days_per_month sentinel row.
+        assert "active_days_per_month" in param_names
+        # pi components, if pi present in prior, emit five percentiles.
+        if any(name.startswith("pi[") for name in param_names):
+            for k in range(3):
+                assert f"pi[{k}]" in param_names

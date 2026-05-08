@@ -27,6 +27,8 @@ by the writer per ``SYNTHETIC_TAU_PARTITION_COLS``.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -42,6 +44,7 @@ from simulations.saas_builder._errors import DiagnosticGateError
 from simulations.saas_builder.diagnostics import (
     DiagnosticVerdict,
     PosteriorDiagnostic,
+    compute_ci_width_ratio_per_param,
 )
 from simulations.saas_builder.priors import (
     CohortPriors,
@@ -130,6 +133,39 @@ _DEFAULT_ACTIVE_DAYS_PER_MONTH: int = 22
 #: Default cohort size for the post-hoc per-builder tier draw at PP time.
 #: Mirrors :data:`simulations.saas_builder.model.DEFAULT_N_BUILDERS` (1000).
 _DEFAULT_N_BUILDERS_PP: int = 1000
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Atomic write of ``text`` to ``path`` via temp + ``os.replace``.
+
+    Used for the ``_AUDIT.json`` sidecar (CR-IMPORTANT I8 v0.3 sweep).
+    Writing to a sibling temp file in the same directory and replacing
+    keeps the artifact either at its prior content or at the new
+    content; never half-written. ``os.replace`` is atomic on POSIX
+    when source and dest are on the same filesystem.
+    """
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(parent)
+    )
+    tmp_path = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp_path, path)
+    except OSError:
+        # Best-effort cleanup of orphaned temp file on failure.
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+
+#: Default emission directory — resolved as an absolute path relative to
+#: this package, so callers running from a different cwd still write to
+#: ``simulations/saas_builder/data/`` (CR-IMPORTANT v0.3 sweep, item I3:
+#: relative-path default ``Path("simulations/saas_builder/data")`` was
+#: cwd-dependent and silently emitted into the caller's cwd subtree).
+_DEFAULT_BASE_DIR_ABS: Path = Path(__file__).resolve().parent / "data"
 
 
 def run_posterior_predictive(
@@ -270,12 +306,11 @@ def run_posterior_predictive(
     alpha_arr = np.asarray(post_group["alpha_pareto"].values)
     x_m_arr = np.asarray(post_group["x_m"].values)
 
-    # Broadcast n_month to (chain, draw) — collapse builder axis if
-    # n_month was emitted with shape (chain, draw); leave as-is otherwise.
-    if n_month_arr.ndim == 3:
-        # n_per_day was (chain, draw, D_t) → after sum(axis=-1) shape is
-        # (chain, draw); but pm sometimes broadcasts builders so keep flexible.
-        pass
+    # CR-NIT-new-1 (v0.3 → v0.4 sweep): the prior dead ``if
+    # n_month_arr.ndim == 3: pass`` branch was a vestige of an aborted
+    # broadcast variant and is removed; the per-cell ``int(np.asarray(
+    # nm_raw).sum())`` reduction below already handles 1-D / 2-D / 3-D
+    # ``n_month_arr`` shapes uniformly.
     n_chains_arr = alpha_arr.shape[0]
     n_draws_arr = alpha_arr.shape[1]
 
@@ -382,7 +417,9 @@ class CohortEmitter:
       ``_AUDIT.json`` under ``base_dir``.
     """
 
-    base_dir: Path = field(default_factory=lambda: Path("simulations/saas_builder/data"))
+    base_dir: Path = field(
+        default_factory=lambda: _DEFAULT_BASE_DIR_ABS,
+    )
     diagnostic: PosteriorDiagnostic = field(default_factory=PosteriorDiagnostic)
     fx_cop_per_usd: float = 4000.0
     n_builders: int = _DEFAULT_N_BUILDERS_PP
@@ -527,6 +564,13 @@ class CohortEmitter:
             [cohort_prior_path, *synthetic_tau_files]
         )
         audit_path = self.base_dir / "_AUDIT.json"
+        # CR-IMPORTANT (v0.3 sweep): per-parameter ci_width_ratio map
+        # (RC-FLAG-A). The aggregate ``ci_width_ratio_max`` was opaque
+        # to which monitored parameter triggered the §8(7) gate; this
+        # widens the audit surface to cover every monitored param.
+        ci_width_ratio_per_param = compute_ci_width_ratio_per_param(
+            posterior_idata, prior_idata, self.diagnostic.monitored_params
+        )
         audit_payload: dict[str, object] = {
             "audit_block": audit_block,
             "schema_version": DEFAULT_SCHEMA_VERSION,
@@ -540,11 +584,16 @@ class CohortEmitter:
                 "ess_tail_min": verdict.ess_tail_min,
                 "divergence_frac": verdict.divergence_frac,
                 "ci_width_ratio_max": verdict.ci_width_ratio_max,
+                "ci_width_ratio_per_param": dict(ci_width_ratio_per_param),
                 "n_chains": verdict.n_chains,
                 "n_draws_per_chain": verdict.n_draws_per_chain,
             },
         }
-        audit_path.write_text(json.dumps(audit_payload, indent=2))
+        # CR-IMPORTANT I8 (v0.3 sweep): atomic ``_AUDIT.json`` write.
+        # Prior naive ``audit_path.write_text(...)`` left a half-written
+        # JSON on disk if the process was killed mid-write. Use a temp
+        # file in the same directory + ``os.replace`` for atomic publish.
+        _atomic_write_text(audit_path, json.dumps(audit_payload, indent=2))
 
         return EmissionSummary(
             verdict=verdict,
@@ -578,16 +627,39 @@ class CohortEmitter:
         """
         post = posterior_idata["posterior"]
         pp = pp_idata["posterior_predictive"]
-        # Flatten (chain, draw) → row.
-        mu_arr = np.asarray(post["mu"].values).ravel()
-        phi_arr = np.asarray(post["phi"].values).ravel()
-        alpha_arr = np.asarray(post["alpha_pareto"].values).ravel()
-        x_m_arr = np.asarray(post["x_m"].values).ravel()
+        # Flatten (chain, draw) → row using xarray ``.stack`` so the
+        # (chain, draw) → row mapping is explicit and dimension-named,
+        # not raw ``.ravel()`` (CR-IMPORTANT I1 v0.3 sweep). The stacked
+        # 1-D values still equal the C-order ravel because xarray ``.stack``
+        # uses np.stack-equivalent ordering, but the dimension is
+        # documented now.
+        mu_arr = np.asarray(post["mu"].stack(row=("chain", "draw")).values)
+        phi_arr = np.asarray(post["phi"].stack(row=("chain", "draw")).values)
+        alpha_arr = np.asarray(
+            post["alpha_pareto"].stack(row=("chain", "draw")).values
+        )
+        x_m_arr = np.asarray(post["x_m"].stack(row=("chain", "draw")).values)
         n_rows = mu_arr.shape[0]
 
-        tau_arr = np.asarray(pp["tau_t"].values).ravel()[:n_rows]
-        qusd_arr = np.asarray(pp["q_t_usd"].values).ravel()[:n_rows]
-        qcop_arr = np.asarray(pp["q_t_cop"].values).ravel()[:n_rows]
+        tau_arr = np.asarray(pp["tau_t"].stack(row=("chain", "draw")).values)
+        qusd_arr = np.asarray(pp["q_t_usd"].stack(row=("chain", "draw")).values)
+        qcop_arr = np.asarray(pp["q_t_cop"].stack(row=("chain", "draw")).values)
+
+        # CR-IMPORTANT I2 (v0.3 sweep): assert exact-shape match instead
+        # of the prior silent ``[:n_rows]`` truncation. Mismatch indicates
+        # a pp/posterior shape divergence that must surface, not be masked.
+        if tau_arr.size != n_rows:
+            raise ValueError(
+                f"_build_synthetic_tau_rows: posterior_predictive tau_t"
+                f" has {tau_arr.size} elements but posterior has"
+                f" {n_rows}; refusing to truncate (CR-IMPORTANT I2)."
+            )
+        if qusd_arr.size != n_rows or qcop_arr.size != n_rows:
+            raise ValueError(
+                f"_build_synthetic_tau_rows: posterior_predictive shape"
+                f" mismatch (tau_t={tau_arr.size}, q_t_usd={qusd_arr.size},"
+                f" q_t_cop={qcop_arr.size}, expected {n_rows})."
+            )
 
         if tier_assignments is None:
             # CORRECTIONS-α v0.4: tier_idx now lives in the posterior_-
@@ -609,10 +681,26 @@ class CohortEmitter:
                 # (chain, draw, n_builders) — flatten across (chain, draw)
                 # and pick builder slot 0 for each row. Synthetic_tau_t is
                 # keyed per (chain, draw) following the v0.2 layout.
+                # RC-FLAG (v0.3 sweep): builder slot-0 collapse is intentional
+                # — the v0.2 row-count layout is one row per (chain, draw),
+                # so per-builder draws collapse to a representative slot.
+                # An explicit shape assertion guards against silent reshape.
                 n_chain, n_draw, _n_b = tier_raw.shape
-                tier_idx_arr = tier_raw[:, :, 0].reshape(n_chain * n_draw)[:n_rows]
+                if n_chain * n_draw != n_rows:
+                    raise ValueError(
+                        f"_build_synthetic_tau_rows: tier_idx (chain, draw)"
+                        f" shape ({n_chain}, {n_draw}) does not match"
+                        f" posterior n_rows={n_rows}."
+                    )
+                tier_idx_arr = tier_raw[:, :, 0].reshape(n_chain * n_draw)
             else:
-                tier_idx_arr = tier_raw.ravel()[:n_rows]
+                tier_flat = tier_raw.ravel()
+                if tier_flat.size != n_rows:
+                    raise ValueError(
+                        f"_build_synthetic_tau_rows: tier_idx ravel size"
+                        f" {tier_flat.size} != posterior n_rows {n_rows}."
+                    )
+                tier_idx_arr = tier_flat
         else:
             tier_idx_arr = np.asarray(tier_assignments, dtype=np.int64)
             if tier_idx_arr.shape[0] != n_rows:
@@ -689,6 +777,31 @@ class CohortEmitter:
                     fetched_at_utc=fetched_at,
                 )
             )
+        # RC-FLAG (v0.3 sweep): if the prior idata carries a 3-component
+        # ``pi`` Dirichlet draw, emit per-component percentiles instead
+        # of a flat ravel that would conflate the three categories. The
+        # categorical axis (axis=2 in (chain, draw, 3) layout) is held
+        # fixed while (chain, draw) collapse to the percentile sample.
+        if "pi" in prior:
+            pi_samples = np.asarray(prior["pi"].values)
+            if pi_samples.ndim == 3 and pi_samples.shape[2] == len(TIER_IDS):
+                for k in range(pi_samples.shape[2]):
+                    component = pi_samples[:, :, k].ravel()
+                    finite_k = component[np.isfinite(component)]
+                    if finite_k.size == 0:
+                        continue
+                    for pct_str, q in zip(
+                        COHORT_PRIOR_PERCENTILES, _COHORT_PRIOR_QUANTILES
+                    ):
+                        rows.append(
+                            cohort_prior_row(
+                                param=f"pi[{k}]",
+                                percentile=pct_str,
+                                value=float(np.quantile(finite_k, q)),
+                                source=_PRIOR_SOURCE_TAG,
+                                fetched_at_utc=fetched_at,
+                            )
+                        )
         # And the active-days-per-month constant (M1 anchor).
         rows.append(
             cohort_prior_row(
