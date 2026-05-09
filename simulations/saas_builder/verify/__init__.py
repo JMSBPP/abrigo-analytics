@@ -9,12 +9,14 @@ from __future__ import annotations
 from simulations.saas_builder.verify.io import (
     AuditBlockMismatch,
     CommittedArtifactLoader,
+    GateVerdictSchemaError,
 )
 from simulations.saas_builder.verify.types import RTagVerdict, TrioRollup
 
 __all__: list[str] = [
     "AuditBlockMismatch",
     "CommittedArtifactLoader",
+    "GateVerdictSchemaError",
     "RTagVerdict",
     "TrioRollup",
 ]

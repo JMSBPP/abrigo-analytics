@@ -60,6 +60,10 @@ class AuditBlockMismatch(RuntimeError):
     or not a 64-char lowercase-hex sha256."""
 
 
+class GateVerdictSchemaError(RuntimeError):
+    """Raised when ``gate_verdict.json`` is missing a required field."""
+
+
 @dataclass(frozen=True)
 class _ArtifactPaths:
     z_cap_pinned: Path
@@ -113,29 +117,34 @@ def _gate_verdict_from_dict(raw: dict[str, Any]) -> CohortGateVerdict:
     emitter do not carry an ``audit_block`` field; the empty-string default
     is accepted by ``SignVerdict.__post_init__`` for in-memory records.
     """
-    evidence_raw = raw.get("evidence", [])
-    evidence = tuple(
-        SignVerdict(
-            bracket_index=int(ev["bracket_index"]),
-            delta_lower_bound_quantile=float(ev["delta_lower_bound_95"]),
-            delta_median=float(ev["delta_median"]),
-            delta_upper_bound_quantile=float(ev["delta_upper_bound_95"]),
-            sign_strictly_negative=bool(ev["sign_strictly_negative"]),
-            ci_level=float(ev.get("ci_level", 0.95)),
-            audit_block=str(ev.get("audit_block", "")),
+    try:
+        evidence_raw = raw["evidence"]
+        evidence = tuple(
+            SignVerdict(
+                bracket_index=int(ev["bracket_index"]),
+                delta_lower_bound_quantile=float(ev["delta_lower_bound_95"]),
+                delta_median=float(ev["delta_median"]),
+                delta_upper_bound_quantile=float(ev["delta_upper_bound_95"]),
+                sign_strictly_negative=bool(ev["sign_strictly_negative"]),
+                ci_level=float(ev.get("ci_level", 0.95)),
+                audit_block=str(ev.get("audit_block", "")),
+            )
+            for ev in evidence_raw
         )
-        for ev in evidence_raw
-    )
-    return CohortGateVerdict(
-        sub_task=raw["sub_task"],
-        verdict=raw["verdict"],
-        n_bracket_points=int(raw["n_bracket_points"]),
-        n_sign_violations=int(raw["n_sign_violations"]),
-        evidence=evidence,
-        audit_block=str(raw["audit_block"]),
-        fetched_at_utc=str(raw["fetched_at_utc"]),
-        ppc_coverage=dict(raw.get("ppc_coverage", {})),
-    )
+        return CohortGateVerdict(
+            sub_task=raw["sub_task"],
+            verdict=raw["verdict"],
+            n_bracket_points=int(raw["n_bracket_points"]),
+            n_sign_violations=int(raw["n_sign_violations"]),
+            evidence=evidence,
+            audit_block=str(raw["audit_block"]),
+            fetched_at_utc=str(raw["fetched_at_utc"]),
+            ppc_coverage=dict(raw.get("ppc_coverage", {})),
+        )
+    except KeyError as e:
+        raise GateVerdictSchemaError(
+            f"gate_verdict.json missing required field: {e!s}"
+        ) from e
 
 
 class CommittedArtifactLoader:
@@ -230,6 +239,7 @@ class CommittedArtifactLoader:
         with all numeric columns concatenated.
         """
         import pyarrow.dataset as ds
+        import pyarrow.types as pa_types
 
         dataset = ds.dataset(self._paths.posterior_chain, format="parquet")
         table = dataset.to_table()
@@ -237,7 +247,7 @@ class CommittedArtifactLoader:
         numeric_cols = [
             name
             for name, dtype in zip(table.column_names, table.schema.types)
-            if str(dtype).startswith(("int", "float", "double"))
+            if pa_types.is_integer(dtype) or pa_types.is_floating(dtype)
         ]
         if not numeric_cols:
             return np.zeros((table.num_rows, 0), dtype=np.float64)
