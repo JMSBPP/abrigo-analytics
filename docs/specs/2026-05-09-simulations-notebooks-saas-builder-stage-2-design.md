@@ -3,7 +3,8 @@
 **Iteration**: SaaS-Builder (Y, M, X) Stage-2 — post-cycle anchor artifact
 **Branch**: `iter/saas-builder-stage-2`
 **Date**: 2026-05-09
-**Status**: DESIGN (awaiting user approval before writing-plans hand-off)
+**Status**: DESIGN v0.2 (awaiting Wave-1 RC+MQ verify before writing-plans hand-off)
+**Version**: v0.2 (verify/ sub-package added per user question 2026-05-09)
 **Audience**: future Stage-3 implementer; supervisor / advisor review;
 contributor onboarding into the `simulations/` package
 
@@ -61,6 +62,113 @@ self-contained**: 01 needs only the math primitives, 02 needs C2 + C3
 verdicts, 03 needs the C4 emit. No notebook depends on another's
 in-memory state.
 
+## 3a. Verify-API sub-package (`simulations/saas_builder/verify/`)
+
+The notebooks do not reach into internal modules directly. Instead, a
+purpose-built verify-API surface is added under
+`simulations/saas_builder/verify/`, sized exactly for the verify-only
+contract of §5. This keeps notebook code cells minimal (math density
+stays in WHY/INTERPRETATION markdown), centralizes assertion logic so
+it is pytest-able, and gives Stage-3 a stable surface so internal
+module restructuring does not break the math anchor.
+
+### 3a.1 Layout (three-tier discipline preserved)
+
+```
+simulations/saas_builder/verify/
+├── __init__.py     ← explicit __all__: 8 verify_r{1..8}_* + 4 load_*
+├── types.py        ← Value tier   — frozen Verdict dataclasses
+├── checks.py       ← Callable tier — free pure functions, one per R-tag
+└── io.py           ← IO Boundary  — committed-artifact loader + sha256
+```
+
+Tier-import discipline (NON-NEGOTIABLE per `simulations/README.md`):
+`types.py` imports stdlib + numpy only; `checks.py` imports
+`simulations.saas_builder.verify.types` and the relevant
+`simulations.modules` callables; `io.py` imports `verify.types` and
+performs the only filesystem reads. No tier inversion; no inheritance
+beyond `Protocol` / `Exception`.
+
+### 3a.2 Value-tier contract
+
+```
+@dataclass(frozen=True)
+class RTagVerdict:
+    r_tag: str                    # "R1" .. "R8"
+    passed: bool
+    expected: float | None        # closed-form / pinned value
+    actual: float | None          # computed-or-loaded value
+    residual: float | None        # |expected - actual|, when meaningful
+    audit_sha256: str | None      # tamper-trail anchor
+    message: str                  # human-readable summary
+
+@dataclass(frozen=True)
+class TrioRollup:
+    verdicts: tuple[RTagVerdict, ...]   # length 8 in canonical order
+    all_passed: bool
+```
+
+`RTagVerdict` is the single Value type returned by every verifier;
+notebooks bind one per cell and `assert v.passed, v.message`.
+`TrioRollup` is consumed only at notebook end-of-trio summary cell.
+
+### 3a.3 Callable-tier contract — one free pure function per R-tag
+
+| Function | Inputs | Source of truth |
+|---|---|---|
+| `verify_r1_sigma_0_anchor` | `x_bar, y_bar, eps, expected, tol` | PRIMITIVES (8); verdict memo §1 σ₀ = 20,000 |
+| `verify_r2_kappa_eliminated_in_pi_t` | (none — sympy live) | `feedback_post_hoc_fit_anti_fishing_pattern` free-symbol audit |
+| `verify_r3_perpetual_identity_residual` | `tol` | Verdict memo §1: residual ≤ 6.31e-9 |
+| `verify_r4_bracket_cardinality` | `brackets` | spec v1.2.1 §5.2 (3 × 2 × 2 × 2 = 24) |
+| `verify_r5_marginalization_match` | `posterior_path, tol` | C1 v0.4 marginalization (memo §6) |
+| `verify_r6_softplus_l1_tightness` | `kappa, tol_factor` | M2 pin: `tightness_l1_deviation < 1e-3·κ` |
+| `verify_r7_s_t_pin` | `gate_verdict` | spec v1.2.1 §6.1: `S_t = (1-λ)^t`, `λ ~ Beta(4.5, 95.5)` |
+| `verify_r8_z_cap_closed_form` | `z_cap_pinned` | Verdict memo §1: 4,687.94 COP/mo, 95% CI [168.17, 14,606.14] |
+
+All eight return `RTagVerdict`. None mutate. None do filesystem I/O —
+loaders in §3a.4 produce the dict inputs.
+
+### 3a.4 IO-Boundary-tier contract
+
+```
+class CommittedArtifactLoader:
+    def __init__(self, data_root: Path) -> None: ...
+    def load_z_cap_pinned(self) -> ZCapPinnedDict: ...
+    def load_gate_verdict(self) -> GateVerdictDict: ...
+    def load_revenue_form_verdict(self) -> RevenueFormVerdictDict: ...
+    def load_audit(self) -> AuditDict: ...
+```
+
+The TypedDict row schemas are reused from
+`simulations.utils.parquet_io` / `simulations.utils.json_io` per Phase 2
+M4 pin — no schema duplication. `audit_sha256` is computed once at
+load time and threaded through every `RTagVerdict.audit_sha256`.
+
+### 3a.5 Notebook code-cell shape (post-API)
+
+```python
+loader = CommittedArtifactLoader(DATA_ROOT)
+v = verify_r8_z_cap_closed_form(z_cap_pinned=loader.load_z_cap_pinned())
+assert v.passed, v.message
+print(f"{v.r_tag}: Z_cap = {v.actual:,.2f} COP/mo  "
+      f"(residual {v.residual:.2e}; audit {v.audit_sha256[:8]}…)")
+```
+
+### 3a.6 pytest coverage (mandatory)
+
+`simulations/tests/test_verify.py` exercises each verifier with at
+least: (a) committed-artifact happy path, (b) injected-drift failure,
+(c) for `verify_r2_kappa_eliminated_in_pi_t`, a deliberate `1/κ`
+re-introduction that must fail (regression guard for the C4 case
+study). ≥ 16 test cases total (≥ 2 per verifier).
+
+### 3a.7 Cost
+
+~250–350 LOC across 4 new files; ~16 new pytest cases. Adds one phase
+to the implementation plan (verify-API authoring) before notebook
+authoring. Net positive: math cells stay thin and Stage-3 churn cannot
+break the math anchor.
+
 ## 4. Section API per R-tag (the math×code pairing pattern)
 
 Each R-tag produces one trio (one HALT-checkpoint):
@@ -88,16 +196,16 @@ Each R-tag produces one trio (one HALT-checkpoint):
 
 R-tag → assertion contract:
 
-| R | Code-cell asserts |
-|---|---|
-| R1 | `σ₀ = (X̄/Ȳ)²·ε²/8` numerically; reference σ₀ = 20,000 (per verdict memo §1) within tolerance |
-| R2 | `κ ∉ free_symbols(π(t))` (sympy free-symbol audit — anti-fishing detection); π(t) reduces to the boxed (4ωt cos − sin) form |
-| R3 | Perpetual identity `Δ^{(a_s)}_∞ = lim_{t→∞} Δ^{(a_s)}_t` residual ≤ 1e-8 (memo §1: 6.31×10⁻⁹) |
-| R4 | `len(brackets) == 24`; product is `3 tiers × 2 α × 2 cache × 2 κ`; matches spec §5.2 verbatim |
-| R5 | Marginalization sum-out: empirical posterior mean from saved chain trace matches analytic marginal at the same nodes (Phase 2 N_draws ≥ 712k) |
-| R6 | softplus L¹ deviation < 1e-3·κ on [0, 2κ] (M2 pin); load `revenue_form_verdict.json` and re-derive |
-| R7 | `gate_verdict.json` contains `lambda_prior: Beta(4.5, 95.5)` and `S_t_form: "(1-lambda)^t"`; HALT-on-flip token unchanged |
-| R8 | `Z_cap_pinned.json::Z_cap == 4687.94` (within parquet tolerance); 95% CI lower bound > 0 |
+| R | Verifier function (§3a.3) | Code-cell asserts |
+|---|---|---|
+| R1 | `verify_r1_sigma_0_anchor` | `σ₀ = (X̄/Ȳ)²·ε²/8` numerically; expected σ₀ = 20,000 (per verdict memo §1) within tolerance |
+| R2 | `verify_r2_kappa_eliminated_in_pi_t` | `κ ∉ free_symbols(π(t))` (sympy free-symbol audit — anti-fishing live demo); π(t) reduces to the boxed (4ωt cos − sin) form |
+| R3 | `verify_r3_perpetual_identity_residual` | Perpetual identity `Δ^{(a_s)}_∞ = lim_{t→∞} Δ^{(a_s)}_t` residual ≤ 1e-8 (memo §1: 6.31×10⁻⁹) |
+| R4 | `verify_r4_bracket_cardinality` | `len(brackets) == 24`; product is `3 tiers × 2 α × 2 cache × 2 κ`; matches spec §5.2 verbatim |
+| R5 | `verify_r5_marginalization_match` | Marginalization sum-out: empirical posterior mean from saved chain trace matches analytic marginal at the same nodes (Phase 2 N_draws ≥ 712k) |
+| R6 | `verify_r6_softplus_l1_tightness` | softplus L¹ deviation < 1e-3·κ on [0, 2κ] (M2 pin); load `revenue_form_verdict.json` and re-derive |
+| R7 | `verify_r7_s_t_pin` | `gate_verdict.json` contains `lambda_prior: Beta(4.5, 95.5)` and `S_t_form: "(1-lambda)^t"`; HALT-on-flip token unchanged |
+| R8 | `verify_r8_z_cap_closed_form` | `Z_cap_pinned.json::Z_cap == 4687.94` (within parquet tolerance); 95% CI lower bound > 0 |
 
 ## 5. Code-playback discipline (NON-NEGOTIABLE)
 
@@ -178,6 +286,15 @@ slow path, they invoke `scripts/run_cohort{1..4}_emit.py` directly.
 - [ ] No PyMC import anywhere in the notebook directory.
 - [ ] Adding the trio does not change `make verify` semantics (it's
       audit-additive, not gate-altering).
+- [ ] `simulations/saas_builder/verify/` sub-package exists with the
+      §3a layout; `__init__.py` declares `__all__` explicitly.
+- [ ] `simulations/tests/test_verify.py` covers every R-tag with
+      ≥ 2 cases (happy + injected drift); test count ≥ 16.
+- [ ] Notebook code cells contain no direct parquet/JSON file reads
+      (all I/O routes through `CommittedArtifactLoader`).
+- [ ] Notebook code cells import only from
+      `simulations.saas_builder.verify` and `env.py` — no reach into
+      `simulations.modules` / `simulations.utils` internals.
 
 ## 10. Open items (for the implementation plan to resolve)
 
@@ -212,4 +329,36 @@ slow path, they invoke `scripts/run_cohort{1..4}_emit.py` directly.
   `memory/feedback_post_hoc_fit_anti_fishing_pattern.md` — convention
   sources.
 
-End of design.
+---
+
+## CORRECTIONS-α — v0.1 → v0.2
+
+**Trigger.** User question 2026-05-09: *"Do we need to define [an] API to
+abstract away implementation on the modules?"* The v0.1 design had
+notebooks reaching directly into `simulations.types` /
+`simulations.modules` / raw committed JSON. This created three problems:
+(i) Stage-3 internal renames would break notebooks needlessly; (ii)
+assertion logic scattered across notebook cells could not be
+pytest-tested; (iii) the verify-only contract was implicit rather than
+named.
+
+**Patch.** Added §3a — a purpose-built `simulations/saas_builder/verify/`
+sub-package with three-tier discipline preserved (Value `types.py` /
+Callable `checks.py` / IO Boundary `io.py`), 8 free-pure-function
+verifiers (one per R-tag), a `CommittedArtifactLoader` IO class, and a
+mandatory `simulations/tests/test_verify.py` with ≥ 16 cases. §4 R-tag
+table now references the verifier functions. §9 success criteria gained
+4 new bullets covering the verify-API surface.
+
+**Posture.** Strictly tightening: the verify-API is a *named* contract
+where v0.1 had implicit cell-scope conventions. Math content unchanged.
+R1–R8 set unchanged. Verify-only mode unchanged. No upstream pin
+relaxed.
+
+**Anti-fishing impact.** R2's `κ ∉ free_symbols(π(t))` check moves from
+"a notebook cell" to "a pytest case in `test_verify.py`" — the C4 1/κ
+detection is now part of CI, not just a notebook-execution-time check.
+Strictly stronger.
+
+End of design (v0.2).
+
