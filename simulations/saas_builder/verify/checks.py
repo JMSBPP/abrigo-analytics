@@ -64,13 +64,16 @@ def verify_r1_sigma_0_anchor(
     )
 
 
-def verify_r2_kappa_eliminated_in_pi_t(*, audit_sha256: str) -> RTagVerdict:
+def verify_r2_kappa_eliminated_in_pi_t(
+    *,
+    audit_sha256: str,
+    pi_t_expression: sp.Expr | None = None,
+) -> RTagVerdict:
     """R2: κ ∉ free_symbols(π(t)) — anti-fishing free-symbol audit.
 
-    Builds the canonical π(t) closed form as documented in
-    notes/STAGE_2_RESULTS.md §2.2 and confirms κ does not appear in
-    its free symbols after sympy.simplify. Catches the C4 1/κ
-    fabrication regression.
+    By default, builds the canonical π(t) closed form as documented in
+    notes/STAGE_2_RESULTS.md §2.2. Catches the C4 1/κ fabrication
+    regression.
 
     The π(t) form used:
         π(t) = K_star · ε² · (X̄/Ȳ)² ·
@@ -78,18 +81,25 @@ def verify_r2_kappa_eliminated_in_pi_t(*, audit_sha256: str) -> RTagVerdict:
                [64 ω √(σ₀) t²]
 
     κ must NOT appear in the symbolic free symbols after simplification.
+
+    The optional ``pi_t_expression`` parameter exists exclusively to
+    enable the C4 regression test in test_verify.py to inject a
+    deliberately-broken expression containing 1/κ and confirm the
+    verifier returns passed=False. Production callers should always
+    use the default.
     """
-    K_star, eps, X_bar, Y_bar, omega, t, sigma_0 = sp.symbols(
-        "K_star eps X_bar Y_bar omega t sigma_0", positive=True
-    )
-    pi_t = (
-        K_star
-        * eps**2
-        * (X_bar / Y_bar) ** 2
-        * (4 * omega * t * sp.cos(4 * omega * t) - sp.sin(4 * omega * t))
-        / (64 * omega * sp.sqrt(sigma_0) * t**2)
-    )
-    pi_t_simplified = sp.simplify(pi_t)
+    if pi_t_expression is None:
+        K_star, eps, X_bar, Y_bar, omega, t, sigma_0 = sp.symbols(
+            "K_star eps X_bar Y_bar omega t sigma_0", positive=True
+        )
+        pi_t_expression = (
+            K_star
+            * eps**2
+            * (X_bar / Y_bar) ** 2
+            * (4 * omega * t * sp.cos(4 * omega * t) - sp.sin(4 * omega * t))
+            / (64 * omega * sp.sqrt(sigma_0) * t**2)
+        )
+    pi_t_simplified = sp.simplify(pi_t_expression)
     kappa = sp.Symbol("kappa", positive=True)
     passed = kappa not in pi_t_simplified.free_symbols
     return RTagVerdict(

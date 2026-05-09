@@ -2,10 +2,10 @@
 
 Coverage:
   - 8 happy-path tests (R1–R8)
-  - 12 negative tests (R1 perturbed-eps; R2 1/κ injection with
-    simplification precondition; R3 tightened tol; R4 length-23 +
-    length-25 + wrong-factorization 4×2×3×1; R5 tightened tol +
-    shape-mismatch; R6 wide-tightness; R7 halt_on_flip False +
+  - 12 negative tests (R1 perturbed-eps; R2 1/κ injection — calls
+    verifier with injected expression + asserts passed=False; R4
+    length-23 + length-25 + wrong-factorization 4×2×3×1; R5 tightened
+    tol + shape-mismatch; R6 wide-tightness; R7 halt_on_flip False +
     _metadata missing; R8 perturbed-Z + ci-lo-nonpositive)
   - 1 R3 finite-guard test (negative tol forces FAIL with safe residual)
   - 2 cross-cutting tamper tests (AuditBlockMismatch + trio SHA drift)
@@ -84,30 +84,29 @@ def test_r2_happy_no_kappa() -> None:
 
 
 def test_r2_negative_inject_one_over_kappa() -> None:
-    """R2: C4 anti-fishing regression guard — 1/κ injection retains κ.
+    """C4 anti-fishing regression guard: 1/κ injection must fail.
 
     Precondition (Wave-1 MQ-F4): simplified injected expression must
     retain κ in free_symbols (prevents 1/κ - 1/κ + π(t) cancellation
-    false-pass). This test confirms the guard is not defeatable via
-    cancellation artefacts.
+    false-pass). Then call the verifier with the injected expression
+    and assert passed=False — exercises the actual contract.
     """
     K_star, eps_, X_bar, Y_bar, omega, t, sigma_0, kappa = sp.symbols(
         "K_star eps X_bar Y_bar omega t sigma_0 kappa", positive=True
     )
-    legit = (
-        K_star
-        * eps_**2
-        * (X_bar / Y_bar) ** 2
-        / (64 * omega * sp.sqrt(sigma_0) * t**2)
+    legit = K_star * eps_**2 * (X_bar / Y_bar) ** 2 / (
+        64 * omega * sp.sqrt(sigma_0) * t**2
     )
     injected = legit / kappa  # the C4 fabricated 1/κ factor
-    # Precondition: prevent cancellation false-pass
+    # Wave-1 MQ-F4 precondition: prevent cancellation false-pass
     assert kappa in sp.simplify(injected).free_symbols, (
         "regression-guard precondition: simplified injected expression "
         f"must retain κ; got {sp.simplify(injected).free_symbols}"
     )
-    has_kappa = kappa in sp.simplify(injected).free_symbols
-    assert has_kappa  # the injected form still carries κ — verifier would FAIL
+    v = verify_r2_kappa_eliminated_in_pi_t(
+        audit_sha256=DUMMY_SHA, pi_t_expression=injected,
+    )
+    assert not v.passed, v.message
 
 
 # ---------------------------------------------------------------------------
@@ -120,20 +119,6 @@ def test_r3_happy() -> None:
     v = verify_r3_perpetual_identity(tol=1e-8, audit_sha256=DUMMY_SHA)
     assert v.passed, v.message
 
-
-def test_r3_negative_tightened_tol() -> None:
-    """R3: tol squeezed to 1e-30 — the zero-residual limit cannot satisfy 0 ≤ 1e-30."""
-    # sympy limit is exactly 0, so residual=0.0 which IS ≤ 1e-30. Use even
-    # tighter constraint: negative tol forces unconditional FAIL.
-    v = verify_r3_perpetual_identity(tol=1e-30, audit_sha256=DUMMY_SHA)
-    # residual=0.0, so 0.0 <= 1e-30 is True; this actually passes. Use -1.0.
-    # Keep this test as documentation of the boundary: tol=1e-30 still passes
-    # because residual is exact 0. The finite-guard test below covers FAIL.
-    # Per spec §3a.6 negative-case table: "tightened tol" is a conceptual
-    # label; for R3 the structurally failing input is negative tol.
-    _ = v  # result noted; test is informational — actual assertion below
-    v2 = verify_r3_perpetual_identity(tol=-1.0, audit_sha256=DUMMY_SHA)
-    assert not v2.passed
 
 
 def test_r3_negative_nonfinite() -> None:
