@@ -6,9 +6,15 @@ into simulations.modules / simulations.utils internals.
 """
 from __future__ import annotations
 
+from simulations.saas_builder.verify.io import (
+    AuditBlockMismatch,
+    CommittedArtifactLoader,
+)
 from simulations.saas_builder.verify.types import RTagVerdict, TrioRollup
 
 __all__: list[str] = [
+    "AuditBlockMismatch",
+    "CommittedArtifactLoader",
     "RTagVerdict",
     "TrioRollup",
 ]
