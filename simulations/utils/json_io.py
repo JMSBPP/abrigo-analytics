@@ -300,14 +300,45 @@ class AuditReader:
     Mirrors the ``ZCapPinnedReader`` pattern: validate via a private
     Pydantic model, then construct the frozen-dataclass Value. The
     Pydantic model is never re-exported.
+
+    Note: unlike ``ZCapPinnedReader``, this reader does not perform a
+    pre-Pydantic field-set check; field drift in ``_AUDIT.json`` is
+    surfaced as ``pydantic.ValidationError`` rather than a domain
+    ``SchemaMismatchError``. Consumers that need the domain-error
+    framing can wrap the call.
     """
 
     def __init__(self) -> None:
         # Stateless beyond the boundary tier shape.
         pass
 
-    def __call__(self, path: Path) -> Audit:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    def __call__(self, path: str | Path) -> Audit:
+        """Read and validate ``_AUDIT.json`` at ``path``; return ``Audit`` Value.
+
+        Contract
+        --------
+        Preconditions:
+            - ``path`` resolves to an existing JSON file matching the
+              ``_AUDIT.json`` schema (audit_block 64-char hex lowercase,
+              schema_version non-empty, six gate-metric floats finite,
+              R̂_max ≥ 1, divergence_frac ∈ [0, 1], ESS ≥ 0,
+              ci_width_ratio_max > 0, n_chains/n_draws_per_chain > 0,
+              month ∈ [1, 12], n_rows_synthetic ≥ 0).
+
+        Raises:
+            FileNotFoundError: if ``path`` does not point to an
+                existing file.
+            pydantic.ValidationError: on field-set drift or
+                type-mismatch in the JSON payload.
+            simulations.types.saas_cohort1_audit.AuditValueError:
+                if values pass Pydantic but fail the frozen-dc Value
+                invariants in ``Audit.__post_init__`` /
+                ``AuditVerdict.__post_init__``.
+        """
+        target = Path(path)
+        if not target.is_file():
+            raise FileNotFoundError(f"AuditReader: missing JSON at {target}")
+        raw = json.loads(target.read_text(encoding="utf-8"))
         model = _AuditJsonModel.model_validate(raw)
         return Audit(
             audit_block=model.audit_block,

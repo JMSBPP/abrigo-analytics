@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from simulations.types.saas_cohort1_audit import Audit
 from simulations.utils.json_io import AuditReader
@@ -47,7 +48,7 @@ def test_audit_reader_rejects_missing_field(tmp_path: Path) -> None:
     p = tmp_path / "_AUDIT.json"
     p.write_text(json.dumps({"audit_block": "d" * 64}))
     reader = AuditReader()
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         reader(p)
 
 
