@@ -11,7 +11,13 @@ Math pin: not directly involved. The hosted `audit_block` is the same
 """
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
+from typing import Final
+
+#: Compiled regex matching exactly 64 lowercase hex characters (sha256 hex form).
+_AUDIT_BLOCK_RE: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
 
 
 class AuditValueError(ValueError):
@@ -37,6 +43,38 @@ class AuditVerdict:
             raise AuditValueError(
                 f"n_draws_per_chain must be positive, got {self.n_draws_per_chain}"
             )
+        for name, val in (
+            ("rhat_max", self.rhat_max),
+            ("ess_bulk_min", self.ess_bulk_min),
+            ("ess_tail_min", self.ess_tail_min),
+            ("divergence_frac", self.divergence_frac),
+            ("ci_width_ratio_max", self.ci_width_ratio_max),
+        ):
+            if not math.isfinite(val):
+                raise AuditValueError(
+                    f"{name} must be finite, got {val}"
+                )
+        if self.rhat_max < 1.0:
+            raise AuditValueError(
+                f"rhat_max must be >= 1.0 (R-hat bounded below by 1 by construction),"
+                f" got {self.rhat_max}"
+            )
+        if self.ess_bulk_min < 0.0:
+            raise AuditValueError(
+                f"ess_bulk_min must be >= 0, got {self.ess_bulk_min}"
+            )
+        if self.ess_tail_min < 0.0:
+            raise AuditValueError(
+                f"ess_tail_min must be >= 0, got {self.ess_tail_min}"
+            )
+        if not (0.0 <= self.divergence_frac <= 1.0):
+            raise AuditValueError(
+                f"divergence_frac must be in [0.0, 1.0], got {self.divergence_frac}"
+            )
+        if self.ci_width_ratio_max <= 0.0:
+            raise AuditValueError(
+                f"ci_width_ratio_max must be > 0, got {self.ci_width_ratio_max}"
+            )
 
 
 @dataclass(frozen=True)
@@ -52,17 +90,15 @@ class Audit:
     verdict: AuditVerdict
 
     def __post_init__(self) -> None:
-        if len(self.audit_block) != 64:
+        if not _AUDIT_BLOCK_RE.fullmatch(self.audit_block):
             raise AuditValueError(
                 f"audit_block must be 64-char lowercase hex sha256; "
-                f"got len={len(self.audit_block)}"
+                f"got {self.audit_block!r} (len={len(self.audit_block)})"
             )
-        try:
-            int(self.audit_block, 16)
-        except ValueError as e:
-            raise AuditValueError(f"audit_block is not valid hex: {e!s}") from e
-        if self.audit_block != self.audit_block.lower():
-            raise AuditValueError("audit_block must be lowercase hex")
+        if self.schema_version.strip() == "":
+            raise AuditValueError(
+                f"schema_version must be non-empty, got {self.schema_version!r}"
+            )
         if self.n_rows_synthetic < 0:
             raise AuditValueError(
                 f"n_rows_synthetic must be non-negative, got {self.n_rows_synthetic}"
