@@ -26,7 +26,6 @@ from typing import Any
 import numpy as np
 import sympy as sp
 
-from simulations.saas_builder.cohort_2.types import CohortGateVerdict  # noqa: F401
 from simulations.saas_builder.verify.types import RTagVerdict
 from simulations.types.posterior import ZCapPinned
 
@@ -119,12 +118,19 @@ def verify_r3_perpetual_identity(*, tol: float, audit_sha256: str) -> RTagVerdic
         64 * omega * t**2
     )
     limit_val = sp.limit(delta_t, t, sp.oo)
-    # The limit may be 0 (symbolic) or an oscillatory indeterminate;
-    # extract the real part of the complex form for residual computation.
-    try:
-        residual = float(abs(complex(limit_val).real))
-    except (TypeError, AttributeError):
-        residual = float(abs(limit_val))
+    # Guard against non-finite sympy results (sp.nan, sp.zoo, sp.oo) before
+    # any coercion — serializing nan/inf into RTagVerdict is a JSON-emit hazard.
+    if not (limit_val.is_finite is True or limit_val == sp.Integer(0)):
+        return RTagVerdict(
+            r_tag="R3",
+            passed=False,
+            expected=0.0,
+            actual=None,
+            residual=None,
+            audit_sha256=audit_sha256,
+            message=f"perpetual identity limit not finite: {limit_val}",
+        )
+    residual = float(abs(limit_val))
     passed = residual <= tol
     return RTagVerdict(
         r_tag="R3",
@@ -236,14 +242,22 @@ def verify_r6_softplus_l1_tightness(
     kappa: float,
     tol_factor: float,
     audit_sha256: str,
+    beta_factor: float = 50.0,
 ) -> RTagVerdict:
     """R6: softplus L¹ deviation ≤ tol_factor · κ on [0, 2κ] (M2 pin: 1e-3·κ).
 
-    Constructs ``SoftplusParams(beta=50.0 / kappa, kappa=kappa)`` using the
-    spec-prescribed β ≈ 50/κ baseline (distributions.py docstring, note that
-    the criterion ``deviation < 1e-3·κ`` is met by ``β ≈ 50/κ``). Passes
+    Constructs ``SoftplusParams(beta=beta_factor / kappa, kappa=kappa)`` using
+    the spec-prescribed β ≈ 50/κ baseline (distributions.py docstring, note
+    that the criterion ``deviation < 1e-3·κ`` is met by ``β ≈ 50/κ``). Passes
     the params to ``tightness_l1_deviation`` and asserts the L¹ deviation
     satisfies the M2 tightness pin.
+
+    ``beta_factor`` defaults to 50.0 (the M2 pin); override for future
+    iterations exploring different β regimes without code change.
+
+    Residual semantics: ``residual = deviation`` (distance from the ideal of
+    zero L¹ deviation); ``expected = threshold`` (the gate value); ``actual =
+    deviation`` (the measured value). Threshold is also reported in ``message``.
 
     Three-tier compliance: ``SoftplusParams`` and ``tightness_l1_deviation``
     are imported from ``simulations.types.distributions`` (Value tier + free
@@ -251,7 +265,7 @@ def verify_r6_softplus_l1_tightness(
     """
     from simulations.types.distributions import SoftplusParams, tightness_l1_deviation
 
-    params = SoftplusParams(beta=50.0 / kappa, kappa=kappa)
+    params = SoftplusParams(beta=beta_factor / kappa, kappa=kappa)
     deviation = float(tightness_l1_deviation(params))
     threshold = tol_factor * kappa
     passed = deviation <= threshold
@@ -260,7 +274,7 @@ def verify_r6_softplus_l1_tightness(
         passed=passed,
         expected=threshold,
         actual=deviation,
-        residual=abs(deviation - threshold),
+        residual=deviation,
         audit_sha256=audit_sha256,
         message=(
             f"softplus L¹ deviation = {deviation:.6e}; "
@@ -294,17 +308,17 @@ def verify_r7_s_t_pin(
     metadata = revenue_form_verdict.get("_metadata", {})
     halt_on_flip = metadata.get("halt_on_flip_comparison")
     passed = halt_on_flip is True
-    actual = 1.0 if halt_on_flip else 0.0
     return RTagVerdict(
         r_tag="R7",
         passed=passed,
-        expected=1.0,
-        actual=actual,
-        residual=abs(actual - 1.0),
+        expected=None,
+        actual=None,
+        residual=None,
         audit_sha256=audit_sha256,
         message=(
-            f"halt_on_flip_comparison = {halt_on_flip!r}; spec-pinned "
-            f"S_t = (1-λ)^t with λ ~ Beta(4.5, 95.5) preserved iff True"
+            f"runtime HALT-on-flip safeguard armed: {halt_on_flip!r}; "
+            f"spec-level S_t pin (Beta(4.5, 95.5)) lives in prereg-lock §6.1, "
+            f"not in this verdict"
         ),
     )
 
@@ -313,22 +327,27 @@ def verify_r8_z_cap_closed_form(
     *,
     z_cap_pinned: ZCapPinned,
     audit_sha256: str,
+    expected_z: float = 4687.94,
+    tol: float = 1.0,
 ) -> RTagVerdict:
     """R8: Z_cap ≈ 4687.94 COP/mo, 95% CI lower bound > 0 (memo §1).
 
     Two-part check:
-        (a) point estimate within 1 COP of the pinned value 4687.94;
+        (a) point estimate within ``tol`` COP of ``expected_z`` (defaults:
+            4687.94 COP/mo, tol=1.0 COP — the M2 pin);
         (b) 95% credible-interval lower bound is strictly positive —
             the cohort cap is positive at credible-interval confidence.
+
+    ``expected_z`` and ``tol`` are parameterised so a future re-pin can be
+    tested without code change.
 
     Field-name note: ``ZCapPinned.Z_cop_per_month`` is capitalised (Z,
     not z) per ``simulations/types/posterior.py`` line 292.
     """
-    expected_z = 4687.94
     actual_z = float(z_cap_pinned.Z_cop_per_month)
     residual = abs(actual_z - expected_z)
     ci_lo = float(z_cap_pinned.ci_95_lo)
-    z_match = residual <= 1.0
+    z_match = residual <= tol
     ci_strictly_positive = ci_lo > 0.0
     passed = z_match and ci_strictly_positive
     return RTagVerdict(
