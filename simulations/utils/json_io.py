@@ -22,6 +22,7 @@ from simulations.types.posterior import (
     SignVerdictLabel,
     ZCapPinned,
 )
+from simulations.types.saas_cohort1_audit import Audit, AuditVerdict
 from simulations.types.tier import TIER_IDS, TierID
 from simulations.utils.errors import SchemaMismatchError
 
@@ -262,4 +263,66 @@ class ZCapPinnedWriter:
             ]
         target.write_text(
             json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+
+class _AuditVerdictJsonModel(BaseModel):
+    """Pydantic transient validator for AuditVerdict block."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    rhat_max: float
+    ess_bulk_min: float
+    ess_tail_min: float
+    divergence_frac: float
+    ci_width_ratio_max: float
+    n_chains: int
+    n_draws_per_chain: int
+
+
+class _AuditJsonModel(BaseModel):
+    """Pydantic transient validator for `_AUDIT.json`."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    audit_block: str
+    schema_version: str
+    synthetic_tau_path: str
+    cohort_prior_path: str
+    month: int
+    n_rows_synthetic: int
+    verdict: _AuditVerdictJsonModel
+
+
+class AuditReader:
+    """IO-Boundary reader for ``_AUDIT.json`` → ``Audit`` Value.
+
+    Mirrors the ``ZCapPinnedReader`` pattern: validate via a private
+    Pydantic model, then construct the frozen-dataclass Value. The
+    Pydantic model is never re-exported.
+    """
+
+    def __init__(self) -> None:
+        # Stateless beyond the boundary tier shape.
+        pass
+
+    def __call__(self, path: Path) -> Audit:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        model = _AuditJsonModel.model_validate(raw)
+        return Audit(
+            audit_block=model.audit_block,
+            schema_version=model.schema_version,
+            synthetic_tau_path=model.synthetic_tau_path,
+            cohort_prior_path=model.cohort_prior_path,
+            month=model.month,
+            n_rows_synthetic=model.n_rows_synthetic,
+            verdict=AuditVerdict(
+                rhat_max=model.verdict.rhat_max,
+                ess_bulk_min=model.verdict.ess_bulk_min,
+                ess_tail_min=model.verdict.ess_tail_min,
+                divergence_frac=model.verdict.divergence_frac,
+                ci_width_ratio_max=model.verdict.ci_width_ratio_max,
+                n_chains=model.verdict.n_chains,
+                n_draws_per_chain=model.verdict.n_draws_per_chain,
+            ),
         )

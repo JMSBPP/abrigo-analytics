@@ -22,6 +22,7 @@ from simulations.utils.audit_block import (
 from simulations.utils.errors import SchemaMismatchError
 from simulations.utils.json_io import (
     Z_CAP_PINNED_FIELDS,
+    AuditReader,
     ZCapPinnedReader,
     ZCapPinnedWriter,
 )
@@ -60,6 +61,7 @@ __all__: list[str] = [
     "synthetic_tau_row",
     # JSON IO
     "Z_CAP_PINNED_FIELDS",
+    "AuditReader",
     "ZCapPinnedReader",
     "ZCapPinnedWriter",
     # pricing
