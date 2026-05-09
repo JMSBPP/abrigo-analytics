@@ -3,8 +3,8 @@
 **Iteration**: SaaS-Builder (Y, M, X) Stage-2 — post-cycle anchor artifact
 **Branch**: `iter/saas-builder-stage-2`
 **Date**: 2026-05-09
-**Status**: DESIGN v0.2 (awaiting Wave-1 RC+MQ verify before writing-plans hand-off)
-**Version**: v0.2 (verify/ sub-package added per user question 2026-05-09)
+**Status**: DESIGN v0.3 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS; v0.3 patches resolve 1 BLOCK + 8 FLAGs)
+**Version**: v0.3 (RC BLOCK-1 + RC FLAGs 1–3 + MQ FLAGs F2–F6 resolved; F1+RC-BLOCK-1 are the same defect, dedup'd; F3+RC-FLAG-3 are the same defect, dedup'd)
 **Audience**: future Stage-3 implementer; supervisor / advisor review;
 contributor onboarding into the `simulations/` package
 
@@ -91,7 +91,13 @@ beyond `Protocol` / `Exception`.
 
 ### 3a.2 Value-tier contract
 
+The verify sub-package introduces only TWO new Value types — the verdict
+container and the rollup. **All committed-artifact data classes are
+reused from existing `simulations.types`**, not redefined. See §3a.4 for
+the reuse contract.
+
 ```
+# simulations/saas_builder/verify/types.py
 @dataclass(frozen=True)
 class RTagVerdict:
     r_tag: str                    # "R1" .. "R8"
@@ -99,50 +105,121 @@ class RTagVerdict:
     expected: float | None        # closed-form / pinned value
     actual: float | None          # computed-or-loaded value
     residual: float | None        # |expected - actual|, when meaningful
-    audit_sha256: str | None      # tamper-trail anchor
+    audit_sha256: str             # trio-level sha256 (NOT Optional — see §3a.4)
     message: str                  # human-readable summary
 
 @dataclass(frozen=True)
 class TrioRollup:
     verdicts: tuple[RTagVerdict, ...]   # length 8 in canonical order
     all_passed: bool
+    audit_sha256: str             # same trio-level anchor as in each verdict
 ```
 
-`RTagVerdict` is the single Value type returned by every verifier;
-notebooks bind one per cell and `assert v.passed, v.message`.
-`TrioRollup` is consumed only at notebook end-of-trio summary cell.
+`audit_sha256` is **not Optional** — every verdict, including the
+sympy-only verifiers (R1, R2, R3, R4), carries the same trio-level
+anchor (per §3a.4 tamper contract). This closes the silent-tamper-gap
+on R1–R5 flagged by Wave-1 MQ-F2.
+
+A new `Audit` Value is added to `simulations/types/` (NOT to
+`verify/types.py`) to host the existing `_AUDIT.json` schema; this
+preserves the global-types-first discipline of `simulations/README.md`
+§"Extension model" per Wave-1 RC-BLOCK-1 fix. The reader for
+`_AUDIT.json` follows the same `ZCapPinnedReader` pattern already
+established in `simulations/utils/json_io.py`.
 
 ### 3a.3 Callable-tier contract — one free pure function per R-tag
 
-| Function | Inputs | Source of truth |
+| Function | Inputs (all pre-loaded; no IO) | Source of truth |
 |---|---|---|
-| `verify_r1_sigma_0_anchor` | `x_bar, y_bar, eps, expected, tol` | PRIMITIVES (8); verdict memo §1 σ₀ = 20,000 |
-| `verify_r2_kappa_eliminated_in_pi_t` | (none — sympy live) | `feedback_post_hoc_fit_anti_fishing_pattern` free-symbol audit |
-| `verify_r3_perpetual_identity_residual` | `tol` | Verdict memo §1: residual ≤ 6.31e-9 |
-| `verify_r4_bracket_cardinality` | `brackets` | spec v1.2.1 §5.2 (3 × 2 × 2 × 2 = 24) |
-| `verify_r5_marginalization_match` | `posterior_path, tol` | C1 v0.4 marginalization (memo §6) |
-| `verify_r6_softplus_l1_tightness` | `kappa, tol_factor` | M2 pin: `tightness_l1_deviation < 1e-3·κ` |
-| `verify_r7_s_t_pin` | `gate_verdict` | spec v1.2.1 §6.1: `S_t = (1-λ)^t`, `λ ~ Beta(4.5, 95.5)` |
-| `verify_r8_z_cap_closed_form` | `z_cap_pinned` | Verdict memo §1: 4,687.94 COP/mo, 95% CI [168.17, 14,606.14] |
+| `verify_r1_sigma_0_anchor` | `x_bar, y_bar, eps, expected, tol, audit_sha256` | PRIMITIVES (8); verdict memo §1 σ₀ = 20,000 |
+| `verify_r2_kappa_eliminated_in_pi_t` | `audit_sha256` (sympy live; no other input) | `feedback_post_hoc_fit_anti_fishing_pattern` free-symbol audit |
+| `verify_r3_perpetual_identity` | `tol, audit_sha256` | Verdict memo §1: residual ≤ 6.31e-9 |
+| `verify_r4_bracket_cardinality` | `brackets, audit_sha256` | Index sets in spec v1.2.1 §5.2; cardinality derivation in `notes/STAGE_2_RESULTS.md` §2.4 (R4) |
+| `verify_r5_marginalization_match` | `posterior_chain: np.ndarray, tol, audit_sha256` | C1 v0.4 marginalization (memo §6) |
+| `verify_r6_softplus_l1_tightness` | `kappa, tol_factor, audit_sha256` | M2 pin: `tightness_l1_deviation < 1e-3·κ` |
+| `verify_r7_s_t_pin` | `gate_verdict: CohortGateVerdict, audit_sha256` | spec v1.2.1 §6.1: `S_t = (1-λ)^t`, `λ ~ Beta(4.5, 95.5)` |
+| `verify_r8_z_cap_closed_form` | `z_cap_pinned: ZCapPinned, audit_sha256` | Verdict memo §1: 4,687.94 COP/mo, 95% CI [168.17, 14,606.14] |
 
-All eight return `RTagVerdict`. None mutate. None do filesystem I/O —
-loaders in §3a.4 produce the dict inputs.
+All eight return `RTagVerdict`. None mutate. **None do filesystem
+I/O** — `CommittedArtifactLoader` (§3a.4) produces all loaded inputs
+including the posterior chain as a pre-materialized numpy array. The
+v0.2 R5 signature `posterior_path` was a tier leak (Callable
+performing IO); v0.3 fixes per Wave-1 MQ-F3 + RC-FLAG-3.
 
-### 3a.4 IO-Boundary-tier contract
+R3 renamed from v0.2's `verify_r3_perpetual_identity_residual` to
+`verify_r3_perpetual_identity` for naming-pattern consistency with the
+other seven verifiers (the residual scalar lives in
+`RTagVerdict.residual`, not in the function name) — Wave-1 MQ-F6.
+
+R4 attribution corrected: index sets are in spec §5.2 (lines 383–388);
+cardinality derivation (3 × 2 × 2 × 2 = 24) lives in
+`notes/STAGE_2_RESULTS.md` §2.4 (R4 tag) — Wave-1 RC-FLAG-1.
+
+### 3a.4 IO-Boundary-tier contract — reuse-existing-Value-types
+
+Per Wave-1 RC-BLOCK-1 fix: the loader returns **existing frozen
+Value-tier dataclasses** from `simulations.types`, not invented
+TypedDicts. The v0.2 names (`ZCapPinnedDict`, `GateVerdictDict`, …)
+were misstatements; they do not exist on disk. The actual existing
+Values (verified by RC against the live codebase):
+
+| Loader method | Return type (existing Value) | Defined at |
+|---|---|---|
+| `load_z_cap_pinned()` | `ZCapPinned` (frozen-dc) | `simulations/types/posterior.py` |
+| `load_gate_verdict()` | `CohortGateVerdict` (frozen-dc) | `simulations/types/saas_cohort2_verdict.py` |
+| `load_revenue_form_verdict()` | `RevenueFormFit` (frozen-dc) | `simulations/types/saas_cohort3.py` |
+| `load_audit()` | `Audit` (frozen-dc) | `simulations/types/saas_cohort1_audit.py` (NEW — see precondition) |
+| `load_posterior_chain()` | `np.ndarray` (shape (N_draws, n_params)) | n/a — numpy primitive |
+
+Existing Pydantic-validated readers in `simulations/utils/json_io.py`
+(`ZCapPinnedReader` and equivalents) provide the load+validate path;
+the loader composes them. No re-export of internal Pydantic models.
+
+**Precondition subtask (Phase 0 of the implementation plan)**: add a
+new `Audit` frozen-dataclass to `simulations/types/saas_cohort1_audit.py`
+hosting the existing `_AUDIT.json` schema, plus an `AuditReader` in
+`simulations/utils/json_io.py` following the `ZCapPinnedReader`
+pattern. This is the only cross-tier addition the verify sub-package
+requires; it lives in the global types tier per `simulations/README.md`
+§"Extension model" (no per-iteration types/), preserving the
+global-types-first discipline.
 
 ```
+# simulations/saas_builder/verify/io.py
 class CommittedArtifactLoader:
-    def __init__(self, data_root: Path) -> None: ...
-    def load_z_cap_pinned(self) -> ZCapPinnedDict: ...
-    def load_gate_verdict(self) -> GateVerdictDict: ...
-    def load_revenue_form_verdict(self) -> RevenueFormVerdictDict: ...
-    def load_audit(self) -> AuditDict: ...
+    def __init__(self, data_root: Path, audit_block_hasher: AuditBlockHasher) -> None: ...
+    def load_z_cap_pinned(self) -> ZCapPinned: ...
+    def load_gate_verdict(self) -> CohortGateVerdict: ...
+    def load_revenue_form_verdict(self) -> RevenueFormFit: ...
+    def load_audit(self) -> Audit: ...
+    def load_posterior_chain(self) -> np.ndarray: ...
+    def trio_audit_sha256(self) -> str: ...   # see tamper contract below
 ```
 
-The TypedDict row schemas are reused from
-`simulations.utils.parquet_io` / `simulations.utils.json_io` per Phase 2
-M4 pin — no schema duplication. `audit_sha256` is computed once at
-load time and threaded through every `RTagVerdict.audit_sha256`.
+### 3a.4.1 Tamper-detection contract (uniform across 8/8 verdicts)
+
+Per Wave-1 MQ-F2 fix: v0.2 left `audit_sha256 = None` for the four
+sympy-only verifiers (R1–R4), creating a silent gap. v0.3 closes this:
+
+1. At loader construction, `CommittedArtifactLoader` reads ALL committed
+   artifacts (`Z_cap_pinned.json`, `gate_verdict.json`,
+   `revenue_form_verdict.json`, `_AUDIT.json`).
+2. For each artifact, the loader computes a fresh sha256 over the file
+   bytes AND asserts equality with the embedded `audit_block` field
+   already present in each JSON. **This is a real tamper check, not
+   window-dressing** — Wave-1 RC-FLAG-2 disambiguation. The existing
+   `simulations.utils.audit_block.AuditBlockHasher` performs the rehash;
+   the loader composes it.
+3. The four per-artifact sha256s are concatenated in canonical order
+   (alphabetical by filename) and re-hashed to produce a single
+   **trio_audit_sha256**.
+4. Every `RTagVerdict.audit_sha256` (and `TrioRollup.audit_sha256`) is
+   bound to this trio-level anchor — including R1, R2, R3, R4, which
+   load nothing. The tamper chain is uniform across 8/8 verdicts.
+
+If any embedded `audit_block` mismatches the recomputed file sha256,
+the loader raises `AuditBlockMismatch` at construction time — the
+notebook fails before any verifier runs.
 
 ### 3a.5 Notebook code-cell shape (post-API)
 
@@ -156,11 +233,26 @@ print(f"{v.r_tag}: Z_cap = {v.actual:,.2f} COP/mo  "
 
 ### 3a.6 pytest coverage (mandatory)
 
-`simulations/tests/test_verify.py` exercises each verifier with at
-least: (a) committed-artifact happy path, (b) injected-drift failure,
-(c) for `verify_r2_kappa_eliminated_in_pi_t`, a deliberate `1/κ`
-re-introduction that must fail (regression guard for the C4 case
-study). ≥ 16 test cases total (≥ 2 per verifier).
+`simulations/tests/test_verify.py` exercises each verifier with the
+per-R-tag negative cases enumerated below (per Wave-1 MQ-F5: do not
+leave negative cases to plan-author discretion). ≥ 20 test cases
+total (≥ 2 per verifier; several R-tags require 3+).
+
+| R-tag | Happy path | Negative cases (mandatory) |
+|---|---|---|
+| R1 | committed σ₀ = 20,000 within tol | (a) ε perturbed by 10× tol → fail |
+| R2 | sympy π(t) free of κ | (a) inject `1/κ + π(t)` → fail; **precondition assertion** that `sympy.simplify(injected).free_symbols` is non-empty before invoking the verifier (Wave-1 MQ-F4 — guards against `1/κ - 1/κ` cancellation false-pass) |
+| R3 | residual ≤ 6.31e-9 | (a) tol tightened by 100× → fail |
+| R4 | brackets length 24, factorization 3×2×2×2 | (a) length 23 → fail; (b) length 25 → fail; (c) length 24 but factorization 4×2×3×1 → fail (Wave-1 MQ-F5 — verifier must check factorization, not just cardinality) |
+| R5 | empirical = analytic within tol | (a) tol tightened 1000× → fail; (b) chain shape mis-match → fail |
+| R6 | softplus L¹ deviation < 1e-3·κ | (a) injected `tightness_l1_deviation = 1e-2·κ` (10× M2 pin) → fail (Wave-1 MQ-F5) |
+| R7 | exact `Beta(4.5, 95.5)` and `(1-λ)^t` tokens | (a) near-miss `Beta(4, 96)` → fail; (b) `S_t = (1-λ)^(t-1)` → fail (Wave-1 MQ-F5 — string equality alone is too brittle for HALT-on-flip semantics) |
+| R8 | Z_cap = 4687.94, CI lower > 0 | (a) Z_cap perturbed by 1% → fail; (b) CI lower set to −1 → fail |
+
+Total: 20 test cases (8 happy + 12 negative). Plus 1 cross-cutting test
+that injects an `audit_block` mismatch into one of the four committed
+JSONs and asserts `CommittedArtifactLoader.__init__` raises
+`AuditBlockMismatch`. Grand total ≥ 21.
 
 ### 3a.7 Cost
 
@@ -200,8 +292,8 @@ R-tag → assertion contract:
 |---|---|---|
 | R1 | `verify_r1_sigma_0_anchor` | `σ₀ = (X̄/Ȳ)²·ε²/8` numerically; expected σ₀ = 20,000 (per verdict memo §1) within tolerance |
 | R2 | `verify_r2_kappa_eliminated_in_pi_t` | `κ ∉ free_symbols(π(t))` (sympy free-symbol audit — anti-fishing live demo); π(t) reduces to the boxed (4ωt cos − sin) form |
-| R3 | `verify_r3_perpetual_identity_residual` | Perpetual identity `Δ^{(a_s)}_∞ = lim_{t→∞} Δ^{(a_s)}_t` residual ≤ 1e-8 (memo §1: 6.31×10⁻⁹) |
-| R4 | `verify_r4_bracket_cardinality` | `len(brackets) == 24`; product is `3 tiers × 2 α × 2 cache × 2 κ`; matches spec §5.2 verbatim |
+| R3 | `verify_r3_perpetual_identity` | Perpetual identity `Δ^{(a_s)}_∞ = lim_{t→∞} Δ^{(a_s)}_t` residual ≤ 1e-8 (memo §1: 6.31×10⁻⁹) |
+| R4 | `verify_r4_bracket_cardinality` | `len(brackets) == 24` AND factorization `3 tiers × 2 α × 2 cache × 2 κ` (index sets per spec §5.2; cardinality derivation per `notes/STAGE_2_RESULTS.md` §2.4) |
 | R5 | `verify_r5_marginalization_match` | Marginalization sum-out: empirical posterior mean from saved chain trace matches analytic marginal at the same nodes (Phase 2 N_draws ≥ 712k) |
 | R6 | `verify_r6_softplus_l1_tightness` | softplus L¹ deviation < 1e-3·κ on [0, 2κ] (M2 pin); load `revenue_form_verdict.json` and re-derive |
 | R7 | `verify_r7_s_t_pin` | `gate_verdict.json` contains `lambda_prior: Beta(4.5, 95.5)` and `S_t_form: "(1-lambda)^t"`; HALT-on-flip token unchanged |
@@ -288,8 +380,18 @@ slow path, they invoke `scripts/run_cohort{1..4}_emit.py` directly.
       audit-additive, not gate-altering).
 - [ ] `simulations/saas_builder/verify/` sub-package exists with the
       §3a layout; `__init__.py` declares `__all__` explicitly.
-- [ ] `simulations/tests/test_verify.py` covers every R-tag with
-      ≥ 2 cases (happy + injected drift); test count ≥ 16.
+- [ ] `simulations/tests/test_verify.py` covers every R-tag per the
+      §3a.6 negative-case table (≥ 20 cases + 1 audit-block-mismatch
+      cross-cutting test = ≥ 21 total).
+- [ ] `simulations/types/saas_cohort1_audit.py` adds the `Audit`
+      frozen-dataclass; `simulations/utils/json_io.py` adds an
+      `AuditReader` following the `ZCapPinnedReader` pattern
+      (Phase 0 precondition).
+- [ ] `CommittedArtifactLoader.__init__` rehashes every committed JSON
+      and asserts equality with each artifact's embedded `audit_block`
+      field; raises `AuditBlockMismatch` on drift.
+- [ ] Every `RTagVerdict.audit_sha256` (including R1–R4 sympy-only)
+      carries the trio-level anchor; the field is non-Optional.
 - [ ] Notebook code cells contain no direct parquet/JSON file reads
       (all I/O routes through `CommittedArtifactLoader`).
 - [ ] Notebook code cells import only from
@@ -331,6 +433,69 @@ slow path, they invoke `scripts/run_cohort{1..4}_emit.py` directly.
 
 ---
 
+## CORRECTIONS-α — v0.2 → v0.3
+
+**Trigger.** Wave-1 independent verify dispatched 2026-05-09 to scratch
+`scratch/2026-05-09-notebooks-trio-design-review/`. RC verdict
+ACCEPT_WITH_FLAGS (1 BLOCK + 3 FLAGs); MQ verdict ACCEPT_WITH_FLAGS
+(0 BLOCKs + 6 FLAGs). RC-BLOCK-1 ≡ MQ-F1 (TypedDict misstatement);
+RC-FLAG-3 ≡ MQ-F3 (R5 tier leak). 8 distinct fixes after dedup.
+
+**Patches (each cited to its origin verdict line)**:
+
+1. **§3a.2 + §3a.4 — TypedDict→Value reuse** (RC-BLOCK-1, MQ-F1; rc-verdict
+   L34, L37–70; mq-verdict L163–195). The four invented `*Dict` TypedDicts
+   are removed; loader returns existing frozen Values from
+   `simulations.types`: `ZCapPinned`, `CohortGateVerdict`, `RevenueFormFit`.
+   New `Audit` Value added to `simulations/types/saas_cohort1_audit.py`
+   (Phase 0 precondition); not to `verify/types.py`. Preserves
+   global-types-first discipline.
+2. **§3a.4.1 — Uniform tamper-detection contract** (MQ-F2; mq-verdict
+   L79–96, L217–223). Loader computes a single `trio_audit_sha256`
+   spanning all four committed JSONs and threads it into every
+   `RTagVerdict.audit_sha256`. Field becomes non-Optional. Closes the
+   silent-gap on R1–R4 (sympy-only, formerly `None`).
+3. **§3a.4 + §3a.3 — R5 tier leak fixed** (RC-FLAG-3, MQ-F3; rc-verdict
+   L96–105; mq-verdict L225–229). `verify_r5_marginalization_match` now
+   accepts `posterior_chain: np.ndarray`, not a path. Load moves to
+   `CommittedArtifactLoader.load_posterior_chain()`. Three-tier
+   discipline restored.
+4. **§3a.6 — R2 simplification guard** (MQ-F4; mq-verdict L231–235). The
+   1/κ regression test must precondition-assert
+   `sympy.simplify(injected).free_symbols` is non-empty to prevent
+   `1/κ - 1/κ + π(t)` cancellation false-pass.
+5. **§3a.6 — Per-R-tag negative cases enumerated** (MQ-F5; mq-verdict
+   L237–241). Negative cases for R4 (cardinality + factorization),
+   R6 (wide tightness 1e-2·κ), R7 (near-miss prior, off-by-one
+   exponent). Test floor 16 → 20.
+6. **§3a.3 + §4 — R3 renamed** (MQ-F6; mq-verdict L243–246).
+   `verify_r3_perpetual_identity_residual` → `verify_r3_perpetual_identity`.
+7. **§3a.3 + §4 — R4 attribution corrected** (RC-FLAG-1; rc-verdict
+   L33, L74–81). "Matches spec §5.2 verbatim" replaced with "index sets
+   per spec §5.2; cardinality derivation per STAGE_2_RESULTS.md §2.4".
+8. **§3a.4.1 — `audit_sha256` source-of-truth pinned** (RC-FLAG-2;
+   rc-verdict L83–94). Loader REHASHES each file and ASSERTS equality
+   with the embedded `audit_block`, citing
+   `simulations.utils.audit_block.AuditBlockHasher`. Real check, not
+   surface-and-display.
+
+**Posture.** Strictly tightening on every axis: tamper chain becomes
+uniform (8/8 verdicts anchored, was 4/8); tier discipline restored
+(R5 leak closed); naming consistent (R3 verbiage); negative-case
+floor raised (16 → 20+1); type reuse aligned with reality (no
+invented dicts); audit chain becomes a real check (rehash+assert,
+not surface). No upstream pin relaxed. No new claim. R1–R8 set
+unchanged.
+
+**Anti-fishing impact.** Strictly stronger across the board.
+Per-R-tag negative-case enumeration prevents the C4-class defect
+(post-hoc fit in any R-tag, not just R2) from slipping past pytest.
+The R2 simplification precondition closes a subtle false-pass
+vector. The uniform tamper anchor means a Stage-3 contributor cannot
+silently mutate sympy primitives without breaking the trio.
+
+---
+
 ## CORRECTIONS-α — v0.1 → v0.2
 
 **Trigger.** User question 2026-05-09: *"Do we need to define [an] API to
@@ -360,5 +525,5 @@ relaxed.
 detection is now part of CI, not just a notebook-execution-time check.
 Strictly stronger.
 
-End of design (v0.2).
+End of design (v0.3).
 
