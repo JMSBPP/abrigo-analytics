@@ -8,11 +8,11 @@
 >
 > **Cross-repo plan.** B1 spans two repos: `abrigo-analytics` (this repo) provides the JSON-artifact contract + a stable handoff doc; `thetaSwap-core-dev` (separate repo) houses the Solidity / Foundry implementation. This plan canonicalizes the handoff and the analytics-side guarantees; the Foundry implementation is scoped via the linked plan in `thetaSwap-core-dev` and is dispatched per its OWN review cycle. The Wave-2 RC+MQ review on B1 in THIS repo verifies the handoff contract; the cross-repo plan has its own RC+MQ.
 
-**Plan version:** v0.1 (initial draft — awaiting RC + MQ Wave-1 review per master-spec §6.1)
+**Plan version:** v0.2 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS — 5 FLAGs + 3 NITs disposed inline per §11.1)
 **Master spec:** `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`); `IronCondor_strip.json` v1.0 (audit `94150326…`)
 **Cross-repo target:** `thetaSwap-core-dev` (Solidity + Foundry harness; out of this plan's commit scope)
-**Status:** DRAFT — Wave-1 review dispatch pending
+**Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized
 **Estimated wall-time:** 3–5 days analytics-side; cross-repo Foundry work tracked separately
 
 ---
@@ -106,7 +106,9 @@ The `thetaSwap-core-dev` files (`test/integration/StripReplication.t.sol`, etc.)
 **Acceptance:**
 - Walks through the centered-strip / β-fit / peak-normalized form step by step using the canonical TP1 fixture; produces the same `max_relative_error ≈ 0.28` number that `CarrMadanEnvelopeVerifier` reports on the current emitted strip (the run output recorded in `simulations/saas_builder/cohort_5_strip/IronCondor_strip.STRIKES.md` is the reference).
 - Includes a §"Why not |Π−K̂σ|/|K̂σ|" section explaining the denominator-collapse failure mode (MQ-FLAG-1 historical record); references the spec v0.1 → v0.2 CORRECTIONS-α v9.1 entry.
-- Includes a §"σ_T computation contract" that pins the realized-variance formula PRIMITIVES.md eq. (7) over each bracket × time-grid; this is the formula the Foundry test must use to compare `K̂·σ_T` against centered-strip P&L.
+- Includes a §"σ_T computation contract" (MQ-FLAG-B1.1 disposition) that pins:
+  - **The Foundry test computes σ_T from PRIMITIVES.md §6 eq. (7) DISCRETELY on the emitted FX samples**, NOT from the Stage-2 closed-form path integral $(\overline{X/Y})^2 \varepsilon^2 [1/8 + \sin(4\omega t)/(32\omega t)]$ (STAGE_2_RESULTS.md §2.2). Rationale: the Foundry test ingests the JSON-emitted FX samples; computing σ_T from the same samples (rather than the closed form) keeps the Foundry-side computation black-box-equivalent to the analytics-side pre-compute. Drift between discrete and closed-form is caught at the envelope-assertion stage if material.
+  - **Time-grid n_points pinned at 5000** (MQ-FLAG-B1.2 disposition; mirrors cohort_4's `n_t_grid = 5000` convention from `simulations/saas_builder/cohort_4/pi_derivation.py` which satisfies Nyquist for the $\sin(4\omega t)$ kernel at $\omega = 1$). The JSON `time_grid.n_points` field MUST be exactly 5000 at emit time. Foundry test uses the FX samples as-is, NOT a different grid.
 
 **Commit message:** `proof(stage-3-b1): canonical envelope-assertion formula + numerical example`
 
@@ -125,10 +127,13 @@ The `thetaSwap-core-dev` files (`test/integration/StripReplication.t.sol`, etc.)
 
 **Acceptance:**
 - `FXPathEmitter` frozen-dc with `__call__(brackets: tuple[ParameterBracket, ...], time_grid: TimeGrid) -> Mapping[BracketId, FloatArray]`.
-- `ParameterBracket` Value type with `(tier, alpha_arm, cache_regime, kappa_arm)` matching Stage-2 spec §5.2 24-bracket parameter family.
-- The FX-path generator implements PRIMITIVES.md §6 eq. (6) verbatim: $(X/Y)_t(\varepsilon, \omega) = (1 + \varepsilon\,(\cos^2(\omega t) - 1/2))\,\overline{X/Y}$.
-- The (ε, ω) mapping from each bracket is derived from the Stage-2 spec §5.2 index sets (Phase 1 Task 1.1 acknowledges this is a known mapping pinned at cohort_2; the generator MUST re-import the mapping from `simulations.saas_builder.cohort_2.types` if it exists, NOT re-derive it).
-- One Hypothesis property test: for any valid `(ε, ω, t)` triple, the emitted FX value lies in `[(1 - ε/2), (1 + ε/2)] · X̄/Ȳ` (PRIMITIVES.md §6 eq. (6) constraint).
+- **All Value types authored in this task (RC-FLAG-2 disposition).** v0.1 referenced `TimeGrid` and `BracketId` without defining them; v0.2 pins:
+  - `ParameterBracket` frozen-dc: `(tier: TierID, alpha_arm: Literal[0, 1], cache_regime: Literal["low", "high"], kappa_arm: Literal[0, 1], epsilon: float, omega: float, xy_bar: float)`. Lives in `simulations/saas_builder/cohort_5_strip/fx_path_emit.py` (NEW Value type, NOT re-import from cohort_2 — see RC-FLAG-1 below).
+  - `TimeGrid` frozen-dc: `(t_start_months: float, t_end_months: float, n_points: int)` with `__post_init__` validating `t_end > t_start > 0` and `n_points >= 2`.
+  - `BracketId` TypeAlias for `str` (the canonical `"<tier>_<alpha_arm>_<cache_regime>_<kappa_arm>"` string).
+- **cohort_2 type relationship (RC-FLAG-1 disposition).** v0.1 said "MUST re-import from `simulations.saas_builder.cohort_2.types` if it exists." Investigation: `cohort_2.types` exports `BracketPoint`/`BracketGrid` with a DIFFERENT shape `(T2CostParams, FXPathParams, horizon_T)`. v0.2 resolves: cohort_5_strip authors a NEW `ParameterBracket` type tailored to the FX-path emit; the (tier, α-arm, cache, κ-arm) factorization constants are imported as named constants from `simulations.saas_builder.cohort_2` (e.g., `TIER_IDS`, `ALPHA_ARMS`, `CACHE_REGIMES`, `KAPPA_ARMS` if they exist there; if not, declared as module-level constants in `fx_path_emit.py` with citation back to Stage-2 spec v1.2.1 §5.2 lines 383–388 verbatim).
+- The FX-path generator implements PRIMITIVES.md §5 eq. (6) verbatim (MQ-NIT correction: eq. (6) lives in §5 "Deterministic FX path generator", NOT §6): $(X/Y)_t(\varepsilon, \omega) = (1 + \varepsilon\,(\cos^2(\omega t) - 1/2))\,\overline{X/Y}$.
+- One Hypothesis property test: for any valid `(ε, ω, t)` triple with `0 < ε < 1` (PRIMITIVES.md §5 constraint), the emitted FX value lies in `[(1 - ε/2), (1 + ε/2)] · X̄/Ȳ` (eq. 6 amplitude bound).
 - One regression test: emit at the canonical TP1 bracket and compare against a hard-coded fixture array (pin-fixture pattern — locks the FX-path values bit-reproducibly).
 - A `simulations/saas_builder/cohort_5_strip/__init__.py` re-export of `FXPathEmitter` + `ParameterBracket`.
 
@@ -151,17 +156,19 @@ The `thetaSwap-core-dev` files (`test/integration/StripReplication.t.sol`, etc.)
   ```
   {
     "schema_version": "v1.0",
-    "primitives_anchor": "PRIMITIVES.md §6 eq. (6)",
+    "primitives_anchor": "PRIMITIVES.md §5 eq. (6) (FX-path generator); §6 eq. (7) (realized variance)",
     "n_brackets": 24,
-    "time_grid": {"t_start_months": <float>, "t_end_months": <float>, "n_points": <int>},
+    "time_grid": {"t_start_months": <float>, "t_end_months": <float>, "n_points": 5000},
     "brackets": [
       {"bracket_id": "<str>", "tier": "<str>", "alpha_arm": <int>, "cache_regime": "<str>", "kappa_arm": <int>,
        "epsilon": <float>, "omega": <float>, "x_over_y_bar": 4000.0,
        "fx_path": [<float>, <float>, ...]}, ...
     ],
-    "audit_block": "<sha256>"
+    "audit_block": "<sha256>",
+    "strip_audit_block_parent": "<sha256 of the IronCondor_strip.json this fixture is paired with>"
   }
   ```
+  (MQ-NIT disposition: `strip_audit_block_parent` field added for cross-fixture drift defense. If A2 re-emits the strip, the FX-paths file's parent_audit_block field will visibly point to the OLD strip — the Foundry test loads both and asserts they match before running.)
 - `audit_block` hashes the serialized payload sans the audit_block field (mirrors cohort_5_strip's `_compute_strip_audit_block` convention).
 - Round-trip read-back equality enforced.
 - 24 brackets emitted; one Hypothesis property test confirms `len(brackets) == 24` and the (tier × α × cache × κ) factorization is `3 × 2 × 2 × 2`.
@@ -199,8 +206,10 @@ This task is a coordination handoff; this repo's Wave-2 review verifies via `HAN
 
 **Acceptance:**
 - HANDOFF.md §"Cross-repo Wave-2 verdict" lists: cross-repo commit sha, forge test outcome (24/24 PASS or N/24 FAIL), envelope max-rel-error per bracket if FAIL.
-- If FAIL on ≥ 2 brackets, route per master-spec §2.3 HALT-trigger #2 to cohort_5_strip-level (geometry / strategy fix; route to A1).
+- If FAIL on ≥ 1 bracket, route per master-spec §2.3 to A1 (geometry / strategy fix). MQ-FLAG-B1.3 disposition aligns with master-spec exit of 24/24 strict.
 - If PASS, B1 closes; both Wave-2 RC+MQ on THIS plan dispatch.
+
+**Wait-timeout escape valve (RC-FLAG-3 disposition).** Task 3.2 explicit wait-cap: **30 calendar days** after Task 1.1's HANDOFF.md commit lands. If no cross-repo merge has occurred within 30 days, the orchestrator emits `scratch/2026-05-11-b1-foundry-handoff/STALLED.md` documenting the wait condition, marks B1 as STALLED in the master-spec milestone status, and surfaces to the user for one of: (a) extend the wait, (b) close B1 as DEFERRED and re-open after A1 completes, (c) escalate the cross-repo dependency. NO indefinite wait.
 
 **Commit message:** `coord(stage-3-b1): record cross-repo Wave-2 verdict in HANDOFF.md`
 
@@ -220,7 +229,7 @@ This task is a coordination handoff; this repo's Wave-2 review verifies via `HAN
 | Task 1.1 HANDOFF.md cites a non-canonical envelope formula (e.g., the v0.1-spec relative-error form) | HALT — RC Wave-1 catches this. |
 | Task 2.1 FX-path generator fails its Hypothesis property test | HALT — Senior Developer iterates; do NOT relax. |
 | Task 2.2 fx_paths_24_brackets.json round-trip fails or bracket count ≠ 24 | HALT — generator drift; route to cohort_2 spec §5.2 reconciliation. |
-| Task 3.2 cross-repo forge test FAILS on ≥ 2 brackets at 35% tolerance | HALT — route to A1 (strategy / geometry fix, not a B1-level fix per master-spec §2.3 HALT-trigger #2). |
+| Task 3.2 cross-repo forge test FAILS on ≥ 1 bracket at 35% tolerance | HALT — route to A1 (strategy / geometry fix, not a B1-level fix). MQ-FLAG-B1.3 disposition: master-spec §2.3 exit is 24/24 PASS strict, so ANY single-bracket FAIL is a HALT, not the "≥ 2/24" looser v0.1 condition. |
 | Cross-repo Foundry deployment can NOT provision any leg of the 12-leg strip on forked Panoptic | HALT — route to A1 (Panoptic strategy is unsupported; strategy swap required). |
 | Wave-1 or Wave-2 RC+MQ on this plan returns BLOCK | HALT per master-spec §6.1; CORRECTIONS-α landed in this plan's §11. |
 
@@ -236,15 +245,36 @@ This task is a coordination handoff; this repo's Wave-2 review verifies via `HAN
 | `simulations/saas_builder/data/fx_paths_24_brackets.json` | 2 | v1.0 (new) | sha over emitter inputs |
 | Cross-repo: `thetaSwap-core-dev/test/integration/StripReplication.t.sol` | 3 (cross-repo) | Solidity / Foundry | HANDOFF.md sha |
 
-## §11 CORRECTIONS-α (reserved)
+## §11 CORRECTIONS-α (patch log)
 
-v0.1 has no corrections. Wave-1 RC+MQ on this plan may land v0.2 → §11.1.
+### §11.1 v0.1 → v0.2 (Wave-1 RC+MQ disposition)
+
+**Wave-1 review verdict:** RC ACCEPT_WITH_FLAGS + MQ ACCEPT_WITH_FLAGS (2026-05-11). 0 BLOCKs. Verdict files:
+- `scratch/2026-05-11-stage-3-b1-rc-mq-review/rc-verdict.md`
+- `scratch/2026-05-11-stage-3-b1-rc-mq-review/mq-verdict.md`
+
+**Convergent finding (both reviewers).** RC-FLAG-1 + RC-FLAG-2 + MQ-FLAG-B1.2 converge on under-specified types/contracts in §6 Task 2.1/2.2. v0.2 pins all Value types (`ParameterBracket`, `TimeGrid`, `BracketId`) inline + pins `time_grid.n_points = 5000`.
+
+| Finding | Severity | Disposition | Location |
+|---------|----------|-------------|----------|
+| RC-FLAG-1 | Material | `ParameterBracket` is a NEW Value type in cohort_5_strip (NOT a re-import from cohort_2 — cohort_2 has `BracketPoint`/`BracketGrid` with a different shape). Factorization constants (`TIER_IDS`, `ALPHA_ARMS`, etc.) imported from cohort_2 if available; otherwise declared as module-level constants citing Stage-2 spec v1.2.1 §5.2 lines 383–388. | §6 Task 2.1 |
+| RC-FLAG-2 | Material | All three undefined types (`TimeGrid`, `BracketId`, `ParameterBracket`) pinned with full Value-tier specs. `TimeGrid` validates `t_end > t_start > 0`, `n_points >= 2`. `BracketId` is a `TypeAlias` for the canonical `"<tier>_<alpha>_<cache>_<kappa>"` string. | §6 Task 2.1 |
+| RC-FLAG-3 | Minor | Task 3.2 wait-timeout escape valve added: 30 calendar days; on stall, emit `STALLED.md` and surface to user for extend/defer/escalate. NO indefinite wait. | §7 Task 3.2 |
+| MQ-FLAG-B1.1 | Material | §"σ_T computation contract" in HANDOFF.md (Task 1.2) pinned: Foundry computes σ_T from PRIMITIVES.md §6 eq. (7) DISCRETELY on emitted FX samples, NOT from the Stage-2 closed-form path integral. | Task 1.2 acceptance |
+| MQ-FLAG-B1.2 | Material | `time_grid.n_points = 5000` pinned (mirrors cohort_4 `n_t_grid = 5000` Nyquist-compliant convention for $\sin(4\omega t)$ kernel at $\omega = 1$). JSON schema field constrained to exactly 5000 at emit time. | §6 Task 2.2 JSON schema |
+| MQ-FLAG-B1.3 | Material | HALT trigger tightened from "≥ 2/24 FAIL" to "≥ 1/24 FAIL" — aligns with master-spec §2.3 exit of 24/24 strict. Any single-bracket FAIL routes to A1. | §9 HALT routing + Task 3.2 |
+| PRIMITIVES.md §-cite off-by-one (MQ-NIT) | Cosmetic | All FX-path references corrected from "§6 eq. (6)" to "§5 eq. (6)" (eq. (6) is in §5 "Deterministic FX path generator"). Realized-variance references stay "§6 eq. (7)" (correct). | §6 Task 2.1 + JSON `primitives_anchor` field + §12 references |
+| `strip_audit_block_parent` field (MQ-NIT) | Cosmetic | Added to `fx_paths_24_brackets.json` schema for cross-fixture drift defense — if A2 re-emits the strip, the FX-paths file points to the OLD strip via this field, and the Foundry test asserts match before run. | §6 Task 2.2 JSON schema |
+
+### §11.2 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §11.3.
 
 ## §12 References
 
 - `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2 — master spec (§2.3 for this plan; §9.1 MQ-FLAG-1 disposition rationale; §8.1 cross-repo coordination acknowledgement).
 - `docs/specs/2026-05-07-saas-builder-stage-2-prereg-lock.md` §5.2 — 24-bracket parameter family (input to Task 2.x).
-- `notes/PRIMITIVES.md` §6 eq. (6) — FX-path generator (Phase 2 mathematical anchor); eq. (7) — realized variance (Foundry-side anchor); §11 — discrete strip; §12 — tolerance ledger.
+- `notes/PRIMITIVES.md` §5 eq. (6) — FX-path generator (Phase 2 mathematical anchor); §6 eq. (7) — realized variance (Foundry-side anchor); §11 — discrete strip; §12 — tolerance ledger.
 - `simulations/saas_builder/cohort_5_strip/replication.py:1-28` — canonical envelope-verifier docstring; the formula the Foundry test must implement.
 - `simulations/saas_builder/cohort_5_strip/types.py:57-74` — `REPLICATION_REL_TOL = 0.35` rationale.
 - `simulations/saas_builder/cohort_5_strip/__init__.py` — Pin S1–S8 framing that B1 verifies in-the-large.

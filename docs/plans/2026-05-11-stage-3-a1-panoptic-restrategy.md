@@ -6,10 +6,10 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.1 (initial draft — awaiting RC + MQ Wave-1 review per master-spec §6.1)
+**Plan version:** v0.2 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS — 8 FLAGs + 5 NITs disposed inline per §11.1)
 **Master spec:** `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`); Stage-2 verdict memo (`docs/specs/2026-05-09-saas-builder-stage-2-verdict-memo.md`)
-**Status:** DRAFT — Wave-1 review dispatch pending
+**Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized
 **Estimated wall-time:** 1–2 days of focused work
 
 ---
@@ -80,7 +80,7 @@ If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-co
 **Files:**
 - Create: `scratch/2026-05-11-a1-panoptic-survey/STRATEGY_COMPARISON.md`
 
-**Agent dispatch:** `general-purpose` agent with a research brief: read Panoptic's current public documentation (panoptic.xyz docs, GitHub README, recent blog posts) via WebFetch and produce a comparison table of available primitives.
+**Agent dispatch:** `general-purpose` agent with a research brief: read Panoptic's current public documentation (panoptic.xyz docs, GitHub README, recent blog posts) via WebFetch and produce a comparison table of available primitives. (RC-FLAG-1 disposition: `general-purpose` is the right specialist for web-research + markdown-authoring tasks where no domain-specific agent fits; per `memory/feedback_specialized_agents_per_task.md`'s spirit, the "specialist per task" rule maps RESEARCH+MARKDOWN tasks to `general-purpose` because no Panoptic-domain specialist exists in the agent catalog.)
 
 **Acceptance:**
 - Table has one row per primitive offered (e.g., long-strangle, short-strangle, long-straddle, butterfly, custom-leg combos, Streamia overlays).
@@ -122,8 +122,9 @@ If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-co
 **Agent dispatch:** `Senior Developer` (per `memory/feedback_specialized_agents_per_task.md` — types-tier work is Senior Developer scope), brief covers:
 - Read `simulations/saas_builder/cohort_5_strip/types.py` (IronCondor / IronCondorStrip / ReplicationVerdict) and `simulations/saas_builder/cohort_5_strip/replication.py` (CarrMadanEnvelopeVerifier).
 - Author a `StrategyAdapter` Protocol with a single method `build_strip(s_0, sigma_0, k_star) -> IronCondorStrip-equivalent` that any candidate primitive implements.
-- Author a `NormalizedEnvelopeScore` frozen-dc that wraps `ReplicationVerdict` with the additional fields `(primitive_id, comparability_proof: Literal["tiled_body", "primitive_variant", "normalized_score"])` per master-spec §2.1 phase 2 MQ-FLAG-3 disposition.
-- Author `StrategyAdapterError` and `ComparabilityProofMissingError` exceptions.
+- Author a `NormalizedEnvelopeScore` frozen-dc that wraps `ReplicationVerdict` with the additional fields `(primitive_id, comparability_proof: Literal["tiled_body", "primitive_variant", "normalized_score"], normalized_score: float)` per master-spec §2.1 phase 2 MQ-FLAG-3 disposition.
+- **Normalized score formula (MQ-FLAG-A1.2 disposition).** The `normalized_score` field is defined as `max_relative_error * (1.0 + abs(Π_strip(S_0)) / max(abs(Π_strip(S))))` over the verifier grid — a multiplicative correction that absorbs the non-tiled-body floor offset for non-reverse-IC primitives. Pin: this formula MUST be a frozen module-level constant; ex-post adjustment requires CORRECTIONS-α + a fresh Wave-1 review. Provides primitive-independent comparability when `comparability_proof = "normalized_score"`.
+- Author `StrategyAdapterError`, `ComparabilityProofMissingError`, and `ComparabilityProofFalsifiedError` exceptions (per MQ-FLAG-A1.5: catch both ABSENT and FALSE proofs).
 - Three-tier discipline (functional-python skill): frozen-dc only at Value tier; Protocol allowed.
 
 **Acceptance:**
@@ -165,10 +166,28 @@ If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-co
 **Acceptance:**
 - `EnvelopeComparator` frozen-dc with `__call__(adapters: tuple[StrategyAdapter, ...], fixture: TestPoint) -> tuple[NormalizedEnvelopeScore, ...]`.
 - Runs the SHIPPED `CarrMadanEnvelopeVerifier` against each adapter's built strip.
-- Returns scores sorted by `max_relative_error` ASCENDING (best replication first).
-- Raises `ComparabilityProofMissingError` if any adapter is missing its `comparability_proof` field — enforcing master-spec §2.1 phase 2 MQ-FLAG-3 caveat at runtime, not at review-time.
+- Returns scores sorted by `max_relative_error` ASCENDING (best replication first). On floating-point tie (`max_relative_error` equal within 1e-12), secondary sort by `primitive_id` lexicographically (MQ-NIT-A1.2 stability pin).
+- Raises `ComparabilityProofMissingError` if any adapter is missing its `comparability_proof` field.
+- **Comparability-proof verification (MQ-FLAG-A1.5).** For each adapter claiming `comparability_proof = "tiled_body"`, the comparator MUST runtime-verify by calling `cohort_5_strip.assert_long_vol_signature(strip)` on the built strip; if it fails, raise `ComparabilityProofFalsifiedError`. For `comparability_proof = "primitive_variant"`, the comparator MUST receive the primitive-specific verifier as a constructor argument (a `PrimitiveVariantVerifier` Protocol authored in Task 2.1); if absent, raise `ComparabilityProofMissingError`. For `comparability_proof = "normalized_score"`, the comparator uses `normalized_score` instead of raw `max_relative_error` for ranking.
 
 **Commit message:** `feat(cohort_5_strip/strategies): EnvelopeComparator with comparability-proof gate`
+
+---
+
+### Task 2.3b — Author primitive-variant verifiers if needed (MQ-FLAG-A1.1 disposition)
+
+**Files:**
+- Conditionally create: `simulations/saas_builder/cohort_5_strip/strategies/variant_verifiers.py`
+- Conditionally extend: `simulations/tests/test_saas_cohort5_strategies.py`
+
+**Agent dispatch:** `Senior Developer` (conditional — runs only if at least one Phase-1 filtered candidate uses `comparability_proof = "primitive_variant"`).
+
+**Acceptance:**
+- For each `primitive_variant` candidate, author a verifier function that mirrors `CarrMadanEnvelopeVerifier`'s contract (returns a `ReplicationVerdict`) but uses primitive-specific centering / proxy / β-fit. Each variant verifier MUST pass an equivalence test against `CarrMadanEnvelopeVerifier` when applied to a reverse-IC strip (numerical equivalence within 1e-12).
+- If no Phase-1 candidate uses `primitive_variant`, this task is SKIPPED with explicit rationale recorded in `scratch/2026-05-11-a1-panoptic-survey/STRATEGY_COMPARISON.md` §"Comparability proof routing".
+- This task is the explicit authoring step that v0.1 omitted (MQ-FLAG-A1.1: `primitive_variant` lane was referenced but never authored).
+
+**Commit message:** `feat(cohort_5_strip/strategies): primitive-variant verifiers for non-reverse-IC adapters`
 
 ---
 
@@ -177,12 +196,13 @@ If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-co
 **Files:**
 - Create: `scratch/2026-05-11-a1-panoptic-survey/envelope_evaluation_log.md`
 
-**Agent dispatch:** `Senior Developer` + `Reality Checker` (RC) for an inline cross-check of the numbers.
+**Agent dispatch:** `Senior Developer` + `Reality Checker` agent for an inline numerical cross-check (NOT a Wave-2 review — Wave-2 RC+MQ on A1's exit deliverables happens AFTER all phases complete; this RC dispatch is a per-task accuracy gate per RC-FLAG-2 disposition, scoped to verify the reproducibility tolerance only).
 
 **Acceptance:**
-- The eval log lists, for each filtered candidate, the `NormalizedEnvelopeScore` tuple including `(primitive_id, max_relative_error, tolerance=0.35, comparability_proof, raw_verdict_passes)`.
+- The eval log lists, for each filtered candidate, the `NormalizedEnvelopeScore` tuple including `(primitive_id, max_relative_error, normalized_score, tolerance=0.35, comparability_proof, raw_verdict_passes)`.
+- **Reverse-IC numerical baseline pin (MQ-NIT-A1.1):** reverse-IC at TP1 reports `max_relative_error ≈ 0.2813` (matching `simulations/saas_builder/data/IronCondor_strip.STRIKES.md` line 25 = `2.8134e-01`). Eval log entry for reverse-IC MUST match this value within 1e-6 — drift indicates upstream cohort_5_strip change.
 - TP1 fixture used: `(S_0=4000.0, sigma_0=20000.0, k_star=4687.94)` per master-spec §2.1 phase 2 line.
-- RC cross-check confirms each `max_relative_error` is reproducible by re-running the comparator independently and matching to ≥ 1e-9.
+- **Reproducibility tolerance pin (RC-FLAG-3 disposition):** independent re-runs of the comparator match within `1e-12` on `max_relative_error` (the verifier is deterministic — least-squares fit over a closed-form grid; tighter than the v0.1 `1e-9` which was unsourced). Source: the verifier has no stochastic components; `1e-12` is the floor for float64 arithmetic in the β-fit + grid-evaluation chain.
 - All raw outputs reproducible from the cohort_5_strip code at the commit pinned in `consumed_strip_audit_block`.
 
 **Commit message:** `eval(stage-3-a1): TP1 envelope evaluation log for all filtered candidates`
@@ -216,8 +236,13 @@ If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-co
     "consumed_strip_audit_block": "94150326..." (full strip audit at evaluation time)
   }
   ```
-- KEEP verdict iff `envelope_delta_vs_ironcondor_pp < 5.0` (strict).
-- REPLACE verdict iff there exists a candidate with `envelope_delta_vs_ironcondor_pp >= 5.0` (the master-spec §2.1 pre-pinned threshold; see Pin P-A1.4).
+- **Sign convention pin (MQ-FLAG-A1.4 disposition).** `envelope_delta_vs_ironcondor_pp = ironcondor.max_relative_error - candidate.max_relative_error`, expressed in percentage points (multiply by 100). Positive delta = candidate has LOWER envelope error = candidate REPLICATES BETTER than IronCondor. Negative delta = candidate is WORSE.
+- KEEP verdict iff `max(envelope_delta_vs_ironcondor_pp for all candidates) < 5.0` (strict — no candidate beats by ≥ 5pp).
+- REPLACE verdict iff at least one candidate has `envelope_delta_vs_ironcondor_pp >= 5.0` (the master-spec §2.1 pre-pinned threshold; see Pin P-A1.4).
+- **Multi-candidate tie-break pin (MQ-FLAG-A1.3 disposition).** If MULTIPLE candidates qualify above 5pp:
+  (i) winner = the candidate with the HIGHEST `envelope_delta_vs_ironcondor_pp` (most replication improvement);
+  (ii) on float-tie within `1e-12`, secondary sort by `primitive_id` lexicographic ascending;
+  (iii) if the float-tie spans more than 2 candidates AND they have different `comparability_proof` types, HALT — disposition memo, user-enumerated tie-break (the comparability-proof type-comparability question is unresolved within the plan).
 - `audit_block` covers `(STRATEGY_COMPARISON.md` sha256 + `envelope_evaluation_log.md` sha256 + `consumed_strip_audit_block` + this JSON's other fields)`.
 - A round-trip read-back test confirms the emitted JSON matches the in-memory verdict.
 
@@ -277,9 +302,30 @@ If Task 3.1 emitted KEEP, skip Task 3.2 entirely.
 | `simulations/saas_builder/cohort_5_strip/strategies/` package | 2 | code | reverse-IC adapter re-uses existing strip emit; new adapters are additive |
 | `docs/specs/2026-05-{NN}-cohort-5-strip-delta-spec.md` (if REPLACE) | 3 | spec stub | strategy_verdict.json audit |
 
-## §11 CORRECTIONS-α (reserved)
+## §11 CORRECTIONS-α (patch log)
 
-v0.1 has no corrections. Wave-1 RC+MQ on this plan may land v0.2 → §11.1.
+### §11.1 v0.1 → v0.2 (Wave-1 RC+MQ disposition)
+
+**Wave-1 review verdict:** RC ACCEPT_WITH_FLAGS + MQ ACCEPT_WITH_FLAGS (2026-05-11). 0 BLOCKs. Verdict files:
+- `scratch/2026-05-11-stage-3-a1-rc-mq-review/rc-verdict.md`
+- `scratch/2026-05-11-stage-3-a1-rc-mq-review/mq-verdict.md`
+
+| Finding | Severity | Disposition | Location |
+|---------|----------|-------------|----------|
+| MQ-FLAG-A1.1 | Material | New Task 2.3b authors primitive-variant verifiers when needed; equivalence-test against `CarrMadanEnvelopeVerifier` on reverse-IC required. v0.1 omitted this authoring step. | §6 Task 2.3b |
+| MQ-FLAG-A1.2 | Material | `normalized_score` formula pinned as a frozen module-level constant in Task 2.1 spec: `max_relative_error × (1 + |Π_strip(S_0)| / max|Π_strip|)`. Ex-post adjustment requires CORRECTIONS-α + fresh Wave-1 review. | §6 Task 2.1 |
+| MQ-FLAG-A1.3 | Material | Multi-candidate tie-break pinned: highest envelope-delta wins; float-tie → secondary sort by `primitive_id` ascending; multi-candidate float-tie with different comparability-proof types → HALT. | §7 Task 3.1 |
+| MQ-FLAG-A1.4 | Material | Sign convention pinned: `envelope_delta_vs_ironcondor_pp = ironcondor.max_relative_error - candidate.max_relative_error`, multiplied by 100 (percentage points); positive = candidate replicates BETTER. | §7 Task 3.1 |
+| MQ-FLAG-A1.5 | Material | New `ComparabilityProofFalsifiedError` exception class; comparator runtime-verifies `tiled_body` claims via `assert_long_vol_signature` and `primitive_variant` claims via the variant-verifier-equivalence test. | §6 Task 2.1 + Task 2.3 |
+| RC-FLAG-1 | Material | `general-purpose` dispatch rationale added: research+markdown tasks map to `general-purpose` because no Panoptic-domain specialist exists in the agent catalog (consistent with the spirit of `memory/feedback_specialized_agents_per_task.md`). | Task 1.1 |
+| RC-FLAG-2 | Material | Task 2.4 RC dispatch re-labeled explicitly as "per-task accuracy gate, NOT a Wave-2 review" — Wave-2 RC+MQ on A1 exit deliverables runs separately after all phases complete. | §6 Task 2.4 |
+| RC-FLAG-3 | Material | Task 2.4 reproducibility tolerance changed from unsourced `1e-9` to `1e-12` with rationale (verifier is deterministic; float64 floor). | §6 Task 2.4 |
+| MQ-NIT-A1.1 | Cosmetic | Reverse-IC numerical baseline pin added: `max_relative_error ≈ 0.2813` at TP1, matches `IronCondor_strip.STRIKES.md` line 25. Eval log MUST match within 1e-6. | §6 Task 2.4 |
+| MQ-NIT-A1.2 | Cosmetic | Comparator tie-break: secondary sort by `primitive_id` ascending (lexicographic) on float-tie within 1e-12. | §6 Task 2.3 |
+
+### §11.2 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §11.3.
 
 ## §12 References
 

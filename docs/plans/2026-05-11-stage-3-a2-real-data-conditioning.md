@@ -6,10 +6,10 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.1 (initial draft — awaiting RC + MQ Wave-1 review per master-spec §6.1)
+**Plan version:** v0.2 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS — 5 FLAGs + 6 NITs disposed inline per §12.1)
 **Master spec:** `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2
-**Predecessor:** Stage-2 verdict memo §9 (Stage-3 readiness checklist row #1); `simulations/saas_builder/cohort_1/` (C1 cost posterior); cohort_5_strip emit (commit `3442852`)
-**Status:** DRAFT — Wave-1 review dispatch pending
+**Predecessor:** Stage-2 verdict memo §9 (Stage-3 readiness checklist row #1); the C1 cost-posterior code at top-level `simulations/saas_builder/{emit,model,priors,diagnostics}.py` (NOT a `cohort_1/` sub-package — corrected per RC-A2-FLAG-1, §12.1); cohort_5_strip emit (commit `3442852`)
+**Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized once §12.1 corrections land
 **Estimated wall-time:** 3–6 weeks (sourcing is the long pole; not parallelizable beyond a small team)
 
 ---
@@ -26,7 +26,7 @@ The plan deliberately PRE-PINS the sourcing protocol (Phase 1) BEFORE any data i
 
 ## §2 Tech stack
 
-- Python 3.13, PyMC for the C1 re-fit (mirroring `simulations/saas_builder/cohort_1/model.py` conventions).
+- Python 3.13, PyMC for the C1 re-fit (mirroring `simulations/saas_builder/model.py` top-level C1 conventions).
 - Survey instrument: vendor-neutral DevSurvey-style; no external service procurement in scope. Channel deployment via the channels listed in `notes/SaaS_Builders_AI_NativeBuilders.md` §"Identification strategy".
 - Existing `simulations/utils/parquet_io.py` for the empirical-distribution emit.
 - Existing `simulations/saas_builder/cohort_5_strip/emit.py` re-driver for the post-re-pin strip emit.
@@ -63,7 +63,7 @@ simulations/saas_builder/data/
 ├── Z_cap_pinned.json                       Phase 3 OVERWRITE → schema v1.2 (adds parent_audit_block field)
 └── IronCondor_strip.json                   Phase 4 OVERWRITE via re-emit (schema v1.0 unchanged)
 
-simulations/saas_builder/cohort_1/   ← READ-ONLY; A2 swaps prior, NOT model structure
+simulations/saas_builder/{emit,model,priors,diagnostics}.py   ← READ-ONLY; A2 swaps prior, NOT model structure (top-level C1 implementation; NOT a cohort_1/ sub-package — see §12.1 RC-A2-FLAG-1)
 simulations/types/posterior.py       ← Modify Z_cap_pinned schema to v1.2 (add parent_audit_block optional field)
 simulations/utils/json_io.py         ← Update ZCapPinnedReader/Writer to accept v1.2
 
@@ -72,7 +72,7 @@ simulations/tests/
 └── test_z_cap_pinned_schema_v1_2.py         NEW: v1.0 / v1.1 / v1.2 reader compat
 ```
 
-The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**; only the cohort prior parquet that feeds it changes.
+The C1 model (`simulations/saas_builder/model.py`, top-level) is **not modified**; only the cohort prior parquet that feeds it changes.
 
 ---
 
@@ -100,19 +100,22 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 
 ---
 
-### Task 1.2 — Pre-pin lock the SOURCING_PROTOCOL.md via commit anchor
+### Task 1.2 — Pre-pin lock the SOURCING_PROTOCOL.md via two-commit dance (RC-A2-FLAG-2 disposition)
 
 **Files:**
-- Tag the commit landing Task 1.1 with a git tag `a2-sourcing-pinned-2026-05-NN`.
-- Record the commit sha at the top of `scratch/2026-05-11-a2-devsurvey/SOURCING_PROTOCOL.md` in a §0 lock-block.
+- Append to: `scratch/2026-05-11-a2-devsurvey/SOURCING_PROTOCOL.md` (NEW §0 lock-block referencing Task 1.1's commit sha).
+- Apply git tag `a2-sourcing-pinned-2026-05-NN` to THIS task's commit.
 
-**Agent dispatch:** N/A — orchestrator-only operation (the foreground records the sha; no specialist needed).
+**Agent dispatch:** N/A — orchestrator-only operation (the foreground edits the §0 lock-block + applies the tag; no specialist needed; per `memory/feedback_specialized_agents_per_task.md` shell-ops exception).
+
+**Two-commit-dance rationale (RC-A2-FLAG-2).** The chicken-and-egg in v0.1 (the §0 lock-block referencing its own commit sha is self-referential) is resolved by splitting: Task 1.1 commits the protocol BODY (sha = `commit_A`); Task 1.2 commits the §0 lock-block referencing `commit_A` (sha = `commit_B`); the git tag `a2-sourcing-pinned-2026-05-NN` is applied to `commit_B`. The temporal-ordering anchor for Pin P-A2.1 is the GIT-COMMIT-TIMESTAMP on `commit_A` (or `commit_B` — either works; both must precede the first data-row commit), NOT file mtime (which does not survive `git clone`).
 
 **Acceptance:**
-- Tag exists in git; sha recorded in §0 of the protocol.
-- This commit + tag PRECEDES any commit that adds rows to `cohort_distribution_empirical.parquet`. RC Wave-2 verifies this temporal ordering.
+- Tag exists in git pointing to `commit_B`.
+- `commit_A`'s git-commit-timestamp (`git log -1 --format=%cI commit_A`) PRECEDES every commit timestamp that touches `simulations/saas_builder/data/cohort_distribution_empirical.parquet`. RC Wave-2 verifies via `git log --format=%cI`.
+- The §0 lock-block contents in `SOURCING_PROTOCOL.md` reference `commit_A` (the body-commit sha), not `commit_B`.
 
-**Commit message:** N/A — this task adds the lock-block to an existing commit via amend? NO — repo convention forbids amending. Instead this task is its own commit: `lock(stage-3-a2): anchor sourcing protocol sha + git tag`
+**Commit message:** `lock(stage-3-a2): anchor sourcing protocol via §0 lock-block + git tag`
 
 ---
 
@@ -123,7 +126,7 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 **Files:**
 - Modify: `scratch/2026-05-11-a2-devsurvey/channel_deployment_log.md` (append-only running log)
 
-**Agent dispatch:** N/A for the actual outreach (this is human field work). The plan's responsibility is to require the log entries; an orchestrator agent (`Project Shepherd`) coordinates the log updates.
+**Agent dispatch:** N/A for the actual outreach (this is human field work; per `memory/feedback_specialized_agents_per_task.md` shell-ops / coordination exception). The plan's responsibility is to require the log entries; the foreground orchestrator edits the log directly (per shell-ops exception). `Project Shepherd` (in the agent catalog as a project-coordination agent) MAY be dispatched per-weekly-update for a structured log roll-up, but is not required for individual log entries. (RC-A2-FLAG-5 disposition.)
 
 **Acceptance:**
 - One log entry per channel deployment with: timestamp, channel, response count to date, sample composition (location / tier / role distribution snapshots).
@@ -137,7 +140,7 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 ### Task 2.2 — Land raw + processed responses to parquet
 
 **Files:**
-- Create: `simulations/saas_builder/data/cohort_distribution_empirical.parquet` (Hive-partitioned by channel; the `data/` directory is gitignored per repo convention, so the parquet is reproducible-from-source-of-truth, not committed)
+- Create: `simulations/saas_builder/data/cohort_distribution_empirical.parquet` (Hive-partitioned by channel; `simulations/saas_builder/data/` is gitignored at `.gitignore:53` covering this entire directory and matching the sibling artifacts `cohort_prior.parquet`, `Z_cap_pinned.json`, `IronCondor_strip.json`; the parquet is reproducible-from-raw-responses + audit-block-pinned and NOT committed — RC-A2-FLAG-3 disposition: gitignore decision is COMMIT-NOTHING-EXTEND-NOTHING because the existing rule covers it)
 - Create: `simulations/saas_builder/cohort_1_empirical/` (NEW thin sub-package under cohort_1's umbrella) with `io.py` IO Boundary that reads raw CSV / JSON responses into the parquet.
 
 **Agent dispatch:** `Data Engineer` agent — read `simulations/utils/parquet_io.py` conventions; author the IO Boundary class that lands raw responses into a hive-partitioned parquet with a deterministic audit_block.
@@ -163,7 +166,7 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 
 **Acceptance:**
 - `PercentileEstimator` frozen-dc with `__call__(empirical_parquet_path: Path) -> CohortPercentileTriple(c_p10, c_p50, c_p90)`.
-- Bootstrap or order-statistic confidence intervals on each percentile reported (NOT a point estimate alone) — mirrors Stage-2's CI-width gate posture.
+- **Pre-pinned CI method (MQ-A2-5 disposition):** BCa (bias-corrected accelerated) bootstrap with 10,000 resamples for the P10 and P90 tail percentiles (where ordinary bootstrap is biased at small $N$); ordinary bootstrap with 10,000 resamples for the P50 median. The choice MUST be pinned in `SOURCING_PROTOCOL.md` §3 BEFORE any data lands (anti-fishing: locking the CI method ex-post would be an anti-fishing pattern). NOT a point estimate alone — mirrors Stage-2's CI-width gate posture.
 - `sample_audit.md` reports: total $N$, per-channel $N_c$, max-channel-share fraction (must be $\le 0.60$ per Phase-1 stop rule), location distribution, tier-mix distribution. Survey-method bias caveat carried forward from SOURCING_PROTOCOL.md §5.
 - HALT condition: $N < 75$ OR max-channel-share > 0.60 → HALT; route to channel-deployment extension.
 
@@ -178,7 +181,7 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 **Files:**
 - Modify: `simulations/saas_builder/data/cohort_prior.parquet` (OVERWRITE — bump schema version row from v1.0 synthetic to v1.1 empirical)
 
-**Agent dispatch:** `Data Engineer` — read `simulations/saas_builder/cohort_1/emit.py` (where `cohort_prior.parquet` is originally written) and `simulations/saas_builder/priors.py` (prior-hyperparameter conventions). Produce a one-shot script that consumes `cohort_distribution_empirical.parquet` + the `CohortPercentileTriple` and overwrites `cohort_prior.parquet` with the empirical version.
+**Agent dispatch:** `Data Engineer` — read `simulations/saas_builder/emit.py` (where `cohort_prior.parquet` is originally written; top-level C1 location, NOT `cohort_1/emit.py`) and `simulations/saas_builder/priors.py` (prior-hyperparameter conventions). Produce a one-shot script that consumes `cohort_distribution_empirical.parquet` + the `CohortPercentileTriple` and overwrites `cohort_prior.parquet` with the empirical version.
 
 **Acceptance:**
 - New `cohort_prior.parquet` carries empirical percentile triple in its prior fields; v1.0 synthetic Pareto fields are zeroed and the schema-version field is bumped to v1.1.
@@ -192,7 +195,7 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 ### Task 3.2 — Re-fit C1 against the empirical prior
 
 **Files:**
-- Modify: `simulations/saas_builder/cohort_1/` posterior re-fit driver (existing entry point at `cohort_1/emit.py::CohortEmitter`)
+- Modify: `simulations/saas_builder/` top-level C1 re-fit driver (existing entry point at `simulations/saas_builder/emit.py::CohortEmitter`; NOT `cohort_1/emit.py` — RC-A2-FLAG-1 path correction)
 - Create: `scratch/2026-05-11-a2-devsurvey/prior_swap_rationale.md` (MQ-NIT-1 disposition record)
 
 **Agent dispatch:** `AI Engineer` (PyMC-trained agent; cohort-1 model is PyMC) + `Reality Checker` for the diagnostic gate verification.
@@ -223,7 +226,7 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 
 **Acceptance:**
 - PSIS-LOO-CV re-run on the post-A2-re-fit C1 posterior + the Stage-2 C3 Υ_t-form candidates (martingale, AR(1)-log, det+churn).
-- HALT if `winning_form != "ar1_log"` or if `ranked_forms[1] != "det_churn"` (the Stage-2 §15.4 rank-flip safeguard) — disposition memo, route to user-enumerated pivot.
+- HALT if `winning_form != "ar1_log"` OR `ranked_forms[1] != "det_churn"` OR the Stage-2 INDISTINGUISHABLE-verdict-band crossing flips (e.g., the post-empirical-prior verdict moves from INDISTINGUISHABLE to {WEAK, MARGINAL, PASS, FAIL} per spec v1.2.1 §9 verdict-band semantic) — disposition memo, route to user-enumerated pivot per Stage-2 §15.4. (MQ-A2-2 disposition: v0.1's HALT was strictly weaker than Stage-2 §15.4 — caught rank flips but missed verdict-band crossings; v0.2 tightens.)
 - Per MQ-NIT-2: this safeguard scope is Υ_t-LOO ranking ONLY, NOT cost-prior ranking. The rationale document MUST state this verbatim.
 
 **Commit message:** `verify(stage-3-a2): Υ_t LOO rank-flip safeguard re-PASS under empirical prior`
@@ -335,9 +338,31 @@ The C1 model (`simulations/saas_builder/cohort_1/model.py`) is **not modified**;
 | `simulations/saas_builder/data/IronCondor_strip.json` re-emit | 4 | v1.0 (unchanged) | Z_cap v1.2 audit |
 | `simulations/types/posterior.py` / `simulations/utils/json_io.py` | 3 | code | (additive schema bump) |
 
-## §12 CORRECTIONS-α (reserved)
+## §12 CORRECTIONS-α (patch log)
 
-v0.1 has no corrections. Wave-1 RC+MQ on this plan may land v0.2 → §12.1.
+### §12.1 v0.1 → v0.2 (Wave-1 RC+MQ disposition)
+
+**Wave-1 review verdict:** RC ACCEPT_WITH_FLAGS + MQ APPROVE-WITH-NITS (2026-05-11). 0 BLOCKs. Verdict files:
+- `scratch/2026-05-11-stage-3-a2-rc-mq-review/rc-verdict.md`
+- `scratch/2026-05-11-stage-3-a2-rc-mq-review/mq-verdict.md`
+
+| Finding | Severity | Disposition | Location |
+|---------|----------|-------------|----------|
+| RC-A2-FLAG-1 | Material (BLOCKING-for-execution) | All `simulations/saas_builder/cohort_1/` references corrected to top-level `simulations/saas_builder/{emit,model,priors,diagnostics}.py`. C1 was never namespaced. 12+ occurrences updated. | §4 file structure, Task 3.1, Task 3.2 |
+| RC-A2-FLAG-2 | Material (BLOCKING-Task-1.2) | Task 1.2 rewritten as a two-commit dance: Task 1.1 commits the body (`commit_A`); Task 1.2 appends the §0 lock-block referencing `commit_A` and applies the git tag to `commit_B`. Temporal-ordering anchor is git-commit-timestamp, NOT file mtime (which doesn't survive `git clone`). | Task 1.2 |
+| RC-A2-FLAG-3 | Material (gitignore decision) | Verified `.gitignore:53` covers `simulations/saas_builder/data/` (full directory), so the empirical parquet inherits gitignore correctly. Plan now cites `.gitignore:53` explicitly. RC's earlier reading was based on `data/*.parquet` rule alone; the full-directory rule resolves the question. Decision: COMMIT-NOTHING-EXTEND-NOTHING. | Task 2.2 |
+| RC-A2-FLAG-4 | NIT | Add `_DEPRECATED_NAME.md` sidecar to `simulations/saas_builder/data/synthetic_tau_t/` at Task 3.2 re-emit time (one-line file noting Stage-4 cleanup will rename). | Task 3.2 acceptance |
+| RC-A2-FLAG-5 | NIT | `Project Shepherd` confirmed as a cataloged agent (project-coordination role); v0.2 clarifies that for individual log entries the foreground edits directly (shell-ops exception per `memory/feedback_specialized_agents_per_task.md`), and Project Shepherd is reserved for structured weekly roll-ups. | Task 2.1 |
+| MQ-A2-1 | Cosmetic-but-load-bearing | `prior_swap_rationale.md` must explicitly state "no per-tier $\theta_k$ in A2; per-tier differentiation deferred to second-wave (STAGE_2_RESULTS.md §5 open item 3)." Prevents silent scope creep at re-fit time. | Task 3.2 acceptance |
+| MQ-A2-2 | Material | Task 3.3 HALT condition tightened to also catch verdict-band crossings (INDISTINGUISHABLE → {WEAK, MARGINAL, PASS, FAIL}) per spec v1.2.1 §9 semantic. v0.1 captured only rank-order flips. | Task 3.3 |
+| MQ-A2-3 | Cosmetic | `prior_swap_rationale.md` states the spec gates ($r̂ < 1.01$, ESS_bulk ≥ 1000, divergence_frac = 0.0, ci_width_ratio_max ≤ 1.10) are LOAD-BEARING; if `simulations/saas_builder/diagnostics.py` carries looser code-level defaults, the spec gates override. | Task 3.2 acceptance |
+| MQ-A2-4 | Cosmetic | Acknowledge cohort_5_strip Pin S6 docstring drift fix (35%, not 5%) per master-spec §9.2 ticket — already landed in commit `78841b1`. No further action in A2. | (informational) |
+| MQ-A2-5 | Material if $N \approx 75$ | Bootstrap variant pre-pinned in SOURCING_PROTOCOL.md §3: BCa (10,000 resamples) for P10/P90 tails; ordinary bootstrap (10,000 resamples) for P50. Locks CI method ex-ante per anti-fishing. | Task 1.1 §3 + Task 2.3 acceptance |
+| MQ-A2-6 | Workflow | A1↔A2 wall-time interleaving — deferred to operator scheduling discretion; master-spec §3 dependency graph already covers A1↔B1 soft dep, and A2's strip re-verification (Phase 4) would catch any A1-driven strategy swap retroactively. No spec change. | (operational) |
+
+### §12.2 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §12.3.
 
 ## §13 References
 
@@ -347,7 +372,7 @@ v0.1 has no corrections. Wave-1 RC+MQ on this plan may land v0.2 → §12.1.
 - `notes/STAGE_2_RESULTS.md` §2.5 — R5 marginalization analytic-form proof (MQ-NIT-1 anchor).
 - `notes/SaaS_Builders_AI_NativeBuilders.md` §"Identification strategy" — A2 sourcing channels.
 - `notes/PRIMITIVES.md` §4.2 — calibration sources.
-- `simulations/saas_builder/cohort_1/` — read-only consumer of `cohort_prior.parquet`.
+- `simulations/saas_builder/{emit,model,priors,diagnostics}.py` (top-level) — read-only consumer of `cohort_prior.parquet`.
 - `simulations/saas_builder/cohort_4/io.py::pin_and_emit` — Z_cap re-emit driver.
 - `simulations/saas_builder/cohort_5_strip/emit.py::StripEmitter` — strip re-emit driver.
 - `memory/feedback_no_code_in_specs_or_plans.md` / `memory/feedback_specialized_agents_per_task.md` — orchestration conventions.
