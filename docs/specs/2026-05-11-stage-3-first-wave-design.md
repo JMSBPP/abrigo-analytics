@@ -1,6 +1,6 @@
 ---
 spec_id: stage-3-first-wave-design
-spec_version: v0.1 (initial draft — awaiting RC + MQ 2-way review)
+spec_version: v0.2 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS — 8 FLAGs + 3 NITs disposed inline per §9.1)
 emit_timestamp_utc: 2026-05-11
 parent_framework: notes/PRIMITIVES.md (a_s / a_l / CPO primitives)
 cohort_note: notes/SaaS_Builders_AI_NativeBuilders.md (cohort instantiation of §4.2)
@@ -9,7 +9,7 @@ stage_2_results_anchor: notes/STAGE_2_RESULTS.md (R1–R8 closed-form identities
 strip_emit_anchor: simulations/saas_builder/cohort_5_strip/ (IronCondor_strip.json — schema v1.0)
 authority: CLAUDE.md anti-fishing invariants (NON-NEGOTIABLE); brainstorming flow; feedback_pathological_halt_anti_fishing_checkpoint
 predecessor: none (first Stage-3 spec)
-status: DRAFT — awaiting §6.1 Wave-1 RC+MQ 2-way review (both reviewers per wave)
+status: Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — 0 BLOCKs across both reviewers; per-track plan drafting authorized per §6.1
 ---
 
 # Stage-3 first-wave readiness portfolio — master design spec
@@ -56,17 +56,29 @@ TODAY by the Stage-2 PASS verdict and the cohort_5_strip emit
   `thetaSwap-core-dev` repo; analytics-side coordination is via the
   JSON artifact and this spec.
 
-**Out of scope (deferred to a follow-up Stage-3 wave).** A3 (per-tier
-θ_k differentiation), B2 (Streamia premium plumbing), C1 (stochastic-FX
-variant), C2 (hierarchical pooling for C3). These items are deferred
-to a second Stage-3 wave once A1/A2/B1 close.
+**Out of scope (deferred to a follow-up Stage-3 wave).** Per the
+Stage-2 verdict memo §9 Stage-3 readiness checklist:
+
+- **A3** — per-tier $\theta_k$ differentiation (resolves C1 MQ-FLAG-1).
+- **B2** — Streamia / Superfluid premium plumbing
+  (PRIMITIVES.md §13 variable-map rows 7–8: "Stage-3 plumbing";
+  not enumerated in Stage-2 verdict memo §9 explicitly but inherits
+  from the operating-framework Stage-3 deployment exit).
+- **Weibull k ≠ 1 falsification** of $S_t = (1-\lambda)^t$
+  (Stage-2 spec v1.2.1 §6.1 pre-pinned Stage-3 test;
+  RC-FLAG-2 disposition: added to deferred set).
+- **C1 stochastic-FX variant** — PRIMITIVES.md §15 open item 2.
+- **C2 hierarchical pooling** for C3 across multiple trajectories
+  (resolves `_first_trajectory` limitation).
+
+These items are deferred to a second Stage-3 wave once A1/A2/B1 close.
 
 **Anti-fishing scope guard.** This spec is a SCOPE-AND-GATE document.
 It does NOT pre-pin scientific outcomes (e.g., "A2 will find Z_cap is
 commercially material") and does NOT pre-pin engineering verdicts
 (e.g., "A1 will keep IronCondor"). Such pre-pinning would be exactly
 the post-hoc-fishing pattern that
-`feedback_pathological_halt_anti_fishing_checkpoint` bans. The exit
+`memory/feedback_pathological_halt_anti_fishing_checkpoint.md` bans. The exit
 criteria below are deliverable-existence checks, not outcome-direction
 constraints.
 
@@ -84,7 +96,7 @@ Inherited verbatim from CLAUDE.md and the Stage-2 spec lock:
   BEFORE any data is touched.
 - HALT + disposition memo + user-enumerated pivot + CORRECTIONS block +
   post-hoc 3-way review whenever spec contradicts data (per
-  `feedback_pathological_halt_anti_fishing_checkpoint`).
+  `memory/feedback_pathological_halt_anti_fishing_checkpoint.md`).
 
 ### §1.2 Three-tier discipline (analytics-side tracks A1, A2)
 
@@ -109,13 +121,19 @@ chain:
 - B1 forge tests must load the strip audit_block from the JSON header
   and surface it in test output for cross-repo traceability.
 
+**Footnote (MQ-NIT-3 disposition, §9.1).** The sha256 audit_block
+covers all fields of the emitted JSON artifact. Silent drift in
+non-hashed fields (compiler version, numpy version, OS-level FP
+mode) is out of scope and is tracked at the `parent_audit_block`
+chain level in §4 rather than at the per-artifact sha.
+
 ### §1.4 Decision-citation block (per spec/plan section)
 
 Every claim that drives a decision (test choice, threshold, form pin)
 carries a 4-part citation: **Reference** (file:line) · **Why**
 (motivating constraint) · **Relevance** (downstream consumer) ·
 **Connection** (closes which open item / FLAG / BLOCK). Per
-`feedback_notebook_citation_block.md`.
+`memory/feedback_notebook_citation_block.md`.
 
 ## §2 Per-track exit criteria
 
@@ -135,8 +153,27 @@ direction pinning.
    adapted to the candidate's leg topology) and run
    `CarrMadanEnvelopeVerifier` against the same log-contract proxy at
    the canonical TP1 fixture $(S_0=4000, \sigma_0=20000, K^\star=4687.94)$.
-   Reuse of the shipped verifier ensures cross-candidate envelope
-   comparability.
+
+   **Comparability caveat (MQ-FLAG-3 disposition, §9.1).** The shipped
+   `CarrMadanEnvelopeVerifier` is reverse-IC-tuned: its
+   `assert_long_vol_signature` check assumes the tiled-body convention
+   under which `Π_strip(S_0) ≈ 0` so the centered-strip metric equals
+   the raw strip metric. For non-reverse-IC primitives (butterfly,
+   strangle, custom-leg combos), the floor at S_0 is generically
+   non-zero. The A1 plan MUST demonstrate one of the following before
+   declaring a cross-primitive envelope number comparable:
+
+   (a) the candidate primitive admits the same tiled-body convention
+   (S_0 lies in every condor/leg-cluster's inner body), in which case
+   the existing verifier applies unchanged;
+   (b) a primitive-specific verifier variant is introduced and shown
+   numerically equivalent on a reverse-IC baseline; OR
+   (c) the comparison is restricted to a normalized score
+   (e.g., `max_relative_error / envelope_at_zero_strip`) that is
+   provably scale- and floor-invariant.
+
+   Bare reuse of "the same verifier" is NOT a sufficient
+   comparability argument and is a HALT trigger at A1 plan review.
 3. Verdict — KEEP_IRONCONDOR (no strategy change; close A1) OR
    REPLACE_WITH_X (emit `STRATEGY_DELTA_SPEC.md` describing the
    cohort_5_strip refactor required to support strategy X, with the
@@ -156,10 +193,12 @@ direction pinning.
   memo, user-enumerated pivot to a richer schema or to a non-Panoptic
   venue.
 - Pre-pinned envelope-comparison threshold for REPLACE: candidate X
-  must beat the existing IronCondor by ≥ 5 percentage points on the
+  must beat the existing IronCondor by ≥ 5 percentage points (absolute,
+  on the `CarrMadanEnvelopeVerifier.max_relative_error` field) on the
   TP1 envelope metric. Anything inside that margin → KEEP verdict.
-  Pre-pinned BEFORE the comparison table is built (anti-fishing per
-  §1.1).
+  This threshold is **content-addressed in Pin P-A1.4** (§5); any
+  post-comparison adjustment requires CORRECTIONS-α and a fresh RC+MQ
+  Wave-1 review on this master spec.
 
 ### §2.2 Track A2 — Real-data cohort conditioning
 
@@ -174,9 +213,26 @@ direction pinning.
 2. Distribution fit — produce empirical
    $(\bar C^{P10}, \bar C^{P50}, \bar C^{P90})$ for LATAM solo
    AI-builders; check survey-method bias against
-   `feedback_pre_pinned_sign_protects_anti_fishing.md`.
-3. Re-fit + re-pin — C1 cost posterior re-fits against the empirical
-   prior; Z_cap re-pins to v1.2; cohort_5_strip re-emits.
+   `memory/feedback_pathological_halt_anti_fishing_checkpoint.md`
+   (RC-FLAG-1 disposition: the prior reference to a non-existent
+   `feedback_pre_pinned_sign_protects_anti_fishing.md` file was
+   replaced with the actually-shipped HALT-checkpoint feedback file).
+3. Re-fit + re-pin — C1 cost prior is replaced by the empirical
+   $(\bar C^{P10}, \bar C^{P50}, \bar C^{P90})$ percentile family;
+   R5's analytic marginalization (STAGE_2_RESULTS.md §2.5) carries
+   through unchanged, only the LSE prior-weights are re-evaluated.
+   Z_cap re-pins to v1.2; cohort_5_strip re-emits.
+
+4. **Re-verification of strip pins (MQ-FLAG-4 disposition, §9.1).**
+   After Z_cap v1.2 re-pin and the cohort_5_strip re-emit against the
+   new K⋆, re-run `CarrMadanEnvelopeVerifier` AND
+   `assert_long_vol_signature` on the re-emitted strip. Pins S1–S8
+   preservation is an EMPIRICAL claim under the K⋆ shift, not a
+   tautology — Pin S3 (`x_left < 0 < x_right`) and Pin S2
+   (`Σw_j = 1`) are K⋆-scale-invariant, but the tiled-body geometry
+   depends on `delta_inner` choice, and a sufficiently extreme K⋆
+   shift could break the long-vol signature. If either re-verification
+   FAILS, HALT and route to A1 (strategy / geometry re-tune).
 
 **Exit deliverables:**
 - `docs/plans/2026-05-11-stage-3-a2-real-data-conditioning.md`
@@ -221,10 +277,29 @@ re-author it.
    PRIMITIVES.md §6 eq. (6) at the 24-bracket parameter family from
    Stage-2 spec §5.2; for each path compute realized σ_T and net LP
    P&L.
-4. Envelope assertion — assert
-   $|\Pi_{\text{realized}} - \hat K \cdot \sigma_T| / |\hat K \cdot \sigma_T| \le 0.35$
-   (matching the cohort_5_strip 3-condor envelope tolerance from
-   `simulations/saas_builder/cohort_5_strip/types.py::REPLICATION_REL_TOL`).
+4. Envelope assertion — apply the shipped `CarrMadanEnvelopeVerifier`
+   form, NOT a re-derived relative-error expression
+   (MQ-FLAG-1 disposition, §9.1):
+
+   - Center the realized strip P&L by its value at $S_0$:
+     $\Pi^{\text{centered}}_{\text{realized}}(S_T) =
+      \Pi_{\text{realized}}(S_T) - \Pi_{\text{realized}}(S_0)$.
+   - Compute the log-contract proxy
+     $Q(S_T) = -2 \log(S_T/S_0) + 2(S_T-S_0)/S_0$ on the same grid.
+   - Best-fit a single scale $\hat\beta$ minimizing
+     $\sum (\Pi^{\text{centered}}_{\text{realized}} - \hat\beta \cdot Q)^2$.
+   - Assert
+     $\max | \Pi^{\text{centered}}_{\text{realized}} - \hat\beta \cdot Q |
+      \;/\; \max |\Pi^{\text{centered}}_{\text{realized}}|
+      \;\le\; 0.35$.
+
+   This is the exact form documented in
+   `simulations/saas_builder/cohort_5_strip/replication.py:1-28`
+   and pinned by `REPLICATION_REL_TOL` (`types.py:74`). The
+   $|\Pi - \hat K\sigma_T| / |\hat K \sigma_T|$ form an earlier draft
+   used is mathematically distinct and has a denominator collapse as
+   $\sigma_T \to 0$; B1 MUST cite the verifier's docstring, not
+   re-derive informally.
 
 **Exit deliverables:**
 - `docs/plans/2026-05-11-stage-3-b1-foundry-scaffolding.md` (this
@@ -309,10 +384,12 @@ Per-plan Pin tables refine them.
 | **P-A1.1** | this §2.1 phase 1 | A1 | comparison-table coverage — all Panoptic primitives admitting a deterministic strike+weight emit are listed; absence justified |
 | **P-A1.2** | this §2.1 phase 2 | A1 | envelope evaluation reproducible (audit_block on `strategy_verdict.json`) |
 | **P-A1.3** | this §2.1 phase 3 | A1 | KEEP/REPLACE verdict carries a citation to the comparison-table row that drives it |
+| **P-A1.4** | this §2.1 HALT-triggers bullet 2 | A1 | **5pp REPLACE margin is content-addressed in master spec v0.2 (this row); on the `CarrMadanEnvelopeVerifier.max_relative_error` field, absolute. Post-comparison adjustment requires CORRECTIONS-α and a fresh RC+MQ Wave-1 review on this master spec.** (MQ-FLAG-2 / RC-FLAG-3 convergent disposition, §9.1.) |
 | **P-A2.1** | this §2.2 phase 1 | A2 | sourcing protocol PRE-PINNED before any data touched (anti-fishing) |
 | **P-A2.2** | this §2.2 phase 2 | A2 | sample $N \ge 75$ AT EXIT (NOT at pre-registration; pre-registration only commits to the floor) |
 | **P-A2.3** | this §2.2 phase 3 | A2 | C1 diagnostic gates re-PASS at re-fit ($r̂ < 1.01$, ESS_bulk ≥ 1000) |
-| **P-A2.4** | this §2.2 phase 3 + Stage-2 §15.4 | A2 | rank-flip safeguard armed |
+| **P-A2.4** | this §2.2 phase 3 + Stage-2 §15.4 | A2 | Υ_t PSIS-LOO ranking against det+churn (R7) is re-evaluated under the empirical cost prior; any rank flip triggers HALT per Stage-2 §15.4 semantic. (NOT a cost-prior rank flip — MQ-NIT-2 disposition.) |
+| **P-A2.5** | this §2.2 phase 4 | A2 | Strip-pin re-verification: `CarrMadanEnvelopeVerifier` AND `assert_long_vol_signature` re-run on the cohort_5_strip re-emit under Z_cap v1.2's new K⋆; HALT-and-route-to-A1 on either failure (MQ-FLAG-4 disposition). |
 | **P-B1.1** | this §2.3 phase 1 | B1 | JSON loader validates schema_version and audit_block (defense in depth against analytics-side drift) |
 | **P-B1.2** | this §2.3 phase 4 | B1 | envelope assertion uses cohort_5_strip-pinned tolerance (35%), NOT a re-derived value (anti-fishing) |
 | **P-X.1** | §6 | all | RC + MQ Wave-1 review on each plan ACCEPT / ACCEPT_WITH_FLAGS before execution |
@@ -332,7 +409,7 @@ master spec + the candidate plan + the relevant `notes/`,
 
 - **Agent 1 — `reality-checker` (RC)** — verifies the plan's claims are
   evidence-grounded and traceable to repo state. Default posture is
-  NEEDS WORK per `feedback_pathological_halt_anti_fishing_checkpoint`.
+  NEEDS WORK per `memory/feedback_pathological_halt_anti_fishing_checkpoint.md`.
 - **Agent 2 — `math-quality` (MQ)** — verifies the plan's math
   derivations, identifications, and dimensional consistency against
   PRIMITIVES.md, STAGE_2_RESULTS.md, and the cohort_5_strip code.
@@ -443,11 +520,50 @@ This spec discloses limitations honestly:
    Exit criteria are deliverable-existence + review-PASS, not outcome-
    direction.
 
-## §9 CORRECTIONS-α (future patch block)
+## §9 CORRECTIONS-α (patch log)
 
-Reserved for in-place CORRECTIONS-α patches if RC/MQ Wave-1 review on
-this master spec returns BLOCKs that require structural changes.
-v0.1 has no corrections; v0.2 (if needed) lands here.
+### §9.1 v0.1 → v0.2 (RC + MQ Wave-1 review disposition)
+
+**Wave-1 review verdict:** RC ACCEPT_WITH_FLAGS + MQ ACCEPT_WITH_FLAGS
+(2026-05-11). 0 BLOCKs. 4 RC FLAGs + 3 RC NITs + 4 MQ FLAGs + 3 MQ NITs.
+Verdict files:
+
+- `scratch/2026-05-11-stage-3-first-wave-spec-review/rc-verdict.md`
+- `scratch/2026-05-11-stage-3-first-wave-spec-review/mq-verdict.md`
+
+Per §6.1 ACCEPT_WITH_FLAGS, non-BLOCKING FLAGs are disposed inline by
+the spec author below.
+
+| Finding | Severity | Disposition | Spec location of fix |
+|---------|----------|-------------|-----------------------|
+| MQ-FLAG-1 | Material | B1 envelope assertion rewritten to match shipped `CarrMadanEnvelopeVerifier` form (centered strip vs log-contract proxy, best-fit β, peak-normalized residual). Replaces the prior `\|Π−K̂σ\|/\|K̂σ\|` form which had denominator collapse. | §2.3 phase 4 |
+| MQ-FLAG-2 + RC-FLAG-3 (convergent) | Material | New Pin **P-A1.4** content-addresses the 5pp REPLACE margin in master spec v0.2. Post-hoc adjustment requires CORRECTIONS-α + Wave-1 re-review. | §5 pin table; §2.1 HALT-trigger bullet cross-references P-A1.4 |
+| MQ-FLAG-3 | Material | A1 phase 2 amended with comparability caveat: bare `CarrMadanEnvelopeVerifier` reuse on non-reverse-IC primitives is a HALT trigger; comparability MUST be demonstrated via (a) tiled-body convention, (b) primitive-specific verifier variant, or (c) normalized score. | §2.1 phase 2 |
+| MQ-FLAG-4 | Material | New phase 4 in A2: re-run `CarrMadanEnvelopeVerifier` + `assert_long_vol_signature` on the post-K⋆-shift strip; HALT-and-route-to-A1 on failure. New Pin **P-A2.5** added. | §2.2 phase 4 + §5 |
+| MQ-NIT-1 | Cosmetic | §2.2 phase 3 rewording: explicit that R5 marginalization is analytic and unchanged; only the prior weights are re-evaluated. | §2.2 phase 3 |
+| MQ-NIT-2 | Cosmetic | P-A2.4 wording tightened to explicitly scope rank-flip to Υ_t LOO comparison (NOT cost-prior rank flip). | §5 P-A2.4 |
+| MQ-NIT-3 | Cosmetic | §1.3 footnote added clarifying sha256 covers all emitted-JSON fields; out-of-scope drift (compiler/numpy version) tracked at `parent_audit_block` chain level. | §1.3 |
+| RC-FLAG-1 | Cosmetic | All 6 bare-name `feedback_*` citations prefixed with `memory/` to match actual repo layout. Also: the non-existent `feedback_pre_pinned_sign_protects_anti_fishing.md` reference in §2.2 phase 2 was replaced with the actually-shipped `memory/feedback_pathological_halt_anti_fishing_checkpoint.md`. | §0 authority, §0 scope guard, §1.1, §1.4, §2.2 phase 2, §6.1 RC role, §10 references |
+| RC-FLAG-2 | Material | §0 deferred-list expanded: A3 / B2 / C1 / C2 retained; **Weibull k ≠ 1 falsification** added (Stage-2 spec v1.2.1 §6.1 pre-pin). B2 parent citation clarified as inheriting from operating-framework Stage-3 deployment exit rather than a verbatim Stage-2 §9 row. | §0 out-of-scope list |
+| RC-FLAG-4 | Material | Disposition deferred to cohort_5_strip code patch (NOT master spec): the Pin S6 docstring inconsistency (says ≤ 5%, code is 0.35) is an internal cohort_5_strip drift between commit `3442852`'s `__init__.py:21` Pin S6 description and `types.py:74` `REPLICATION_REL_TOL`. Patch ticket opened in §9.2 below for the next cohort_5_strip commit. | §9.2 (this spec); cohort_5_strip patch (follow-up) |
+
+### §9.2 Outstanding code-patch tickets
+
+The following are NOT spec changes but cohort_5_strip code patches
+that must land before B1 begins (RC-FLAG-4 disposition):
+
+1. **cohort_5_strip Pin S6 docstring drift.** `simulations/saas_builder/cohort_5_strip/__init__.py:21`
+   describes Pin S6 with "max relative error vs log-contract proxy ≤
+   5% over a 17-point grid." The shipped tolerance is 0.35
+   (`types.py:74`). Patch: update the `__init__.py` Pin S6 description
+   to "≤ 35%" matching `REPLICATION_REL_TOL`, with the rationale
+   (3-piece linear approximation theoretical floor) from `types.py:60-72`.
+
+### §9.3 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ review on each track's exit deliverables will land its
+own CORRECTIONS-α block here at §9.{N+1} per track. v0.2 ships with
+only v0.1 → v0.2 corrections recorded.
 
 ## §10 References
 
@@ -476,11 +592,11 @@ v0.1 has no corrections; v0.2 (if needed) lands here.
 **Framework:**
 - `CLAUDE.md` — operating framework, anti-fishing invariants,
   Stage-1/2/3 gating, ideal-scenario clause.
-- `feedback_pathological_halt_anti_fishing_checkpoint.md` — HALT
+- `memory/feedback_pathological_halt_anti_fishing_checkpoint.md` — HALT
   routing protocol.
-- `feedback_post_hoc_fit_anti_fishing_pattern.md` — anti-fishing
+- `memory/feedback_post_hoc_fit_anti_fishing_pattern.md` — anti-fishing
   pattern catalogue (C4 1/κ case study).
-- `feedback_notebook_citation_block.md` — 4-part decision-citation
+- `memory/feedback_notebook_citation_block.md` — 4-part decision-citation
   format.
 
 **Skill anchors:**

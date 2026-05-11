@@ -32,7 +32,10 @@ Pin coverage (Stage-2 → Stage-3 hand-off):
 - **Pin S5 — long-vol signature** (replication.assert_long_vol_signature):
   Π_strip(S_0) ≡ 0, Π_strip(S_T) > 0 for |S_T − S_0| outside the inner body.
 - **Pin S6 — replication envelope** (replication.CarrMadanEnvelopeVerifier):
-  max relative error vs log-contract proxy ≤ 5% over a 17-point grid.
+  centered-strip max relative error vs log-contract proxy ≤ 35% over
+  a 17-point grid (default ``REPLICATION_REL_TOL`` in types.py). The
+  35% ceiling reflects the theoretical floor for a 3-piece linear
+  approximation of x² (≈ 33%); finer-N strips tighten this.
 - **Pin S7 — strip artifact emit** (emit.StripEmitter): writes
   ``IronCondor_strip.json`` + ``IronCondor_strip.STRIKES.md`` into
   ``simulations/saas_builder/data/``.
