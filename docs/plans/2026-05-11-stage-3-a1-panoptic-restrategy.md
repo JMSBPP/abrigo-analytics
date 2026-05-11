@@ -1,0 +1,296 @@
+# STAGE-3 A1 — Panoptic strategy re-survey (Implementation Plan)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Code-agnostic plan.** Per repo memory `memory/feedback_no_code_in_specs_or_plans.md` (NON-NEGOTIABLE), this plan does NOT contain Python or Solidity code blocks. Each task dispatches a specialized agent who authors code per the functional-python skill + the Honnibal audit-pass chain.
+>
+> **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
+
+**Plan version:** v0.1 (initial draft — awaiting RC + MQ Wave-1 review per master-spec §6.1)
+**Master spec:** `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2
+**Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`); Stage-2 verdict memo (`docs/specs/2026-05-09-saas-builder-stage-2-verdict-memo.md`)
+**Status:** DRAFT — Wave-1 review dispatch pending
+**Estimated wall-time:** 1–2 days of focused work
+
+---
+
+## §0 Goal
+
+**One sentence.** Survey the current Panoptic primitive set, evaluate alternative strategies against the same `CarrMadanEnvelopeVerifier` metric at the canonical TP1 fixture, and produce a KEEP_IRONCONDOR / REPLACE_WITH_X verdict against the pre-pinned 5pp REPLACE margin (master spec Pin P-A1.4).
+
+## §1 Architecture
+
+A1 is a **research + light-code** track. Output is a comparison table, a per-candidate envelope evaluation, and a verdict JSON. No PyMC re-fit; no cohort_5_strip schema change unless the verdict is REPLACE.
+
+The light-code component is a generalized strip-emit harness under `simulations/saas_builder/cohort_5_strip/strategies/` that lets the existing `CarrMadanEnvelopeVerifier` consume non-reverse-IC primitives via a Protocol-typed adapter (see Phase 2). This adapter is the structural prerequisite for Pin P-A1.MQ-FLAG-3 comparability.
+
+## §2 Tech stack
+
+- Python 3.13, functional-python skill (frozen-dc / free fns / IO Boundary).
+- Existing `simulations/saas_builder/cohort_5_strip/` package; READ-ONLY consumption + ADDITIVE extension via a new sub-package.
+- Markdown for research artifacts; JSON for the verdict.
+- Web research via WebFetch / WebSearch on Panoptic docs (current as of 2026-05-11).
+
+---
+
+## §3 Cross-spec references
+
+| Master-spec section | What this plan must satisfy |
+|---------------------|-----------------------------|
+| §2.1 phase 1 | Discovery (the comparison table) |
+| §2.1 phase 2 + MQ-FLAG-3 caveat | Evaluation with cross-primitive comparability demonstrated |
+| §2.1 phase 3 | KEEP/REPLACE verdict + citation back to comparison-table row |
+| §2.1 HALT-triggers | No-emit primitive → HALT; 5pp threshold pin (P-A1.4) |
+| §5 P-A1.1 / P-A1.2 / P-A1.3 / P-A1.4 | Pin coverage per Wave-2 review |
+| §6.1 Wave-1 review | This plan dispatches RC + MQ before execution |
+
+---
+
+## §4 File structure
+
+```
+docs/plans/2026-05-11-stage-3-a1-panoptic-restrategy.md     ← THIS plan
+scratch/2026-05-11-a1-panoptic-survey/
+├── STRATEGY_COMPARISON.md           Phase 1 research artifact
+├── envelope_evaluation_log.md       Phase 2 raw run log
+└── verdict_rationale.md             Phase 3 reasoning trace
+
+simulations/saas_builder/cohort_5_strip/strategies/   ← NEW sub-package
+├── __init__.py
+├── _errors.py
+├── types.py                  Protocol: StrategyAdapter (lifts a non-IC primitive into the strip API)
+├── adapters.py               Per-primitive concrete adapters (long_strangle, butterfly, custom)
+└── compare.py                EnvelopeComparator: runs N adapters through the verifier and ranks
+
+simulations/saas_builder/data/
+└── strategy_verdict.json     Phase 3 emit (NEW schema v1.0)
+
+simulations/tests/
+└── test_saas_cohort5_strategies.py   Test coverage for the adapters
+```
+
+If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-cohort-5-strip-delta-spec.md` (out of A1 scope; A1 only emits the JSON verdict).
+
+---
+
+## §5 Phase 1 — Discovery
+
+### Task 1.1 — Research current Panoptic primitive set
+
+**Files:**
+- Create: `scratch/2026-05-11-a1-panoptic-survey/STRATEGY_COMPARISON.md`
+
+**Agent dispatch:** `general-purpose` agent with a research brief: read Panoptic's current public documentation (panoptic.xyz docs, GitHub README, recent blog posts) via WebFetch and produce a comparison table of available primitives.
+
+**Acceptance:**
+- Table has one row per primitive offered (e.g., long-strangle, short-strangle, long-straddle, butterfly, custom-leg combos, Streamia overlays).
+- Columns: `primitive_id` · `leg_count` · `payoff_shape` (analytic, e.g., piecewise-linear), `convexity_class` (long-vol / short-vol / mixed) · `on-chain liquidity status` (live / limited / inactive) · `admits_strip_emit?` (yes/no, with rationale).
+- Each row carries an inline citation to the documentation source URL + access timestamp.
+- Bottom-of-table summary lists which primitives CANNOT admit a deterministic strike-ladder + weight emit (these are HALT candidates per master spec §2.1 HALT-trigger #1).
+- Word budget: 800–1500 words total.
+
+**Anti-fishing constraint.** The agent is briefed NOT to pre-rank primitives; the comparison table is a factual catalogue, not a preference ordering. Ranking happens in Phase 3 after Phase 2's numerical evaluation.
+
+**Commit message:** `research(stage-3-a1): Panoptic primitive comparison table`
+
+---
+
+### Task 1.2 — Filter candidates by deterministic-emit admissibility
+
+**Files:**
+- Modify: `scratch/2026-05-11-a1-panoptic-survey/STRATEGY_COMPARISON.md` (add §"Filtered candidate set" section)
+
+**Agent dispatch:** same `general-purpose` agent (continuation of Task 1.1 context).
+
+**Acceptance:**
+- Top-of-section list of 2–4 primitives that admit deterministic emit and are candidates for Phase 2 evaluation. Each carries a one-line rationale.
+- Existing reverse-IC (the cohort_5_strip baseline) appears in the list as the comparison baseline.
+- If fewer than 2 candidates remain (impossibility of cross-comparison), HALT per master spec §2.1 HALT-trigger #1; emit disposition memo `scratch/2026-05-11-a1-panoptic-survey/HALT_NO_CANDIDATES.md`.
+
+**Commit message:** `research(stage-3-a1): filter Panoptic candidates to deterministic-emit set`
+
+---
+
+## §6 Phase 2 — Evaluation
+
+### Task 2.1 — Specify the StrategyAdapter Protocol
+
+**Files:**
+- Create: `simulations/saas_builder/cohort_5_strip/strategies/_errors.py`
+- Create: `simulations/saas_builder/cohort_5_strip/strategies/types.py`
+
+**Agent dispatch:** `Senior Developer` (per `memory/feedback_specialized_agents_per_task.md` — types-tier work is Senior Developer scope), brief covers:
+- Read `simulations/saas_builder/cohort_5_strip/types.py` (IronCondor / IronCondorStrip / ReplicationVerdict) and `simulations/saas_builder/cohort_5_strip/replication.py` (CarrMadanEnvelopeVerifier).
+- Author a `StrategyAdapter` Protocol with a single method `build_strip(s_0, sigma_0, k_star) -> IronCondorStrip-equivalent` that any candidate primitive implements.
+- Author a `NormalizedEnvelopeScore` frozen-dc that wraps `ReplicationVerdict` with the additional fields `(primitive_id, comparability_proof: Literal["tiled_body", "primitive_variant", "normalized_score"])` per master-spec §2.1 phase 2 MQ-FLAG-3 disposition.
+- Author `StrategyAdapterError` and `ComparabilityProofMissingError` exceptions.
+- Three-tier discipline (functional-python skill): frozen-dc only at Value tier; Protocol allowed.
+
+**Acceptance:**
+- Files exist, type-check clean (`uv run ty`), ruff clean.
+- No `IronCondorStrip` subclassing — the Protocol returns the existing frozen-dc type or a typed dispatch.
+- `__post_init__` on `NormalizedEnvelopeScore` rejects unknown `comparability_proof` values.
+
+**Commit message:** `feat(cohort_5_strip/strategies): StrategyAdapter Protocol + types`
+
+---
+
+### Task 2.2 — Implement adapters for filtered candidates
+
+**Files:**
+- Create: `simulations/saas_builder/cohort_5_strip/strategies/adapters.py`
+- Create: `simulations/tests/test_saas_cohort5_strategies.py` (initial test file with one parametrized fixture per adapter)
+
+**Agent dispatch:** `Senior Developer` per Task 2.1 brief.
+
+**Acceptance:**
+- One adapter implemented per Phase-1 filtered candidate.
+- Each adapter is a frozen-dc with `__call__` returning an `IronCondorStrip`-typed object whose legs match the candidate primitive's natural 4-strike geometry.
+- For non-reverse-IC candidates, the adapter MUST surface the `comparability_proof` choice (one of: tiled_body / primitive_variant / normalized_score) as a constructor argument.
+- Existing reverse-IC adapter included as the baseline (re-exports the existing `cohort_5_strip.build_strip` behavior).
+- One Hypothesis property test per adapter: built strip satisfies `IronCondorStrip.__post_init__` invariants for any valid `(s_0, sigma_0, k_star)` triple.
+
+**Commit message:** `feat(cohort_5_strip/strategies): adapters for filtered Panoptic candidates`
+
+---
+
+### Task 2.3 — Implement the EnvelopeComparator
+
+**Files:**
+- Create: `simulations/saas_builder/cohort_5_strip/strategies/compare.py`
+- Modify: `simulations/saas_builder/cohort_5_strip/strategies/__init__.py` (public exports)
+
+**Agent dispatch:** `Senior Developer`.
+
+**Acceptance:**
+- `EnvelopeComparator` frozen-dc with `__call__(adapters: tuple[StrategyAdapter, ...], fixture: TestPoint) -> tuple[NormalizedEnvelopeScore, ...]`.
+- Runs the SHIPPED `CarrMadanEnvelopeVerifier` against each adapter's built strip.
+- Returns scores sorted by `max_relative_error` ASCENDING (best replication first).
+- Raises `ComparabilityProofMissingError` if any adapter is missing its `comparability_proof` field — enforcing master-spec §2.1 phase 2 MQ-FLAG-3 caveat at runtime, not at review-time.
+
+**Commit message:** `feat(cohort_5_strip/strategies): EnvelopeComparator with comparability-proof gate`
+
+---
+
+### Task 2.4 — Run the comparator on filtered candidates at TP1
+
+**Files:**
+- Create: `scratch/2026-05-11-a1-panoptic-survey/envelope_evaluation_log.md`
+
+**Agent dispatch:** `Senior Developer` + `Reality Checker` (RC) for an inline cross-check of the numbers.
+
+**Acceptance:**
+- The eval log lists, for each filtered candidate, the `NormalizedEnvelopeScore` tuple including `(primitive_id, max_relative_error, tolerance=0.35, comparability_proof, raw_verdict_passes)`.
+- TP1 fixture used: `(S_0=4000.0, sigma_0=20000.0, k_star=4687.94)` per master-spec §2.1 phase 2 line.
+- RC cross-check confirms each `max_relative_error` is reproducible by re-running the comparator independently and matching to ≥ 1e-9.
+- All raw outputs reproducible from the cohort_5_strip code at the commit pinned in `consumed_strip_audit_block`.
+
+**Commit message:** `eval(stage-3-a1): TP1 envelope evaluation log for all filtered candidates`
+
+---
+
+## §7 Phase 3 — Verdict
+
+### Task 3.1 — Apply the P-A1.4 5pp threshold and emit verdict
+
+**Files:**
+- Create: `scratch/2026-05-11-a1-panoptic-survey/verdict_rationale.md`
+- Create: `simulations/saas_builder/data/strategy_verdict.json` (schema v1.0)
+
+**Agent dispatch:** `Senior Developer` for the JSON emit + `Reality Checker` for the verdict-rationale audit.
+
+**Acceptance:**
+- Verdict JSON schema:
+
+  ```
+  {
+    "schema_version": "v1.0",
+    "verdict": "KEEP" | "REPLACE",
+    "primitive_id": "<id of winning candidate>",
+    "rationale_citation": "<row reference in STRATEGY_COMPARISON.md>",
+    "envelope_at_tp1": <max_relative_error>,
+    "envelope_delta_vs_ironcondor_pp": <signed float, positive = candidate beats IronCondor>,
+    "p_a1_4_threshold_pp": 5.0,
+    "comparability_proof": "tiled_body" | "primitive_variant" | "normalized_score",
+    "audit_block": "<sha256>",
+    "consumed_strip_audit_block": "94150326..." (full strip audit at evaluation time)
+  }
+  ```
+- KEEP verdict iff `envelope_delta_vs_ironcondor_pp < 5.0` (strict).
+- REPLACE verdict iff there exists a candidate with `envelope_delta_vs_ironcondor_pp >= 5.0` (the master-spec §2.1 pre-pinned threshold; see Pin P-A1.4).
+- `audit_block` covers `(STRATEGY_COMPARISON.md` sha256 + `envelope_evaluation_log.md` sha256 + `consumed_strip_audit_block` + this JSON's other fields)`.
+- A round-trip read-back test confirms the emitted JSON matches the in-memory verdict.
+
+**HALT triggers (per master-spec §2.1):**
+- Multiple candidates tie within the threshold → HALT, disposition memo, user-enumerated tie-break.
+- The winning candidate's `comparability_proof` is `"primitive_variant"` AND the primitive-specific verifier variant was never authored → HALT, route to a Phase-2 amendment.
+
+**Commit message:** `verdict(stage-3-a1): emit strategy_verdict.json + rationale trace`
+
+---
+
+### Task 3.2 — If REPLACE, draft the delta-spec stub
+
+**Files (only if Task 3.1 emitted REPLACE):**
+- Create: `docs/specs/2026-05-{NN}-cohort-5-strip-delta-spec.md` (stub, content out of A1 scope)
+
+**Agent dispatch:** `general-purpose` (lightweight scaffolding only).
+
+**Acceptance:**
+- Stub spec header includes `parent_strategy_verdict_audit_block` pointing to Task 3.1's JSON.
+- Stub lists the cohort_5_strip files that the swap would touch (types.py / geometry.py / replication.py / emit.py + tests).
+- Stub explicitly defers full design to a follow-up brainstorming cycle.
+
+If Task 3.1 emitted KEEP, skip Task 3.2 entirely.
+
+**Commit message:** `spec(stage-3-cohort-5-delta): stub for post-A1 REPLACE swap`
+
+---
+
+## §8 Pin coverage (per master spec §5)
+
+| Pin | This plan's coverage |
+|-----|-----------------------|
+| P-A1.1 (comparison-table completeness) | Task 1.1 + Task 1.2 emit the STRATEGY_COMPARISON.md table; Wave-2 RC review verifies all admissible-emit primitives are covered. |
+| P-A1.2 (envelope evaluation reproducible) | Task 2.4 emits envelope_evaluation_log.md; Task 3.1's strategy_verdict.json carries the audit_block. RC cross-check enforces reproducibility. |
+| P-A1.3 (verdict citation-backed) | Task 3.1 emits `rationale_citation` field referencing a comparison-table row. |
+| P-A1.4 (5pp threshold pre-pinned) | Task 3.1's threshold logic uses the master-spec-pinned 5.0 constant; the JSON emits the constant explicitly so any post-hoc adjustment is detectable in `git diff`. |
+
+## §9 HALT routing
+
+| Trigger | Route |
+|---------|-------|
+| Task 1.2 yields < 2 candidates | HALT — disposition memo, master-spec scope re-pin via §6.4 escalation. |
+| Task 2.x adapter fails Hypothesis property tests | HALT — Senior Developer iterates; do NOT relax property tests. |
+| Task 2.4 envelope evaluation log has unreplicable numbers | HALT — investigate non-determinism in `CarrMadanEnvelopeVerifier`; this is a cohort_5_strip drift, route to a strip-level patch. |
+| Task 3.1 multiple-candidate tie within 5pp | HALT — user-enumerated tie-break per master-spec §2.1 HALT-trigger #1. |
+| Wave-1 or Wave-2 RC+MQ on this plan returns BLOCK | HALT per master-spec §6.1; CORRECTIONS-α landed in this plan's §11. |
+
+## §10 Artifacts emitted
+
+| Artifact | Phase | Schema | Lineage parent |
+|----------|-------|--------|-----------------|
+| `scratch/2026-05-11-a1-panoptic-survey/STRATEGY_COMPARISON.md` | 1 | markdown | (none — research output) |
+| `scratch/2026-05-11-a1-panoptic-survey/envelope_evaluation_log.md` | 2 | markdown | `IronCondor_strip.audit_block` |
+| `scratch/2026-05-11-a1-panoptic-survey/verdict_rationale.md` | 3 | markdown | both above |
+| `simulations/saas_builder/data/strategy_verdict.json` | 3 | v1.0 (new) | sha over (1) + (2) + strip audit |
+| `simulations/saas_builder/cohort_5_strip/strategies/` package | 2 | code | reverse-IC adapter re-uses existing strip emit; new adapters are additive |
+| `docs/specs/2026-05-{NN}-cohort-5-strip-delta-spec.md` (if REPLACE) | 3 | spec stub | strategy_verdict.json audit |
+
+## §11 CORRECTIONS-α (reserved)
+
+v0.1 has no corrections. Wave-1 RC+MQ on this plan may land v0.2 → §11.1.
+
+## §12 References
+
+- `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2 — master spec.
+- `simulations/saas_builder/cohort_5_strip/__init__.py` — Pin S1–S8 framing this plan extends.
+- `simulations/saas_builder/cohort_5_strip/replication.py:1-28` — verifier docstring (canonical envelope form).
+- `simulations/saas_builder/cohort_5_strip/types.py:57-74` — `REPLICATION_REL_TOL = 0.35` rationale.
+- `notes/PRIMITIVES.md` §10 (Carr-Madan), §11 (discrete strip).
+- `memory/feedback_no_code_in_specs_or_plans.md` — plan-as-orchestration-only convention.
+- `memory/feedback_specialized_agents_per_task.md` — foreground-orchestrates-never-authors.
+
+---
+
+*End of A1 plan v0.1. Wave-1 RC+MQ review dispatch before any task execution.*
