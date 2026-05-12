@@ -1,0 +1,26 @@
+"""Stochastic-FX variant — PRIMITIVES.md §15 open item 2 (Path A v3).
+
+Parent spec: docs/specs/2026-05-11-stochastic-fx-variant-design.md v0.3.
+Parent plan: docs/plans/2026-05-11-stochastic-fx-variant.md v0.2.
+
+Three SDE families (GBM, OU, Merton jump-diffusion) with per-family
+three-phase verification (Phase A algebraic / Phase B moment match /
+Phase C KS goodness-of-fit). Strip preservation invariant
+(Pin Z1.6 — cohort_5_strip's IronCondor_strip.json audit_block
+unchanged before/after this package).
+"""
+from simulations.stochastic_fx._errors import (
+    InversionTestFailedError,
+    MCBudgetExceededError,
+    MomentMatchFailedError,
+    SDEParameterError,
+    StochasticFXError,
+)
+
+__all__ = [
+    "InversionTestFailedError",
+    "MCBudgetExceededError",
+    "MomentMatchFailedError",
+    "SDEParameterError",
+    "StochasticFXError",
+]
