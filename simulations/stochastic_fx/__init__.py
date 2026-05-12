@@ -16,6 +16,7 @@ from simulations.stochastic_fx._errors import (
     SDEParameterError,
     StochasticFXError,
 )
+from simulations.stochastic_fx.generators import GBMPathGenerator
 from simulations.stochastic_fx.moments import (
     gbm_sigma_t_moments,
     merton_sigma_t_moments,
@@ -37,6 +38,7 @@ __all__ = [
     "CANONICAL_MERTON",
     "CANONICAL_OU",
     "GBMParameters",
+    "GBMPathGenerator",
     "InversionTestFailedError",
     "InversionVerdict",
     "JumpDiffusionParameters",

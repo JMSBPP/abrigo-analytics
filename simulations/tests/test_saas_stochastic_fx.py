@@ -15,6 +15,7 @@ from simulations.stochastic_fx import (
     CANONICAL_MERTON,
     CANONICAL_OU,
     GBMParameters,
+    GBMPathGenerator,
     InversionTestFailedError,
     InversionVerdict,
     JumpDiffusionParameters,
@@ -892,3 +893,168 @@ class TestTexEmission:
             text = written[stem].read_text(encoding="utf-8")
             assert r"\bar{X}" in text, f"{stem}: missing \\bar{{X}} symbolic form"
             assert r"\bar{Y}" in text, f"{stem}: missing \\bar{{Y}} symbolic form"
+
+
+# ============================================================================
+# Task 3.1 — GBMPathGenerator (Callable tier, Pin Z1.2 deterministic ensembles)
+# ============================================================================
+
+
+class TestGBMPathGenerator:
+    """Construction + Itô-anchor + determinism + degenerate-limit coverage.
+
+    Pinned anchors (Plan §8 Task 3.1 acceptance block):
+
+    - Happy-path construction: returns a ``PathEnsemble`` whose shape and
+      audit_block format match the type's invariants.
+    - Determinism (Pin Z1.2): identical ``(rng_seed, n_paths)`` yields a
+      bit-exact ``audit_block`` AND ``paths.tobytes()``.
+    - Itô-correction anchor: at ``sigma = 0.5, mu = 0, T = 1`` the
+      empirical mean of ``log(paths[:, -1] / x_0)`` matches
+      ``-sigma**2 / 2 * T = -0.125`` within ~3 standard errors. This
+      is the MQ math-anchor for the Itô drift correction; a missing
+      ``-sigma**2/2`` term in the log-step would shift the mean by
+      ``sigma**2/2 * T = 0.125`` — a 50-SE drift at the pinned sample size.
+    - Lognormality: ``log(paths[:, -1] / x_0)`` is approximately normal
+      under fixed seed at N=1000.
+    - Trivial-degenerate limit: at ``sigma = 1e-8`` paths collapse near
+      ``x_0`` so ``mean(sigma_t) < 1e-6``.
+    - Initial-condition anchor: ``paths[:, 0] == x_0`` for all rows
+      bit-exactly.
+    """
+
+    def test_happy_path_construction(self) -> None:
+        """Canonical-pin GBM generator returns a well-formed PathEnsemble."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens = gen(rng_seed=42, n_paths=100)
+        assert isinstance(ens, PathEnsemble)
+        assert ens.family_id == "gbm"
+        assert ens.paths.shape == (100, CANONICAL_GBM.n_steps + 1)
+        assert ens.sigma_t.shape == (100,)
+        assert _AUDIT_BLOCK_REGEX_PY.fullmatch(ens.audit_block) is not None
+        assert ens.rng_seed == 42
+
+    def test_determinism_same_call(self) -> None:
+        """Pin Z1.2: identical (seed, n_paths) yields bit-exact audit_block + paths."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens_a = gen(rng_seed=42, n_paths=50)
+        ens_b = gen(rng_seed=42, n_paths=50)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+        assert ens_a.sigma_t.tobytes() == ens_b.sigma_t.tobytes()
+
+    def test_determinism_across_instances(self) -> None:
+        """Two separately-constructed generators with the same params agree bit-exactly."""
+        gen_a = GBMPathGenerator(params=CANONICAL_GBM)
+        gen_b = GBMPathGenerator(params=CANONICAL_GBM)
+        ens_a = gen_a(rng_seed=7, n_paths=25)
+        ens_b = gen_b(rng_seed=7, n_paths=25)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+
+    def test_ito_correction_anchor(self) -> None:
+        """Itô-anchor: mean(log(S_T / x_0)) ≈ -sigma**2/2 * T within 3·SE.
+
+        The most important math anchor for the GBM discretization: a
+        missing ``-sigma**2 / 2`` term in the log-step would shift the
+        empirical mean by ``sigma**2 / 2 * T`` — at the pinned
+        ``(sigma=0.5, T=1, n_paths=10000)`` configuration that's a 50-SE
+        drift which would trip this gate immediately.
+        """
+        params = GBMParameters(
+            mu=0.0,
+            sigma=0.5,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 1000.0,
+            n_steps=1000,
+        )
+        n_paths = 10000
+        ens = GBMPathGenerator(params=params)(rng_seed=2026, n_paths=n_paths)
+        empirical_mean = float(np.log(ens.paths[:, -1] / params.x_0).mean())
+        expected_mean = -0.125  # -sigma**2 / 2 * T = -0.25/2 * 1
+        # SE of mean of log-terminal under exact GBM: sigma * sqrt(T) / sqrt(N).
+        se = params.sigma * math.sqrt(params.T) / math.sqrt(n_paths)
+        assert abs(empirical_mean - expected_mean) < 3.0 * se, (
+            f"Itô-correction anchor failed: empirical={empirical_mean!r} "
+            f"vs expected={expected_mean!r} (SE={se!r}); a 0.125 offset is "
+            "the missing -sigma**2/2 drift signature."
+        )
+
+    def test_lognormality_terminal_log_return(self) -> None:
+        """log(S_T / x_0) is approximately normal at large n_steps (fixed seed).
+
+        Uses scipy.stats.normaltest at N=1000 with a permissive p > 0.001
+        threshold — Anderson-Darling / D'Agostino are known-strict at
+        large N. Seed is fixed for determinism.
+        """
+        from scipy import stats
+
+        params = GBMParameters(
+            mu=0.0,
+            sigma=0.2,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 1000.0,
+            n_steps=1000,
+        )
+        ens = GBMPathGenerator(params=params)(rng_seed=123, n_paths=1000)
+        log_returns = np.log(ens.paths[:, -1] / params.x_0)
+        _, p_value = stats.normaltest(log_returns)
+        assert p_value > 0.001, (
+            f"GBM log-terminal distribution failed normality at N=1000: "
+            f"p_value={p_value!r}; expected p > 0.001 (loose threshold)."
+        )
+
+    def test_trivial_degenerate_limit_sigma_to_zero(self) -> None:
+        """At sigma → 0 paths collapse to ``x_0`` and sigma_t mean is < 1e-6.
+
+        Uses a coarser grid (n_steps=100) than the canonical pin because
+        σ_T per spec v0.3 §6 eq. (7) is a SUM over grid points divided by
+        T (not by n+1); at the canonical 5001-point grid the σ_T floor is
+        amplified to ~1e-6 even when paths are pinned at x_0 to ULP. The
+        plan-brief threshold ``< 1e-6`` reflects the "paths collapse to
+        x_0" geometry, which a coarser grid exposes cleanly without the
+        grid-density amplification.
+        """
+        params = GBMParameters(
+            mu=0.0,
+            sigma=1e-8,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 100.0,
+            n_steps=100,
+        )
+        ens = GBMPathGenerator(params=params)(rng_seed=0, n_paths=50)
+        assert float(np.mean(ens.sigma_t)) < 1e-6
+
+    def test_initial_condition_bit_exact(self) -> None:
+        """paths[:, 0] == params.x_0 for all rows (bit-exact)."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens = gen(rng_seed=11, n_paths=64)
+        assert bool(np.all(ens.paths[:, 0] == CANONICAL_GBM.x_0))
+
+    def test_canonical_params_json_stable(self) -> None:
+        """canonical_params_json on the ensemble is a non-empty stable JSON."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens = gen(rng_seed=3, n_paths=10)
+        # JSON must round-trip and contain the canonical pin fields.
+        import json as _json  # noqa: PLC0415  # local import for test isolation.
+
+        parsed = _json.loads(ens.canonical_params_json)
+        assert set(parsed.keys()) == {"mu", "sigma", "x_0", "T", "dt", "n_steps"}
+        assert parsed["x_0"] == CANONICAL_GBM.x_0
+        assert parsed["n_steps"] == CANONICAL_GBM.n_steps
+
+    @given(
+        rng_seed=st.integers(min_value=0, max_value=2**31),
+        n_paths=st.integers(min_value=10, max_value=200),
+    )
+    @settings(max_examples=15, deadline=None)
+    def test_property_determinism(self, rng_seed: int, n_paths: int) -> None:
+        """Hypothesis Pin Z1.2: (seed, n_paths) uniquely determines audit_block."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens_a = gen(rng_seed=rng_seed, n_paths=n_paths)
+        ens_b = gen(rng_seed=rng_seed, n_paths=n_paths)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
