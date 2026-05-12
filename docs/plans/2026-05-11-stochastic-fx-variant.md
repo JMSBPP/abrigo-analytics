@@ -1,15 +1,15 @@
 # STOCHASTIC-FX VARIANT — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. **Tracking unit is the TASK (one task per commit), not per-step** — matches the repo's cohort-N convention (see `docs/plans/2026-05-08-saas-cohort-*` precedents). Per-step `- [ ]` checkboxes are intentionally NOT used; subagent-driven-development's TaskCreate/TaskUpdate is the tracking surface. (FLAG-RC-2 disposition; §16.1.)
 >
 > **Code-agnostic plan.** Per repo memory `memory/feedback_no_code_in_specs_or_plans.md` (NON-NEGOTIABLE), this plan does NOT contain Python code blocks. Each task dispatches a specialized agent who authors code per the functional-python skill + the Honnibal audit-pass chain.
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.1 (initial draft — awaiting Wave-1 RC + MQ review per master-spec §6.1)
+**Plan version:** v0.2 (Wave-1 RC ACCEPT_WITH_FLAGS + MQ ACCEPT_WITH_FLAGS — 8 flags + 4 NITs disposed inline per §16.1)
 **Parent spec:** `docs/specs/2026-05-11-stochastic-fx-variant-design.md` v0.3 (Wave-1 ACCEPT_WITH_FLAGS-DISPOSED)
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`, audit `94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329` — PRESERVED unchanged per Pin Z1.6)
-**Status:** DRAFT — Wave-1 review dispatch pending
+**Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized once §16.1 corrections land
 **Estimated wall-time:** 5–7 days of focused work
 
 ---
@@ -143,15 +143,18 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer`.
 
 **Acceptance:**
-- Three frozen-dataclass Parameters types:
-  - `GBMParameters(mu: float, sigma: float, x_0: float, T: float, dt: float, n_steps: int)` with `__post_init__` validating `sigma > 0; x_0 > 0; T > 0; dt > 0; n_steps >= 2; n_steps * dt == T` within float tolerance.
-  - `OUParameters(theta: float, mu_bar: float, sigma: float, x_0: float, T: float, dt: float, n_steps: int)` validating `theta > 0; sigma > 0; mu_bar > 0; x_0 > 0; T > 0; dt > 0; n_steps >= 2`.
-  - `JumpDiffusionParameters(mu: float, sigma: float, lambda_jump: float, jump_mean: float, jump_std: float, x_0: float, T: float, dt: float, n_steps: int)` validating `sigma > 0; lambda_jump >= 0; jump_std > 0; x_0 > 0; T > 0; dt > 0; n_steps >= 2`.
-- Module-level canonical-pin constants per spec v0.3 §4.2 table:
-  - `CANONICAL_GBM = GBMParameters(mu=0.0, sigma=0.10/sqrt(12), x_0=4000.0, T=12.0, dt=12.0/5000, n_steps=5000)`.
-  - `CANONICAL_OU = OUParameters(theta=1.0, mu_bar=4000.0, sigma=0.10 * 4000.0 / sqrt(2.0 * 1.0), x_0=4000.0, T=12.0, dt=12.0/5000, n_steps=5000)`.
-  - `CANONICAL_MERTON = JumpDiffusionParameters(mu=0.0, sigma=0.05/sqrt(12), lambda_jump=1.0, jump_mean=0.0, jump_std=0.10, x_0=4000.0, T=12.0, dt=12.0/5000, n_steps=5000)`.
-- One Hypothesis property test per family checking `__post_init__` rejects invalid parameters (zero / negative volatility; n_steps < 2; etc.) AND accepts the canonical pins.
+- Three frozen-dataclass Parameters Value types, one per SDE family. Each has the fields and `__post_init__` invariants documented in the table below (FLAG-RC-1 disposition: function/class signatures replaced with prose tables).
+
+  **Per-family Parameters fields + invariants:**
+
+  | Family | Required fields | `__post_init__` invariants |
+  |---|---|---|
+  | GBM | drift, volatility, spot, horizon, step size, number of steps | volatility > 0; spot > 0; horizon > 0; step size > 0; number of steps ≥ 2; number of steps × step size equals horizon within float tolerance |
+  | OU | mean-reversion rate, long-run mean, volatility, spot, horizon, step size, number of steps | mean-reversion rate > 0; volatility > 0; long-run mean > 0; spot > 0; horizon > 0; step size > 0; number of steps ≥ 2 |
+  | Merton jump-diffusion | drift, diffusion volatility, jump intensity, jump-size mean, jump-size std, spot, horizon, step size, number of steps | diffusion volatility > 0; jump intensity ≥ 0; jump-size std > 0; spot > 0; horizon > 0; step size > 0; number of steps ≥ 2 |
+
+- Module-level canonical-pin constants per spec v0.3 §4.2 table, one per family. Numerical values per spec v0.3 §4.2 row entries verbatim. Pin values frozen at this commit; ex-post tuning requires CORRECTIONS-α + scoped Wave-1 re-review per Pin Z1.5.
+- One Hypothesis property test per family checking `__post_init__` rejects invalid parameter combinations (zero or negative volatility; number of steps < 2; etc.) AND accepts the canonical pins from spec v0.3 §4.2.
 - ruff + ty clean on `simulations/stochastic_fx/`.
 
 **Commit message:** `feat(stochastic_fx/types): per-family Parameters + canonical pins`
@@ -168,8 +171,8 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer`.
 
 **Acceptance:**
-- `PathEnsemble` frozen-dc with fields: `family_id: Literal["gbm", "ou", "merton"]`, `paths: NDArray[(N, n_steps+1)]`, `sigma_t_per_path: NDArray[(N,)]`, `parameters_canonical_json: str`, `rng_seed: int`, `audit_block: str` (64-char hex). `__post_init__` validates: paths is 2D; sigma_t shape matches paths.shape[0]; audit_block is 64-char lowercase hex; family_id in the closed set.
-- `InversionVerdict` frozen-dc with fields: `family_id`, `phase_a_passes: bool` (Z1.3a), `phase_a_max_residual: float`, `phase_b_passes: bool` (Z1.3b), `phase_b_mean_relative_error: float`, `phase_b_var_relative_error: float`, `phase_c_passes: bool` (Z1.4), `phase_c_ks_pvalue: float`, `phase_c_n_paths: int`, `passes: bool`, `tex_anchor: str`, `audit_block: str`. `__post_init__` validates: bool fields are bool; `passes == phase_a AND phase_b AND phase_c`; tolerances numerically reasonable.
+- `PathEnsemble` frozen-dataclass holding: a family identifier from the closed alphabet `{gbm, ou, merton}`; a 2-D path matrix (N paths × n_steps+1 timesteps); a 1-D realised-variance array of length N (one σ_T value per path); the canonical parameters JSON-serialized as a string; the deterministic RNG seed used to sample the ensemble; and a 64-char lowercase hex audit_block. `__post_init__` validates: path matrix is 2-D; σ_T array shape matches path-count; audit_block matches the 64-char lowercase hex regex; family identifier is in the closed alphabet.
+- `InversionVerdict` frozen-dataclass holding: family identifier; Phase-A pass flag + max algebraic-inversion residual (Pin Z1.3a); Phase-B pass flag + mean and var relative errors (Pin Z1.3b); Phase-C pass flag + KS p-value + path-count used (Pin Z1.4); composite pass flag (logical AND of the three phase flags); a tex_anchor string pointing to the family's LaTeX fragment file; and a 64-char audit_block. `__post_init__` validates: bool fields are bool; composite pass equals the AND of the three phase flags; tolerances numerically reasonable; audit_block matches hex regex; family identifier in closed alphabet.
 - One Hypothesis property test per type confirming `__post_init__` rejects invalid combinations.
 - ruff + ty clean.
 
@@ -193,17 +196,27 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `AI Engineer` (math-heavy; coordinates with sympy) + inline `Reality Checker` cross-check that the implemented Python expressions match the hand-derived formulas in spec v0.3 §4.2 verbatim.
 
 **Acceptance:**
-- Three free functions in `moments.py`, one per family, returning a `(e_sigma_t: float, var_sigma_t: float)` tuple given the Parameters frozen-dc:
-  - `gbm_moments(params: GBMParameters) -> (float, float)` — exact form `E[σ_T] = params.x_0**2 * ((exp(params.sigma**2 * params.T) - 1) / (params.sigma**2 * params.T) - 1)`. Var[σ_T] form per Hull §15 (hand-derived leading order; rendered exactly in the `.tex` fragment).
-  - `ou_moments(params: OUParameters) -> (float, float)` — exact `E[σ_T] = params.sigma**2 / (2 * params.theta)`. Var[σ_T] = `2 * params.sigma**4 / ((2 * params.theta)**2 * params.T)` (leading order under chi-squared approximation).
-  - `merton_moments(params: JumpDiffusionParameters) -> (float, float)` — exact form per spec §4.2 Merton row.
-- Numerical sanity test per family: at canonical pins (Task 1.2 CANONICAL_*), values match hand-computed analytic numbers within 1e-12.
-- LaTeX-fragment emission via `sympy.latex(...)` for each family's moment expressions; saved to `notes/stochastic_fx_tex/sigma_t_moments_{family}.tex`. Each fragment contains:
-  - The exact-form LaTeX (e.g., for GBM: `E[\sigma_T] = (\bar X/\bar Y)^2 \cdot \left[ \frac{e^{\sigma^2 T} - 1}{\sigma^2 T} - 1 \right]`).
-  - Literature citation as a `\cite{}` or inline comment.
-  - Numerical-pin example at the canonical fixture.
+- Three free functions in `moments.py`, one per family. Each takes the family's Parameters frozen-dataclass and returns a tuple of two floats: the analytic E[σ_T] and the analytic Var[σ_T]. Per-family math content pinned in the table below (FLAG-MQ-1 + FLAG-MQ-3 disposition: Merton and Var forms now literalised; FLAG-RC-1 disposition: function signatures replaced with prose table).
+
+  **Per-family hand-derived analytic moments** (substitution `(X̄/Ȳ)² → params.x_0**2` at the canonical pin per FLAG-MQ-2; symbolic form retained in `.tex`):
+
+  | Family | Analytic E[σ_T] (Python form) | Analytic Var[σ_T] (Python form) |
+  |---|---|---|
+  | GBM | `params.x_0**2 * ((exp(params.sigma**2 * params.T) - 1) / (params.sigma**2 * params.T) - 1)` (exact; vanishes at σ→0 per NEW-BLOCK-MQ-4 fix) | `2 * (params.x_0**4) * (exp(params.sigma**2 * params.T) - 1)**2 / (params.sigma**4 * params.T**2)` (Hull §15 leading order; assumes mean-zero log-drift) |
+  | OU (stationary) | `params.sigma**2 / (2 * params.theta)` (exact) | `2 * params.sigma**4 / ((2 * params.theta)**2 * params.T)` (leading order under chi-squared approximation; standard OU stationary moment) |
+  | Merton jump-diffusion | `params.x_0**2 * params.sigma**2 * params.T + params.lambda_jump * params.x_0**2 * (exp(2*(params.jump_mean + params.jump_std**2)) - 2*exp(params.jump_mean + params.jump_std**2/2) + 1) * params.T` (Andersen-Piterbarg Vol I §2.7; leading order; mean-zero log-drift) | `2 * params.sigma**4 * params.x_0**4 * params.T + params.lambda_jump * params.x_0**4 * (variance contribution from compound-Poisson moment-of-moment; Andersen-Piterbarg §2.7.3 formula expanded literally — implementer transcribes the textbook expression into Python at authoring time, NOT spec-time) |
+
+- **`moments.py` module docstring** (FLAG-MQ-2 disposition) MUST explicitly document the `(X̄/Ȳ)² → params.x_0**2` substitution: the canonical-pin convention pins `x_0 = X̄/Ȳ = 4000.0` so the two are interchangeable at evaluation time, but the SYMBOLIC form `(X̄/Ȳ)²` is the conceptually-correct one and is what the `.tex` fragments retain.
+
+- Numerical sanity test per family: at canonical pins (Task 1.2 spec v0.3 §4.2 table values), the Python-form expressions evaluate to numbers within `1e-12` of hand-computed analytic numbers logged in the test.
+
+- LaTeX-fragment emission via `sympy.latex(...)` for each family's moment expressions; saved to `notes/stochastic_fx_tex/sigma_t_moments_{family_id}.tex` where `{family_id}` ∈ `{gbm, ou, merton}` (NIT family naming drift disposition: use `{family_id}` consistently with the PathEnsemble closed alphabet). Each fragment contains:
+  - The exact-form LaTeX retaining symbolic `(X̄/Ȳ)²` notation per FLAG-MQ-2 (NOT the Python substituted form).
+  - Literature citation as a LaTeX `\cite{}` (or inline `% ref: ...` comment if a bib file is not present).
+  - A numerical-pin example at the canonical fixture, computed via the Python form.
+
 - Also write the family-agnostic eq. (8) algebraic inversion LaTeX to `notes/stochastic_fx_tex/eps_inversion.tex` (single one-line fragment).
-- Hypothesis property tests: monotonicity of `E[σ_T]` in `params.sigma` per family; bounds checks (E ≥ 0, Var ≥ 0).
+- Hypothesis property tests: monotonicity of E[σ_T] in volatility per family; bounds checks (E ≥ 0, Var ≥ 0).
 - ruff + ty clean.
 
 **Commit message:** `feat(stochastic_fx/moments): per-family E[σ_T] + Var[σ_T] + LaTeX fragments`
@@ -222,8 +235,8 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer` + `AI Engineer` (paired — Senior Developer for the three-tier scaffolding; AI Engineer for the SDE discretization scheme).
 
 **Acceptance:**
-- `GBMPathGenerator(params: GBMParameters)` frozen-dc with `__call__(rng_seed: int, n_paths: int) -> PathEnsemble`. Uses `numpy.random.default_rng(rng_seed)` for reproducibility per Pin Z1.2.
-- Discretization scheme: Euler-Maruyama on log-scale. For each path: `X_{t+dt} = X_t * exp((mu - sigma^2/2) * dt + sigma * sqrt(dt) * Z_t)` where `Z_t ~ N(0, 1)`.
+- `GBMPathGenerator` frozen-dataclass holding the family's Parameters. Its callable surface accepts a deterministic RNG seed and the number of paths, and returns a PathEnsemble. Uses `numpy.random.default_rng(seed)` for reproducibility per Pin Z1.2. (FLAG-RC-1 disposition: signature prose-ified.)
+- Discretization scheme: Euler-Maruyama on log-scale. Per step, the path multiplicatively updates by `exp((drift − volatility²/2)·dt + volatility·√dt · Z)` where `Z ~ N(0, 1)`. The `−volatility²/2` term is the Itô correction (MQ check).
 - σ_T computed per path via PRIMITIVES.md §6 eq. (7) discretely: `sigma_t = (1/T) * sum_{i=0..n_steps} (path[i] - mean(path))**2`. Matches B1 plan's σ_T contract per MQ-FLAG-B1.1 disposition.
 - audit_block deterministic from `(params canonical JSON, rng_seed, paths bytes)`.
 - Hypothesis property tests:
@@ -246,8 +259,8 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer` + `AI Engineer`.
 
 **Acceptance:**
-- `OUPathGenerator(params: OUParameters)` frozen-dc with `__call__(rng_seed, n_paths) -> PathEnsemble`.
-- Discretization: exact transition `X_{t+dt} = mu_bar + (X_t - mu_bar) * exp(-theta * dt) + sigma * sqrt((1 - exp(-2*theta*dt))/(2*theta)) * Z_t`.
+- `OUPathGenerator` frozen-dataclass holding the family's Parameters; callable surface mirrors `GBMPathGenerator` (deterministic RNG seed + n_paths in, PathEnsemble out).
+- Discretization: EXACT transition (not Euler — OU admits a closed-form Gaussian transition). Per step, the new value equals `long-run-mean + (X_t − long-run-mean)·exp(−rate·dt) + volatility·√((1 − exp(−2·rate·dt))/(2·rate)) · Z`. This is the standard OU exact-conditional-Gaussian update.
 - Hypothesis property tests:
   - Mean reversion: at long T and large theta, `mean(path[..., -1])` is close to `mu_bar`.
   - Determinism (Pin Z1.2).
@@ -268,8 +281,8 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer` + `AI Engineer`.
 
 **Acceptance:**
-- `JumpDiffusionPathGenerator(params: JumpDiffusionParameters)` frozen-dc with `__call__(rng_seed, n_paths) -> PathEnsemble`.
-- Discretization: Euler-Maruyama (per Task 3.1) augmented by compound-Poisson jumps. For each path step: (i) sample number of jumps `N ~ Poisson(lambda_jump * dt)`; (ii) sample N jump sizes from `lognormal(jump_mean, jump_std)`; (iii) multiplicative jump aggregation `X_{t+dt} = X_{t+dt}^{diffusion} * prod(jump_sizes)`.
+- `JumpDiffusionPathGenerator` frozen-dataclass holding the family's Parameters; callable surface mirrors the other generators.
+- Discretization: Euler-Maruyama on log-scale (per Task 3.1) augmented by compound-Poisson jumps. Per step: (i) sample the number of jumps from a Poisson distribution with mean `jump_intensity·dt`; (ii) sample that many jump sizes from a lognormal distribution with parameters `(jump_mean, jump_std)`; (iii) aggregate jumps multiplicatively into the diffusion step, so the new value equals the GBM diffusion update times the product of jump multipliers.
 - Hypothesis property tests:
   - Determinism (Pin Z1.2).
   - Trivial-degenerate limit at `params.sigma = 1e-8 AND params.lambda_jump = 0`: paths collapse near `x_0`; `sigma_t_per_path` mean `< 1e-6`.
@@ -291,11 +304,11 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer`.
 
 **Acceptance:**
-- Free function `compute_sigma_t_per_path(ensemble: PathEnsemble) -> NDArray` that re-applies PRIMITIVES.md §6 eq. (7) to the ensemble's paths and returns the per-path realised variance array. Verifies the σ_T values stored on the ensemble match the computation within `NUMERICAL_IDENTITY_TOL = 1e-6` (reused from `simulations.saas_builder.cohort_4.types::NUMERICAL_IDENTITY_TOL`).
-- Free function `apply_inversion(sigma_t: float, x_bar: float) -> float` implementing PRIMITIVES.md §6 eq. (8) algebraically: `eps = sqrt(8 * sigma_t / x_bar**2)`.
-- Free function `verify_phase_a(ensemble: PathEnsemble, x_bar: float) -> (passes: bool, max_residual: float)` implementing Pin Z1.3a: for each path's σ_T_n, verify `apply_inversion(sigma_t_n, x_bar)**2 == 8 * sigma_t_n / x_bar**2` to float64 precision. Compute the max absolute residual across the N paths. PASS iff max residual ≤ `NUMERICAL_IDENTITY_TOL`.
-- Unit test: at canonical fixture (`x_bar = 4000`, sigma_t = 20000), `apply_inversion` returns exactly `0.1`.
-- Property test (Hypothesis): for any valid `(sigma_t > 0, x_bar > 0)`, `apply_inversion(sigma_t, x_bar)` is finite, non-negative, and `apply_inversion(0, x_bar) == 0` (trivial-degenerate-limit Pin Z1.3a).
+- A free function that re-applies PRIMITIVES.md §6 eq. (7) to the ensemble's paths and returns the per-path realised variance array. Verifies the σ_T values stored on the ensemble match the freshly-computed values within `NUMERICAL_IDENTITY_TOL = 1e-6` (reused from `simulations.saas_builder.cohort_4.types::NUMERICAL_IDENTITY_TOL`).
+- A free function that implements PRIMITIVES.md §6 eq. (8) algebraically: given a realised variance σ_T and the FX mean x_bar, returns `sqrt(8 * σ_T / x_bar**2)`.
+- A free function implementing Pin Z1.3a: for each path's σ_T_n, verifies `(eps_n)² == 8·σ_T_n / x_bar²` to float64 precision (algebraic substitution, family-agnostic). Returns the composite pass flag plus the maximum absolute residual across the N paths. PASS iff max residual ≤ `NUMERICAL_IDENTITY_TOL`.
+- Unit test: at the canonical fixture (x_bar = 4000.0, σ_T = 20000.0), the inversion function returns exactly 0.1.
+- Property test (Hypothesis): for any valid (σ_T > 0, x_bar > 0), the inversion result is finite and non-negative; at σ_T = 0, the result is exactly 0 (trivial-degenerate-limit per Pin Z1.3a).
 - ruff + ty clean.
 
 **Commit message:** `feat(stochastic_fx/variance_proxy): σ_T computation + Phase-A algebraic inversion`
@@ -312,15 +325,19 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer` + `AI Engineer` (paired for the moment-match and KS-test math).
 
 **Acceptance:**
-- `InversionVerifier` frozen-dc with module-level constants `MOMENT_REL_TOL = 0.05` and `KS_PVALUE_FLOOR = 0.01` (Pin Z1.4 calibration per spec v0.3 §8). `__call__(parameters, ensemble, x_bar) -> InversionVerdict`.
-- Per-family dispatch on `ensemble.family_id` to select the right moment function from `moments.py` and the right reference distribution shape per spec v0.3 §4.2 table (lognormal for GBM/Merton; gamma for OU).
-- Phase A check: calls `verify_phase_a` from Task 4.1 to populate `phase_a_passes` and `phase_a_max_residual`.
-- Phase B check (Pin Z1.3b): compute empirical `mean(ensemble.sigma_t_per_path)` and `var(ensemble.sigma_t_per_path)`; compute analytic via `{gbm,ou,merton}_moments(parameters)`; relative-error each moment; PASS iff both are ≤ `MOMENT_REL_TOL`. Raises `MomentMatchFailedError` if relative error > `MOMENT_REL_TOL` (HALT routing per Pin Z1.5).
-- Phase C check (Pin Z1.4): fit the family's reference distribution to the analytic E[σ_T] and Var[σ_T] (scipy's `gamma.fit` with `floc=0, fscale=Var/E` for gamma; `lognorm.fit` with parameters derived from log-mean = log(E²/√(Var+E²)) and log-std = √(log(1 + Var/E²)) for lognormal). KS-test empirical `sigma_t_per_path` against this reference; populate `phase_c_ks_pvalue`. PASS iff p ≥ `KS_PVALUE_FLOOR`. Raises `InversionTestFailedError` if p < `KS_PVALUE_FLOOR`.
-- Anti-fishing rule: the verifier rejects calls where `ensemble.paths.shape[0] != 1000` (the N=1000 floor per spec v0.3 §8). Does NOT accept "increased N" — explicit constant.
-- `tex_anchor` populated with relative path `notes/stochastic_fx_tex/sigma_t_moments_{family}.tex`.
-- `audit_block` is sha256 of `(ensemble.audit_block, parameters canonical JSON, x_bar, MOMENT_REL_TOL, KS_PVALUE_FLOOR)`.
-- Round-trip read-back test: same inputs → same `InversionVerdict` audit_block.
+- `InversionVerifier` frozen-dataclass with two module-level `Final` constants pinned in `simulations/stochastic_fx/variance_proxy.py`: `MOMENT_REL_TOL = 0.05` (Pin Z1.3b tolerance) and `KS_PVALUE_FLOOR = 0.01` (Pin Z1.4 calibration per spec v0.3 §8). Downstream consumers (Tasks 5, 6) import via `from simulations.stochastic_fx.variance_proxy import MOMENT_REL_TOL, KS_PVALUE_FLOOR` — single source of truth (FLAG-RC-3 disposition). The callable surface accepts the Parameters, a PathEnsemble, and the FX mean x_bar; returns an InversionVerdict.
+- Per-family dispatch on the ensemble's family identifier to select the right moment function from `moments.py` and the right reference distribution shape per spec v0.3 §4.2 (lognormal for GBM/Merton; gamma for OU).
+- Phase A check: calls the Task 4.1 Phase-A free function to populate `phase_a_passes` and `phase_a_max_residual`.
+- Phase B check (Pin Z1.3b): compute empirical mean and variance from `ensemble.sigma_t_per_path`; compute analytic from `moments.py` (per family); compute the relative error on each moment separately; PASS iff both relative errors are ≤ `MOMENT_REL_TOL`. Raises `MomentMatchFailedError` if either relative error exceeds the tolerance (HALT routing per Pin Z1.5).
+- Phase C check (Pin Z1.4): construct the family's reference distribution DIRECTLY from the analytic moments (NIT-MQ-1 disposition — do NOT call `.fit()` against empirical data, which would re-introduce a tautology surface). Construction formulas per family:
+  - **Lognormal (GBM, Merton):** given analytic E and Var, compute the lognormal shape parameter `s = sqrt(log(1 + Var/E**2))` and scale `scale = E / sqrt(1 + Var/E**2)`; construct the SciPy distribution as `scipy.stats.lognorm(s=s, scale=scale)`. This is the standard method-of-moments lognormal construction from positive-mean, positive-variance.
+  - **Gamma (OU):** given analytic E and Var, compute gamma shape `a = E**2 / Var` and scale `scale = Var / E`; construct as `scipy.stats.gamma(a=a, scale=scale)`. Standard MoM gamma construction.
+  
+  KS-test the empirical `ensemble.sigma_t_per_path` against this reference using `scipy.stats.ks_1samp(samples, reference.cdf)`; populate `phase_c_ks_pvalue`. PASS iff p ≥ `KS_PVALUE_FLOOR`. Raises `InversionTestFailedError` if p < `KS_PVALUE_FLOOR`.
+- **Anti-fishing rule (Pin Z1.5 enforcement at construction time):** the InversionVerifier rejects calls where `ensemble.paths.shape[0] != 1000` (the N=1000 floor per spec v0.3 §8). The check happens INSIDE `__call__` BEFORE any phase runs; raises `MCBudgetExceededError` if violated. N=1000 is a frozen module-level constant, NOT a parameter to grow.
+- `tex_anchor` populated with the relative path `notes/stochastic_fx_tex/sigma_t_moments_{family_id}.tex`.
+- `audit_block` is sha256 of (ensemble.audit_block + canonical-parameters JSON + x_bar + MOMENT_REL_TOL + KS_PVALUE_FLOOR), deterministic across re-runs.
+- Round-trip read-back test: same inputs → same InversionVerdict audit_block.
 - Per-family unit tests at canonical pins: verify all three Phases PASS for GBM, OU, Merton.
 
 **Commit message:** `feat(stochastic_fx/variance_proxy): InversionVerifier — Phase A+B+C combiner`
@@ -339,10 +356,11 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 **Agent dispatch:** `Senior Developer`.
 
 **Acceptance:**
-- `PathEnsembleEmitter(emit_dir: Path)` class (IO Boundary tier — `__init__` allowed). `__call__(ensemble: PathEnsemble) -> Path` writes parquet at `simulations/stochastic_fx/data/path_ensemble_{family_id}.parquet`. Schema: one row per (path_index, step_index, x_t) triple; metadata holds the canonical parameters JSON + audit_block + rng_seed.
-- `InversionVerdictEmitter(emit_dir: Path)` class. `__call__(verdict: InversionVerdict) -> Path` writes JSON v1.0 schema at `simulations/stochastic_fx/data/inversion_verdict_{family_id}.json`. Schema includes all `InversionVerdict` fields + `phase_a_tolerance = NUMERICAL_IDENTITY_TOL` + `phase_b_tolerance = MOMENT_REL_TOL` + `phase_c_tolerance = KS_PVALUE_FLOOR`. Round-trip read-back equality enforced.
-- `TexFragmentEmitter(emit_dir: Path)` class. NOT writing to data/ (committed): writes under `notes/stochastic_fx_tex/`. No-op if the fragment already exists — these are Task 2.1 artifacts; this class is for re-emit only.
-- `StochasticFxResultsEmitter(emit_dir: Path)` class. `__call__(verdicts: tuple[InversionVerdict, ...]) -> Path` writes `notes/STOCHASTIC_FX_RESULTS.md` parallel to STAGE_2_RESULTS.md, R-tagged sections per family. Format mirrors STAGE_2_RESULTS.md exactly.
+- Four IO-Boundary-tier classes, each with an `__init__(emit_dir)` and a callable surface (FLAG-RC-1 disposition: class signatures replaced with prose):
+  - **PathEnsembleEmitter**: writes a parquet file at `simulations/stochastic_fx/data/path_ensemble_{family_id}.parquet` where `{family_id}` ∈ `{gbm, ou, merton}` (NIT family naming drift disposition: use `{family_id}` consistently, NOT `{family}`). Schema: one row per (path_index, step_index, x_t) triple; metadata holds the canonical parameters JSON + audit_block + rng_seed.
+  - **InversionVerdictEmitter**: writes a JSON v1.0 schema file at `simulations/stochastic_fx/data/inversion_verdict_{family_id}.json`. Schema includes all InversionVerdict fields plus three tolerance constants imported from `simulations/stochastic_fx/variance_proxy.py` per FLAG-RC-3: `phase_a_tolerance = NUMERICAL_IDENTITY_TOL`, `phase_b_tolerance = MOMENT_REL_TOL`, `phase_c_tolerance = KS_PVALUE_FLOOR`. Round-trip read-back equality enforced (write → read → in-memory equality).
+  - **TexFragmentEmitter**: writes under `notes/stochastic_fx_tex/` (NOT under data/; .tex fragments are committed). No-op if the fragment already exists — these are Task 2.1 artifacts; this class is for re-emit only.
+  - **StochasticFxResultsEmitter**: writes `notes/STOCHASTIC_FX_RESULTS.md` (parallel to STAGE_2_RESULTS.md) given a tuple of InversionVerdicts. R-tagged sections per family + cross-family summary table. Format mirrors STAGE_2_RESULTS.md exactly.
 - Unit tests:
   - Round-trip on each emitter (write + read + field-equality).
   - File-existence assertions per emit.
@@ -380,7 +398,7 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 - HALT routing: if any Phase fails for any family, do NOT silent-retune. Report the failure, route per Pin Z1.5 (CORRECTIONS-α + scoped Wave-1 re-review on the plan, NOT silent fix).
 - Reality-Checker cross-check: re-run the same driver from scratch with `rng_seed = 42`; confirm bit-exact identical `InversionVerdict.audit_block` per family (Pin Z1.2 determinism).
 
-**Commit message:** `eval(stochastic_fx): end-to-end run at canonical pins — all 3 families PASS`
+**Commit message:** outcome-neutral, decided at run-time per FLAG-RC-4 disposition. If all three families PASS: `eval(stochastic_fx): end-to-end run at canonical pins — emit verdicts (3 families)`. If any family FAILS: `eval(stochastic_fx): end-to-end run at canonical pins — HALT per Pin Z1.5 (family X failed phase Y)`. NEVER pre-pin "all PASS" in the commit message — that would be the anti-fishing pattern of asserting the outcome before the run.
 
 ---
 
@@ -423,6 +441,7 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 | Task 3.x SDE generator's trivial-degenerate-limit test fails | HALT — discretization defect; investigate (e.g., dt too coarse). NEVER raise sigma to pass. |
 | Task 4.1 algebraic-inversion property test fails | HALT — float64 numerical defect; investigate `apply_inversion`. |
 | Task 4.2 InversionVerifier raises for canonical fixture | HALT — CORRECTIONS-α + scoped Wave-1 re-review per spec v0.3 Pin Z1.5. |
+| Task 5 emit round-trip read-back equality fails on ANY emitter | HALT — IO Boundary tier defect; investigate parquet/JSON schema or LaTeX-fragment encoding. NIT-RC-Task5 disposition. |
 | Task 6 any family's Phase B / Phase C fails | HALT per Pin Z1.5. NEVER increase N. NEVER retune SDE parameters silently. |
 | Task 7 strip audit_block changed | HALT — route to cohort_5_strip review (master-spec-level coupling concern). |
 | Wave-1 or Wave-2 RC+MQ on this plan returns BLOCK | HALT per master-spec §6.1; CORRECTIONS-α in §16. |
@@ -438,9 +457,36 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 | `notes/STOCHASTIC_FX_RESULTS.md` | 6 | parallel to STAGE_2_RESULTS.md | composed of per-family verdicts |
 | `scratch/2026-05-11-stochastic-fx-execution/{moment_verification,ks_test,pin_z16_strip_preservation}_log.md` | 6–7 | markdown | run logs |
 
-## §16 CORRECTIONS-α (reserved)
+## §16 CORRECTIONS-α (patch log)
 
-v0.1 has no corrections. Wave-1 RC+MQ on this plan may land v0.2 → §16.1.
+### §16.1 v0.1 → v0.2 (Wave-1 RC+MQ disposition)
+
+**Wave-1 review verdicts:**
+- RC: ACCEPT_WITH_FLAGS (4 material flags + 1 NIT + minor naming consistency drift).
+- MQ: ACCEPT_WITH_FLAGS (4 flags — math content faithful to spec v0.3; flags are surface-level surface-area improvements).
+
+Verdict files:
+- `scratch/2026-05-11-stochastic-fx-plan-review/rc-verdict.md`
+- `scratch/2026-05-11-stochastic-fx-plan-review/mq-verdict.md`
+
+Both reviewers explicitly stated no full Wave-1 re-dispatch required; orchestrator-side v0.2 patch suffices.
+
+| Finding | Severity | Disposition | Location |
+|---|---|---|---|
+| **FLAG-RC-1** | Material | Inline-backtick code signatures pervaded acceptance bullets (`__call__(...) -> ...`, `Name(field: type, ...)`, etc.) — violated `memory/feedback_no_code_in_specs_or_plans.md` per the parent spec's RC-FLAG-1-v2 disposition. v0.2 prose-ifies signatures and replaces constant-construction lines with per-family Parameters tables (Tasks 1.2, 1.3, 2.1, 3.1, 3.2, 3.3, 4.1, 4.2, 5). Math notation and JSON-schema illustrations remain admissible. | Tasks 1.2 / 1.3 / 2.1 / 3.1 / 3.2 / 3.3 / 4.1 / 4.2 / 5 |
+| **FLAG-RC-3** | Material | `MOMENT_REL_TOL` and `KS_PVALUE_FLOOR` import path pinned: defined as module-level `Final` in `simulations/stochastic_fx/variance_proxy.py`; downstream consumers import via `from simulations.stochastic_fx.variance_proxy import ...` (single source of truth). | Task 4.2 acceptance + Task 5 emit |
+| **FLAG-RC-4** | Material (anti-fishing) | Task 6 commit message reframed as outcome-neutral. Two run-time-decided variants: (i) PASS case emits `eval(stochastic_fx): emit verdicts (3 families)`; (ii) FAIL case emits `eval(stochastic_fx): HALT per Pin Z1.5 (family X failed phase Y)`. Pre-pinning "all PASS" in the commit message was the anti-fishing pattern. | Task 6 |
+| **FLAG-RC-2** | NIT | Header text clarifies that the cohort-N convention tracks the TASK (one task per commit), NOT per-step `- [ ]` checkboxes. Subagent-driven-development's TaskCreate/TaskUpdate is the canonical tracking surface. Matches A1/A2/B1 plan precedents. | Header |
+| **NIT — `{family_id}` vs `{family}` drift** | Cosmetic | All filename templates and dispatch references now use `{family_id}` consistently with the PathEnsemble Value type's closed alphabet `{gbm, ou, merton}`. | Tasks 2.1 / 5 |
+| **NIT — Task 5 missing HALT row** | Cosmetic | §14 HALT routing now has a Task 5 row: "Task 5 emit round-trip read-back equality fails → HALT IO Boundary tier defect". | §14 |
+| **FLAG-MQ-1** | Medium | Merton `E[σ_T]` Python form now literalised in Task 2.1 acceptance table — full expression with all terms, mirroring GBM/OU rows (prevents the most-error-prone family from being implementer-discretion). | Task 2.1 per-family moment table |
+| **FLAG-MQ-2** | Medium | `moments.py` module docstring requirement explicit: documents the `(X̄/Ȳ)² → params.x_0**2` substitution at canonical pin (x_0 = X̄/Ȳ = 4000); `.tex` fragments retain symbolic `(X̄/Ȳ)²` form. Task 2.1 acceptance now states this requirement separately. | Task 2.1 acceptance |
+| **FLAG-MQ-3** | Low | `Var[σ_T]` Python forms for GBM and Merton added to Task 2.1 per-family moment table (alongside the previously-present OU form). Removes the silent-fishing surface. | Task 2.1 per-family moment table |
+| **NIT-MQ-1** | Low | Task 4.2 Phase C construction changed from `scipy.stats.lognorm.fit(...)` / `gamma.fit(...)` (which would re-introduce the empirical-fit tautology MQ caught at spec v0.1) to DIRECT method-of-moments construction: `lognorm(s=…, scale=…)` from analytic E and Var; `gamma(a=…, scale=…)` similarly. Construction formulas spelled out in Task 4.2 acceptance. | Task 4.2 Phase C |
+
+### §16.2 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.3 once execution completes.
 
 ## §17 References
 
