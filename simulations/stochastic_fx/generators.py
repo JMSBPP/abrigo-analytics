@@ -51,9 +51,10 @@ Result is a 64-char lowercase hex string consumed by
 Tier discipline
 ---------------
 Callable tier under the ``functional-python`` regime. Imports limited to
-``dataclasses``, ``hashlib``, ``json``, ``math``, ``numpy``,
-``simulations.stochastic_fx.types``, and
-``simulations.stochastic_fx._errors``. MUST NOT import
+``dataclasses``, ``hashlib``, ``json``, ``math``, ``numpy``, and
+``simulations.stochastic_fx.types``. Validation is delegated to
+``PathEnsemble.__post_init__``, so ``simulations.stochastic_fx._errors``
+is NOT imported directly here. MUST NOT import
 ``simulations.stochastic_fx.moments`` (sibling Callable — cross-Callable
 imports break tier purity) or ``simulations.stochastic_fx.utils`` (does
 not yet exist; Task 5 territory).

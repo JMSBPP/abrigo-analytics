@@ -6,7 +6,7 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.2 (Wave-1 RC ACCEPT_WITH_FLAGS + MQ ACCEPT_WITH_FLAGS — 8 flags + 4 NITs disposed inline per §16.1)
+**Plan version:** v0.3 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS-DISPOSED at v0.2; v0.3 adds §16.3 mid-execution CORRECTIONS-α for Task 3.1's grid-density precision-floor disposition per the A1 precedent)
 **Parent spec:** `docs/specs/2026-05-11-stochastic-fx-variant-design.md` v0.3 (Wave-1 ACCEPT_WITH_FLAGS-DISPOSED)
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`, audit `94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329` — PRESERVED unchanged per Pin Z1.6)
 **Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized once §16.1 corrections land
@@ -242,7 +242,7 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 - Hypothesis property tests:
   - Determinism (Pin Z1.2): same `(rng_seed, n_paths)` → bit-exact `audit_block`.
   - Lognormality: at large `n_steps` and `T=1`, `log(path[..., -1] / x_0)` is approximately normal with mean `(mu - sigma^2/2) * T` and variance `sigma^2 * T`. Use Hypothesis with a Normality goodness-of-fit check (Anderson-Darling) at N=1000.
-  - Trivial-degenerate limit: at `params.sigma == 1e-8` (effectively 0), all paths collapse near `x_0` and `sigma_t_per_path` mean is `< 1e-6`.
+  - Trivial-degenerate limit: at `params.sigma == 1e-8` (effectively 0), all paths collapse near `x_0` and `sigma_t_per_path` mean is `< 1e-6`. Tested on a coarser grid (`n_steps = 100`, `T = 1.0`) rather than the canonical pin (`n_steps = 5000`, `T = 12`) because eq. (7) sum-of-squared-deviations divided by `T` accumulates float64 rounding noise monotonically in grid density — at canonical density the empirical floor lands at ≈ `1.49e-6` (>1e-6) even when the analytic prediction `x_0² · σ²` is `1.6e-9`. See §16.3 (v0.2→v0.3 CORRECTIONS-α) for the disposition rationale and the per-grid measured floor.
 - ruff + ty clean.
 
 **Commit message:** `feat(stochastic_fx/generators): GBMPathGenerator`
@@ -486,7 +486,33 @@ Both reviewers explicitly stated no full Wave-1 re-dispatch required; orchestrat
 
 ### §16.2 Wave-2 (post-execution) review reserve
 
-Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.3 once execution completes.
+Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.4 once execution completes (renumbered to make room for §16.3 mid-execution disposition).
+
+### §16.3 v0.2 → v0.3 (Task 3.1 mid-execution CORRECTIONS-α — grid-density precision floor)
+
+**Trigger:** Task 3.1 Wave-1 RC ACCEPT_WITH_FLAGS (RC-FLAG-1 Medium / procedural). Task 3.1 implementer disposed the "paths collapse" trivial-degenerate test (`sigma=1e-8`, threshold `< 1e-6`) by reducing test-side `n_steps` from canonical 5000 to 100 — silent param adjustment of the test rather than a documented threshold/grid relaxation. MQ independently confirmed (i) the underlying math is correct (Itô anchor 0.152·SE; eq. (7) literal `Σ(X−mean)²/T`; bit-exact determinism); (ii) the grid-density issue is REAL not fabricated (monotone `mean(sigma_t)`: 2.7e-8 @ n=100, 2.96e-7 @ n=1000, 1.49e-6 @ n=5000). The analytic prediction at `sigma=1e-8` is `x_0² · σ²` ≈ 1.6e-9; the canonical-grid empirical floor of 1.49e-6 is dominated by float64 cumulative-sum rounding noise, not by the SDE physics.
+
+**Precedent:** the A1 plan v0.3→v0.4 precision-floor disposition (commit `74c333c` / scratch `2026-05-11-a1-panoptic-survey/`) that relaxed `1e-6` to `5e-5` for the published 5-sig-fig precision floor in the strategy-verdict baseline. Memory `memory/project_precision_floor_5e5_lesson.md` codifies the disposition pattern: when a test threshold is tighter than the precision the test-bed can deliver, relax to match the floor and document the analytic vs measured gap; do NOT silently adjust auxiliary parameters.
+
+**Disposition:** explicit. The trivial-degenerate test exercises the GEOMETRIC fact "paths collapse to x_0 at zero vol", NOT the production-grid behaviour of σ_T. Either of two anchorings is mathematically valid (and both are inferior-test-of-nothing iff the SDE drift is correctly Itô-corrected, which is independently anchored by `test_ito_correction_anchor`):
+- **(a) coarse-grid + tight threshold** (implementer's choice; n_steps=100, threshold <1e-6) — exposes the geometry cleanly without float-accumulation noise; faster test.
+- **(b) canonical-grid + relaxed threshold** (would be `n_steps=5000`, threshold ≤ 2e-6) — matches production grid; mirrors A1 disposition more literally but adds wall-time to the test and weakens the threshold by ≈2x.
+
+v0.3 ratifies option (a) as the project-canonical choice for this test class — the test docstring at `simulations/tests/test_saas_stochastic_fx.py::TestGBMPathGenerator::test_trivial_degenerate_limit_sigma_to_zero` documents the n_steps choice, and Task 3.1 acceptance bullet 3 (above) now cites this §16.3. §14 HALT routing's existing "NEVER raise sigma to pass" rule is preserved verbatim; the n_steps-adjustment route is explicitly admissible only with a docstring rationale + a §16-tracked correction (this entry).
+
+**Forward implication for Tasks 3.2 / 3.3.** Both OUPathGenerator and JumpDiffusionPathGenerator inherit the trivial-degenerate test class shape. Their analogous tests SHOULD adopt option (a) verbatim (coarse-grid + tight threshold) for parallelism and to avoid re-litigating the disposition per family.
+
+**RC-FLAG-2 (Low) disposition.** `generators.py` module docstring previously claimed `simulations.stochastic_fx._errors` was imported by this module. It is not (validation is delegated to `PathEnsemble.__post_init__`). Docstring corrected.
+
+**RC-NIT-1 (Trivial) disposition.** The defensive `paths[:, 0] = params.x_0` reassignment is correctness-redundant under IEEE 754 (`exp(0) == 1.0` exactly) but readability-positive. Kept as-is.
+
+**MQ-FLAG-2 (Low) disposition.** Slice-equivalence convention (`gen(seed=42, n_paths=1000).paths[:500]` is NOT equal to `gen(seed=42, n_paths=500).paths` because the RNG state advances differently) deferred to a Task 5 emit.py docstring; not load-bearing for Task 3.1.
+
+**Verdict files:**
+- `scratch/2026-05-11-stochastic-fx-task-3.1-review/rc-verdict.md`
+- `scratch/2026-05-11-stochastic-fx-task-3.1-review/mq-verdict.md`
+
+Both reviewers explicitly stated no Wave-1 re-dispatch required for this disposition; orchestrator-side v0.3 patch suffices.
 
 ## §17 References
 
