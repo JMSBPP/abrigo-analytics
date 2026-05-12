@@ -1,6 +1,6 @@
 ---
 spec_id: stochastic-fx-variant-design
-spec_version: v0.2 (Wave-1 RC ACCEPT_WITH_FLAGS + MQ BLOCK on v0.1; v0.2 reframes Pin Z1.3/Z1.4 to moment-matched per MQ-BLOCK-1/2/3; awaiting v0.2 Wave-1 re-review)
+spec_version: v0.3 (Wave-1 v0.2: RC ACCEPT_WITH_FLAGS + MQ BLOCK (NEW-BLOCK-MQ-4 GBM E[σ_T] sign-mass error); v0.3 fixes GBM moment formula + closes RC-FLAG-1-v2 prose-ification residual; awaiting v0.3 Wave-1 re-review)
 emit_timestamp_utc: 2026-05-11
 parent_framework: notes/PRIMITIVES.md §15 open item — "Path A v3" stochastic-FX variant
 stage_2_results_anchor: notes/STAGE_2_RESULTS.md (R1–R8 closed forms under deterministic eq. (6))
@@ -142,11 +142,14 @@ simulations/tests/test_saas_stochastic_fx.py
 
 - `variance_proxy.py` — Callable tier. Implements PRIMITIVES.md §6 eq.
   (7) discretely on the sampled paths (matches B1 plan's σ_T contract).
-  Free function `compute_sigma_t_per_path(ensemble) → ndarray`.
-  Free function `apply_inversion(sigma_T_value, x_bar) → eps_value`
-  implements eq. (8) algebraically per Pin Z1.3a. NO Itô calculus
-  (sympy cannot perform stochastic calculus; per BLOCK-MQ-3
-  disposition the symbolic phase is strictly algebraic).
+  Two free functions: one computes the per-path realised variance
+  array from an ensemble's path matrix, the other applies the
+  algebraic inversion of eq. (8) pointwise per Pin Z1.3a. NO Itô
+  calculus (sympy cannot perform stochastic calculus; per BLOCK-MQ-3
+  disposition the symbolic phase is strictly algebraic). RC-FLAG-1-v2
+  disposition: function signatures previously embedded here are now
+  described in prose; full implementation signatures live in the
+  implementation plan, not this spec.
 
 - `moments.py` — Callable tier (NEW in v0.2 per BLOCK-MQ-2/3). One
   function per SDE family returning the analytic `E[σ_T]` and
@@ -262,7 +265,7 @@ family in `notes/stochastic_fx_tex/sigma_t_moments_{family}.tex`):
 
 | Family | E[σ_T] (analytic, hand-derived) | Reference for derivation |
 |---|---|---|
-| GBM (mean-zero drift) | E[σ_T] = (X̄/Ȳ)²·(e^{σ²T} − 1)/(σ²T) (leading order in σT) | Hull §15 Itô variance estimator |
+| GBM (mean-zero drift) | E[σ_T] = (X̄/Ȳ)² · [(e^{σ²T} − 1)/(σ²T) − 1] (exact under lognormal-centered estimator); leading-order ≈ (X̄/Ȳ)² · σ²T/2 (NEW-BLOCK-MQ-4 disposition: previous v0.2 form omitted the `− 1` correction inside the brackets, producing a residual constant of `(X̄/Ȳ)²` at σ→0 that contradicted the trivial-degenerate-limit claim. Corrected form vanishes at σ→0 as required.) | Hull §15 Itô variance estimator |
 | OU (stationary) | E[σ_T] = σ²/(2θ) exactly | Standard OU stationary variance |
 | Merton jump-diffusion (mean-zero drift) | E[σ_T] = (X̄/Ȳ)²·σ²·T + λ·(X̄/Ȳ)²·(e^{2(μ_J+σ_J²)} − 2e^{μ_J+σ_J²/2} + 1)·T (leading order) | Andersen-Piterbarg Vol I §2.7 |
 
@@ -494,12 +497,33 @@ implementation begins (RC-FLAG-4 disposition):
    stochastic-fx-package implementation plan's first task, NOT in this
    spec.
 
-### §11.3 v0.2 Wave-1 re-review reserve
+### §11.3 v0.2 Wave-1 re-review (landed)
 
-Re-dispatch of BOTH RC + MQ on v0.2 is required per master-spec §6.1
-BLOCK protocol. Verdicts will land in:
+- RC v0.2 verdict: ACCEPT_WITH_FLAGS — 2/4 prior FLAGs closed; 2 residual
+  (FLAG-RC-1-v2 material on §3 function signatures still in inline
+  backticks; FLAG-RC-2-v2 NIT on §1 §15 bullet-count caveat).
+- MQ v0.2 verdict: BLOCK — three prior BLOCKs DISPOSED satisfactorily;
+  one NEW high-severity finding NEW-BLOCK-MQ-4 on §4.2 GBM E[σ_T]
+  formula (missing `− 1` correction inside brackets; spec form fails
+  the trivial-degenerate-limit at σ→0).
+
+Verdict files:
 - `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.2/rc-verdict.md`
 - `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.2/mq-verdict.md`
+
+### §11.4 v0.2 → v0.3 (NEW-BLOCK-MQ-4 disposition + FLAG-RC-1-v2 closure)
+
+| Finding | Severity | Disposition | Location |
+|---|---|---|---|
+| **NEW-BLOCK-MQ-4** | High | §4.2 GBM `E[σ_T]` row corrected from `(X̄/Ȳ)²·(e^{σ²T}−1)/(σ²T)` to `(X̄/Ȳ)² · [(e^{σ²T}−1)/(σ²T) − 1]` (exact); leading-order `≈ (X̄/Ȳ)² · σ²T/2`. Restores the σ→0 vanishing limit required by §4.2's trivial-degenerate-limit framing. | §4.2 GBM row |
+| **FLAG-RC-1-v2** | Material | §3 variance_proxy.py prose-ified: function signatures with `(...) → return-type` syntax removed; per-file responsibility described in prose only; implementation signatures deferred to plan. | §3 variance_proxy.py bullet |
+| **FLAG-RC-2-v2** | NIT | Deferred to a v0.3.1 cosmetic patch if required by Wave-1 re-review. §1 §15 reference uses "open item 2 (by bullet count)" framing in §11.1 disposition; explicit inline caveat at §1 not added in v0.3 to keep the patch narrow. | (deferred) |
+
+### §11.5 v0.3 Wave-1 re-review reserve
+
+Per master-spec §6.1, BOTH RC and MQ re-dispatch on v0.3. Narrow-scope
+per MQ's own note ("Re-review will be narrow-scope"); verdicts land
+in `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.3/`.
 
 ## §12 References
 
