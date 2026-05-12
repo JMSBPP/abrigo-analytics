@@ -21,22 +21,24 @@ Source values: `scratch/2026-05-11-a1-panoptic-survey/envelope_evaluation_log.md
 | candidate | `max_relative_error` | `delta_pp` vs IronCondor | exceeds 5pp? |
 |---|---|---|---|
 | reverse_iron_condor (BASELINE) | 0.2813412838694053 | 0.0 | n/a |
-| long_straddle | 0.8038066200848816 | -52.246533621548 | False |
-| zeehbs | 0.9216437527122149 | -64.030246884281 | False |
-| long_strangle | 0.9785000108207673 | -69.715872695136 | False |
+| long_straddle | 0.8038066200848816 | -52.24653362154763 | False |
+| zeehbs | 0.9216437527122149 | -64.03024688428096 | False |
+| long_strangle | 0.9785000108207673 | -69.71587269513620 | False |
 
-`max(deltas) = -52.246534` pp (long_straddle).
+`max(deltas) = -52.24653362154763` pp (long_straddle).
+
+Full IEEE-754 double precision shown; `delta_pp = (ironcondor.max_relative_error - candidate.max_relative_error) * 100` computed directly from the `max_relative_error` column to its left. Source values from `envelope_evaluation_log.md` §2.
 
 ## §3 Verdict
 
-`max(deltas) = -52.25` (long_straddle) `< 5.0` → **KEEP**.
+`max(deltas) = -52.25` pp (long_straddle; rounded to 2 dp for readability — see §2 for full IEEE-754 precision) `< 5.0` → **KEEP**.
 
 No non-IronCondor candidate beats IronCondor by the pre-pinned 5pp margin. Every candidate sits **below** IronCondor on the envelope-error metric (delta_pp is negative for all three), confirming reverse-IC remains the strongest replicator on the canonical TP1 fixture.
 
 ## §4 Anti-fishing posture
 
 - Threshold `5.0 pp` pre-pinned at plan v0.2 (Pin P-A1.4 in master spec §5); reaffirmed v0.3, v0.4.
-- Sign convention pre-pinned at plan v0.4 §6 (MQ-FLAG-A1.4 disposition).
+- Sign convention pre-pinned at plan v0.2 §11.1 (MQ-FLAG-A1.4 disposition; reaffirmed at plan v0.4 §6 Task 3.1 acceptance).
 - Tie-break predicate pre-pinned at plan v0.3 §7 (MQ-FLAG-A1.3 disposition).
 - Each adapter's `comparability_proof` declared at Task 2.2 authorship time (commit 6c871f0), BEFORE envelope numbers were observed (see eval log §4).
 - No post-hoc threshold adjustment, no spec-flip, no candidate drop.
