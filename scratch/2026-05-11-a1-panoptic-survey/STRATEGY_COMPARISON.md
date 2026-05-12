@@ -62,32 +62,32 @@ Two non-primitive mechanisms appear in Panoptic but are out of scope for the str
 
 ## §5 Filtered candidate set
 
-**Filter rule (rule-driven, anti-fishing).** A row from §2 enters this set iff it satisfies BOTH of the following predicates simultaneously:
+**Filter rule (v0.3, strict-equality predicate — anchor: Plan v0.2 → v0.3 §11.2 commit 997ac9f).** A row from §2 enters this set iff it satisfies BOTH predicates simultaneously:
 
 1. `admits_strip_emit = yes` (deterministic `{(K_i, w_i)}` tuple exists, per §3).
-2. `convexity_class != "short-vol"` (LP side `a_l` is structurally LONG variance per PRIMITIVES.md §3; pairing a short-vol primitive with a long-vol LP collapses the hedge convexity sign).
+2. `convexity_class == "long-vol"` (STRICT string equality; "mixed", "mixed-vol", or any directional-flavored compound class does NOT qualify).
 
-The reverse-IC baseline is a special case: the `iron_condor` row in §2 is classed `short-vol` under the *standard* (debit-paid) leg orientation, but the cohort_5_strip baseline uses the LONG-vol leg orientation (credit-collected wings flipped to debit-paid wings — see `simulations/saas_builder/__init__.py` package docstring describing the cohort-5 strip as a long-vol Carr-Madan 3-condor). Under the cohort_5_strip's reverse-IC orientation the convexity class becomes long-vol, so it qualifies. It is listed below as the explicit baseline.
+**Math justification.** Carr-Madan replication of σ_T (PRIMITIVES.md §10 eq. 18) is a *positive*-weighted integral of OTM put + call payoffs. Mixed-vol primitives (call_spread, put_spread, super_bull, super_bear, call_ratio_spread, zebra) carry negative distributional δ-mass at strike kinks — they lie OUTSIDE the long-vol cone and cannot serve as σ_T building blocks. The v0.3 predicate excludes them ex-ante by requiring strict `convexity_class == "long-vol"`. This tightens the v0.2 negation rule (`!= "short-vol"`), which over-admitted 8 mixed-vol primitives.
 
-**Rows filtered OUT and why** (recorded for auditability — these are NOT candidates):
-- `short_call`, `short_put`, `call_calendar_spread`, `diagonal_spread`, `jade_lizard`, `big_lizard`, `iron_butterfly`, `bats` — fail one or both predicates: short-vol classification (per §2), or no strip-emit (calendar/diagonal per §3), or both.
-- `iron_condor` in its *standard* (short-vol) orientation fails predicate 2; it re-enters only under the reverse-IC long-vol orientation as the baseline anchor.
+**Reverse-IC baseline.** The §2 `iron_condor` row is classed `short-vol` under the *standard* (debit-paid) leg orientation, but the cohort_5_strip baseline uses the LONG-vol leg orientation (credit-wings flipped to debit-wings — see `simulations/saas_builder/__init__.py` package docstring describing the cohort-5 strip as a long-vol Carr-Madan 3-condor). Under that orientation the convexity class is treated as long-vol, qualifying it as the explicit baseline anchor.
 
 **Candidate set (rule-pass rows; not pre-ranked, per anti-fishing):**
 
-| primitive_id | role | one-line rationale (strip-emit eligibility · convexity-class qualification) |
+| primitive_id | role | one-line rationale (strip-emit eligibility · long-vol-strict qualification) |
 |---|---|---|
-| reverse_iron_condor (cohort_5_strip) | BASELINE — comparison anchor | Strip-emit eligible: four strikes, four sign-alternating weights, same SFPM 4-leg footprint as standard IC. Convexity qualification: cohort_5_strip flips the credit-wings → debit-wings leg orientation, producing a long-vol Carr-Madan 3-condor (per `simulations/saas_builder/__init__.py` package docstring); long-vol qualifies. |
-| long_call | candidate | Strip-emit eligible: trivial single-strike, single-weight ladder. Convexity qualification: classed long-vol (directional bullish, convex above strike) in §2 — not short-vol. |
-| long_put | candidate | Strip-emit eligible: trivial single-strike, single-weight ladder. Convexity qualification: classed long-vol (directional bearish, convex below strike) in §2 — not short-vol. |
-| long_straddle | candidate | Strip-emit eligible: two coincident strikes, equal weights. Convexity qualification: classed long-vol in §2 — pure long-vol, not short-vol. |
-| long_strangle | candidate | Strip-emit eligible: two separated strikes, equal weights. Convexity qualification: classed long-vol in §2 — pure long-vol, not short-vol. |
-| call_spread | candidate | Strip-emit eligible: two strikes, one long / one short weight pair. Convexity qualification: classed mixed-vol (directional bullish) in §2 — not pure short-vol, so predicate 2 (`!= "short-vol"`) passes literally. |
-| put_spread | candidate | Strip-emit eligible: two strikes, one long / one short weight pair. Convexity qualification: classed mixed-vol (directional bearish) in §2 — not pure short-vol; predicate 2 passes. |
-| super_bull | candidate | Strip-emit eligible: three strikes, three weights. Convexity qualification: classed directional bullish in §2 — not short-vol; predicate 2 passes. |
-| super_bear | candidate | Strip-emit eligible: three strikes, three weights. Convexity qualification: classed directional bearish in §2 — not short-vol; predicate 2 passes. |
-| call_ratio_spread | candidate | Strip-emit eligible: three strikes with non-unit ratio weights. Convexity qualification: classed mixed in §2 — not short-vol; predicate 2 passes. |
-| zebra | candidate | Strip-emit eligible: three strikes with documented 2:1 ratio weights. Convexity qualification: classed mixed-vol (directional bullish) in §2 — not short-vol; predicate 2 passes. |
-| zeehbs | candidate (with caveat) | Strip-emit eligible: six strikes, six weights — BUT emit payload must span ≥2 SFPM positions because 6 > 4-leg SFPM ceiling (§2 on-chain_liquidity column). Convexity qualification: classed long-vol in §2 — qualifies. |
+| reverse_iron_condor (cohort_5_strip) | BASELINE — comparison anchor | Strip-emit eligible: four strikes, four sign-alternating weights, same SFPM 4-leg footprint as standard IC. Long-vol qualification: cohort_5_strip's reverse-orientation produces a long-vol Carr-Madan 3-condor (per `simulations/saas_builder/__init__.py` package docstring). |
+| long_straddle | candidate | Strip-emit eligible: two coincident strikes, equal positive weights. §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds; pure long-vol with no directional skew. |
+| long_strangle | candidate | Strip-emit eligible: two separated strikes, equal positive weights. §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds. |
+| zeehbs | candidate (with caveat) | Strip-emit eligible: six strikes, six weights — emit payload must span ≥2 SFPM positions (6 > 4-leg SFPM ceiling, §2 on-chain_liquidity column). §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds. |
 
-**Count after filter:** 11 candidates + 1 baseline = 12 rows. This exceeds the plan's expected "2–4" upper bound. Per anti-fishing, no primitive is excluded for any reason other than failing the filter rule, so the full rule-pass list is reported here. Phase 2 numerical evaluation (and Phase 3 ranking) will narrow the set; that narrowing is NOT performed in this section.
+**Filtered-OUT by v0.3 predicate tightening** (were in v0.2 §5 but no longer qualify under strict equality):
+- `long_call` — `convexity_class = "long-vol (directional bullish)"`; compound class with directional flavor, not strict `"long-vol"`. Although it is a Carr-Madan atom, the strict-equality string predicate excludes the directionally-flavored row; revisit if §2 is amended to reclassify single-leg atoms as pure `"long-vol"`.
+- `long_put` — `convexity_class = "long-vol (directional bearish)"`; same compound-class exclusion as `long_call`.
+- `call_spread` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+- `put_spread` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+- `super_bull` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+- `super_bear` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+- `call_ratio_spread` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+- `zebra` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+
+**Count after v0.3 filter:** 3 candidates + 1 baseline = 4 rows. Within plan's "2–4 primitives" expected range.
