@@ -21,6 +21,7 @@ Coverage:
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import hypothesis.strategies as st
 import pytest
@@ -34,10 +35,12 @@ from simulations.saas_builder.cohort_5_strip import (
     default_strip_geometry,
     verify_carr_madan_envelope,
 )
+from simulations.saas_builder.cohort_4.types import TestPoint
 from simulations.saas_builder.cohort_5_strip.strategies import (
     STRATEGY_COMPARISON_ANCHOR,
     ComparabilityProofFalsifiedError,
     ComparabilityProofMissingError,
+    EnvelopeComparator,
     LongStraddleAdapter,
     LongStrangleAdapter,
     NormalizedEnvelopeScore,
@@ -47,6 +50,7 @@ from simulations.saas_builder.cohort_5_strip.strategies import (
     compute_normalized_score,
 )
 from simulations.saas_builder.cohort_5_strip.strategies.types import (
+    ComparabilityProof,
     StrategyAdapter,
 )
 
@@ -349,3 +353,227 @@ def test_adapters_are_frozen_dataclasses() -> None:
         a = cls()
         with pytest.raises((AttributeError, Exception)):
             a.primitive_id = "spoof"  # type: ignore[misc]
+
+
+# ─── Task 2.3 — EnvelopeComparator tests ──────────────────────────────────────
+#
+# Comparator fixture: a Pin-M2 TestPoint used as the (sigma_0, X̄/Ȳ) input;
+# K* matches the canonical reverse-IC fixture for K-stable strip geometry.
+
+
+@pytest.fixture
+def canonical_test_point() -> TestPoint:
+    """Canonical TP1 mirror — x_over_y_bar = 4000 (Banrep TRM mean).
+
+    sigma_0 is set to the canonical-fixture value used elsewhere in this
+    test module (20_000), NOT the PRIMITIVES.md §6 closed-form value
+    (2_000), to keep the strip geometry K̂ stable across the
+    cohort_5_strip tests. The comparator does not validate which
+    sigma_0 calibration is used — that is a cohort-4 concern; here we
+    only need a well-formed TestPoint.
+    """
+    return TestPoint(
+        label="TP1",
+        kappa=6.5e6,
+        x_over_y_bar=S_0_CANONICAL,
+        sigma_0=SIGMA_0_CANONICAL,
+        rationale="comparator test fixture — canonical TP1 mirror",
+    )
+
+
+@dataclass(frozen=True)
+class _MisdeclaredTiledBodyAdapter:
+    """Test double — claims tiled_body but uses separated-body geometry.
+
+    Delegates to :class:`LongStrangleAdapter` (whose strip has separated
+    bodies and therefore FAILS the Pin S5 long-vol signature). The
+    declared ``comparability_proof`` is the LIE — actual geometry does
+    not tile S_0.
+    """
+
+    primitive_id: str = "misdeclared_strangle"
+    comparability_proof: ComparabilityProof = "tiled_body"
+
+    def __call__(
+        self, s_0: float, sigma_0: float, k_star: float
+    ) -> IronCondorStrip:
+        return LongStrangleAdapter()(s_0=s_0, sigma_0=sigma_0, k_star=k_star)
+
+
+@dataclass(frozen=True)
+class _UnsuppliedPrimitiveVariantAdapter:
+    """Test double — claims primitive_variant but no verifier is registered."""
+
+    primitive_id: str = "uncovered_primitive"
+    comparability_proof: ComparabilityProof = "primitive_variant"
+
+    def __call__(
+        self, s_0: float, sigma_0: float, k_star: float
+    ) -> IronCondorStrip:
+        # Delegate to the canonical reverse-IC so the strip itself is
+        # valid — the failure must come from the missing variant
+        # verifier, not from a malformed strip.
+        return ReverseIronCondorAdapter()(s_0=s_0, sigma_0=sigma_0, k_star=k_star)
+
+
+@dataclass(frozen=True)
+class _TieingAdapter:
+    """Test double — wraps the canonical reverse-IC under a custom id.
+
+    Two instances with different ``primitive_id`` values produce
+    BYTE-IDENTICAL strips (same geometry, same K*, same s_0/sigma_0) so
+    their normalized scores collide within :data:`SORT_TIE_TOLERANCE`,
+    forcing the secondary lexicographic ``primitive_id`` tie-break.
+    """
+
+    primitive_id: str
+    comparability_proof: ComparabilityProof = "tiled_body"
+
+    def __call__(
+        self, s_0: float, sigma_0: float, k_star: float
+    ) -> IronCondorStrip:
+        return ReverseIronCondorAdapter()(s_0=s_0, sigma_0=sigma_0, k_star=k_star)
+
+
+def test_comparator_ranks_adapters_by_envelope(
+    canonical_test_point: TestPoint,
+) -> None:
+    """Happy path — all 4 Task 2.2 adapters at canonical TP1.
+
+    Each adapter is run through the shipped CarrMadanEnvelopeVerifier; a
+    NormalizedEnvelopeScore is produced per adapter; the returned tuple
+    is sorted under the proof-dependent key. Asserts: cardinality,
+    primitive-id coverage, sort monotonicity within lane, and that all
+    four scores are finite ≥ 0.
+    """
+    comparator = EnvelopeComparator()
+    adapters: tuple[StrategyAdapter, ...] = (
+        ReverseIronCondorAdapter(),
+        LongStraddleAdapter(),
+        LongStrangleAdapter(),
+        ZeehbsAdapter(),
+    )
+    scores = comparator(
+        adapters=adapters,
+        fixture=canonical_test_point,
+        k_star=K_STAR_CANONICAL,
+    )
+    assert len(scores) == 4
+    ids = {s.primitive_id for s in scores}
+    assert ids == {
+        "reverse_iron_condor",
+        "long_straddle",
+        "long_strangle",
+        "zeehbs",
+    }
+    for s in scores:
+        assert math.isfinite(s.normalized_score)
+        assert s.normalized_score >= 0.0
+        assert math.isfinite(s.raw_verdict.max_relative_error)
+        assert s.raw_verdict.max_relative_error >= 0.0
+    # Within the normalized_score lane, sort is by normalized_score
+    # ascending; within tiled_body lane, by raw max_relative_error.
+    # Group and verify monotonicity per-lane.
+    ns_lane = [s for s in scores if s.comparability_proof == "normalized_score"]
+    tb_lane = [s for s in scores if s.comparability_proof == "tiled_body"]
+    ns_values = [s.normalized_score for s in ns_lane]
+    tb_values = [s.raw_verdict.max_relative_error for s in tb_lane]
+    assert ns_values == sorted(ns_values), (
+        "normalized_score lane must be sorted by normalized_score ascending;"
+        f" got {ns_values}"
+    )
+    assert tb_values == sorted(tb_values), (
+        "tiled_body lane must be sorted by max_relative_error ascending;"
+        f" got {tb_values}"
+    )
+
+
+def test_comparator_raises_proof_missing_on_unsupplied_primitive_variant(
+    canonical_test_point: TestPoint,
+) -> None:
+    """Adapter declares primitive_variant but no verifier registered."""
+    comparator = EnvelopeComparator()  # empty primitive_variant_verifiers
+    adapter = _UnsuppliedPrimitiveVariantAdapter()
+    with pytest.raises(
+        ComparabilityProofMissingError, match="primitive_variant"
+    ):
+        comparator(
+            adapters=(adapter,),
+            fixture=canonical_test_point,
+            k_star=K_STAR_CANONICAL,
+        )
+
+
+def test_comparator_raises_proof_falsified_on_bad_tiled_body_claim(
+    canonical_test_point: TestPoint,
+) -> None:
+    """Adapter claims tiled_body but the strip fails Pin S5 long-vol signature."""
+    comparator = EnvelopeComparator()
+    adapter = _MisdeclaredTiledBodyAdapter()
+    with pytest.raises(
+        ComparabilityProofFalsifiedError, match="tiled_body"
+    ) as exc_info:
+        comparator(
+            adapters=(adapter,),
+            fixture=canonical_test_point,
+            k_star=K_STAR_CANONICAL,
+        )
+    # The original ReplicationToleranceError must be the __cause__.
+    assert exc_info.value.__cause__ is not None
+    assert "misdeclared_strangle" in str(exc_info.value)
+
+
+def test_comparator_secondary_sort_lexicographic_on_float_tie(
+    canonical_test_point: TestPoint,
+) -> None:
+    """Two adapters producing identical strips sort by primitive_id ascending.
+
+    Both delegate to ReverseIronCondorAdapter under the canonical
+    default_strip_geometry, so the strips are byte-identical and the
+    primary sort key (raw_verdict.max_relative_error under the
+    tiled_body lane) collides exactly. The secondary lex sort then
+    breaks the tie alphabetically.
+    """
+    comparator = EnvelopeComparator()
+    # "alpha_clone" < "zeta_clone" lex; pass them in reverse to confirm
+    # the comparator's sort (not insertion order) drives the result.
+    adapters: tuple[StrategyAdapter, ...] = (
+        _TieingAdapter(primitive_id="zeta_clone"),
+        _TieingAdapter(primitive_id="alpha_clone"),
+    )
+    scores = comparator(
+        adapters=adapters,
+        fixture=canonical_test_point,
+        k_star=K_STAR_CANONICAL,
+    )
+    assert len(scores) == 2
+    # Primary key (max_relative_error) must collide within tolerance.
+    assert math.isclose(
+        scores[0].raw_verdict.max_relative_error,
+        scores[1].raw_verdict.max_relative_error,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    )
+    # Secondary lex sort: "alpha_clone" before "zeta_clone".
+    assert scores[0].primitive_id == "alpha_clone"
+    assert scores[1].primitive_id == "zeta_clone"
+
+
+def test_comparator_empty_adapters_returns_empty_tuple(
+    canonical_test_point: TestPoint,
+) -> None:
+    """Defensive — empty input yields empty output (no exception)."""
+    comparator = EnvelopeComparator()
+    out = comparator(
+        adapters=(),
+        fixture=canonical_test_point,
+        k_star=K_STAR_CANONICAL,
+    )
+    assert out == ()
+
+
+def test_comparator_is_frozen_dataclass() -> None:
+    """EnvelopeComparator attributes are read-only."""
+    c = EnvelopeComparator()
+    with pytest.raises((AttributeError, Exception)):
+        c.verifier = None  # type: ignore[misc]

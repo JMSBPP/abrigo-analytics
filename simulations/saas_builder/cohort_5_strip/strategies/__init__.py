@@ -28,9 +28,10 @@ Three-tier discipline (functional-python skill):
 Future tasks (out of scope for Task 2.1):
 
 - Task 2.2 — concrete ``StrategyAdapter`` implementations per
-  primitive (long_strangle, reverse_iron_condor, ...).
-- Task 2.3a — pipeline glue that calls
-  :func:`compute_normalized_score` with the canonical verifier.
+  primitive (long_strangle, reverse_iron_condor, ...). DONE.
+- Task 2.3 — :class:`EnvelopeComparator` glue that runs each adapter
+  through the shipped envelope verifier and ranks the results, gating
+  on the per-adapter ``comparability_proof``. DONE.
 - Task 2.3b — concrete ``PrimitiveVariantVerifier`` implementations
   for primitives that justify a non-log-contract proxy.
 """
@@ -49,6 +50,10 @@ from simulations.saas_builder.cohort_5_strip.strategies.adapters import (
     ReverseIronCondorAdapter,
     ZeehbsAdapter,
 )
+from simulations.saas_builder.cohort_5_strip.strategies.compare import (
+    SORT_TIE_TOLERANCE,
+    EnvelopeComparator,
+)
 from simulations.saas_builder.cohort_5_strip.strategies.types import (
     COMPARABILITY_PROOFS,
     NORMALIZED_SCORE_FORMULA_DOCSTRING,
@@ -66,6 +71,7 @@ __all__ = [
     "ComparabilityProof",
     "ComparabilityProofFalsifiedError",
     "ComparabilityProofMissingError",
+    "EnvelopeComparator",
     "LongStraddleAdapter",
     "LongStrangleAdapter",
     "NORMALIZED_SCORE_FORMULA_DOCSTRING",
@@ -74,6 +80,7 @@ __all__ = [
     "NormalizedEnvelopeScore",
     "PrimitiveVariantVerifier",
     "ReverseIronCondorAdapter",
+    "SORT_TIE_TOLERANCE",
     "STRATEGY_COMPARISON_ANCHOR",
     "StrategyAdapter",
     "StrategyAdapterError",

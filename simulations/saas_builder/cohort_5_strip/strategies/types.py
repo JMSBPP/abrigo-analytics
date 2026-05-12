@@ -105,9 +105,13 @@ class StrategyAdapter(Protocol):
     in the 12-leg container is rejected at adapter-construction time
     by raising the appropriate ``cohort_5_strip._errors`` subclass.
 
-    Comparability lane is declared on the surrounding
-    :class:`NormalizedEnvelopeScore` wrapper, not on the strip
-    itself.
+    Required attributes (consumed by :class:`EnvelopeComparator`):
+
+    - ``primitive_id`` — short canonical id (str, non-empty), e.g.,
+      ``"long_strangle"``, ``"reverse_iron_condor"``.
+    - ``comparability_proof`` — pre-registered lane, one of
+      :data:`COMPARABILITY_PROOFS`. Declared at adapter authorship per
+      Wave-1 plan v0.3 §2.1 (never post-hoc).
 
     Method contract (callable surface — matches the cohort_5_strip
     convention shared with :class:`StripBuilder`, :class:`CondorBuilder`,
@@ -119,6 +123,9 @@ class StrategyAdapter(Protocol):
     - Returns a fully-validated ``IronCondorStrip`` whose
       ``__post_init__`` has run successfully.
     """
+
+    primitive_id: str
+    comparability_proof: ComparabilityProof
 
     def __call__(
         self, s_0: float, sigma_0: float, k_star: float
