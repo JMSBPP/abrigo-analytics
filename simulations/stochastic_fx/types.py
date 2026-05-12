@@ -1,10 +1,11 @@
-"""Value-tier containers for stochastic-fx — per-family SDE Parameters + canonical pins.
+"""Value-tier containers for stochastic-fx — per-family SDE Parameters, canonical pins, MC ensemble + inversion verdict.
 
 Parent spec: ``docs/specs/2026-05-11-stochastic-fx-variant-design.md`` v0.3 §4.2
 is the authority for the canonical numerical pins re-exported from this module.
 
 This module declares one ``@dataclass(frozen=True)`` Parameters container per
-SDE family covered by the stochastic-fx variant package:
+SDE family covered by the stochastic-fx variant package, plus the two
+verdict-bearing Value types consumed by the Phase-A/B/C verifier pipeline:
 
 - ``GBMParameters`` — geometric Brownian motion (drift ``mu``, volatility
   ``sigma``).
@@ -13,6 +14,10 @@ SDE family covered by the stochastic-fx variant package:
 - ``JumpDiffusionParameters`` — Merton jump-diffusion (continuous drift
   ``mu``/``sigma`` plus compound-Poisson jump component
   ``lambda_jump``/``jump_mean``/``jump_std``).
+- ``PathEnsemble`` — deterministic Monte-Carlo path matrix + per-path σ_T
+  (Pin Z1.2 reproducibility surface).
+- ``InversionVerdict`` — Phase-A algebraic / Phase-B moment / Phase-C KS
+  pass/fail with composite-AND invariant (Pins Z1.3a/Z1.3b/Z1.4).
 
 Each frozen-dc validates invariants in ``__post_init__`` and raises
 ``SDEParameterError`` on violation. All numeric fields are checked for
@@ -268,6 +273,15 @@ class PathEnsemble:
     - ``canonical_params_json`` is a non-empty ``str``;
     - ``rng_seed`` is a non-negative ``int`` (and not a ``bool``);
     - ``audit_block`` matches ``^[0-9a-f]{64}$``.
+
+    Equality / hash caveat: ``__eq__`` and ``__hash__`` are the
+    ``dataclass(frozen=True)``-auto-generated forms, which dispatch through
+    ``np.ndarray.__eq__`` on the ``paths`` / ``sigma_t`` fields. Comparing
+    two ``PathEnsemble`` instances raises ``ValueError`` and hashing raises
+    ``TypeError`` for the same reason ndarray is non-hashable. Mirrors
+    ``simulations.saas_builder.cohort_4.types.ZEvaluationResult`` —
+    round-trip equality is supplied by a hand-written helper at the IO
+    Boundary tier (forward-reference: Task 5 ``emit.py``).
     """
 
     family_id: str
