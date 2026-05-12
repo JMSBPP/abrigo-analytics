@@ -52,6 +52,9 @@ mutants/
 # SAAS-COHORT-1 emission outputs (Hive-partitioned + JSON sidecar)
 simulations/saas_builder/data/
 
+# Stochastic-FX variant emission outputs (parquet ensembles + JSON verdicts)
+simulations/stochastic_fx/data/
+
 # Private project memories (strategic / not for public repo)
 memory/project_uhi9_hookathon_june_11.md
 
