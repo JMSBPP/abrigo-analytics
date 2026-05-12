@@ -42,6 +42,13 @@ from simulations.saas_builder.cohort_5_strip.strategies._errors import (
     ComparabilityProofMissingError,
     StrategyAdapterError,
 )
+from simulations.saas_builder.cohort_5_strip.strategies.adapters import (
+    STRATEGY_COMPARISON_ANCHOR,
+    LongStraddleAdapter,
+    LongStrangleAdapter,
+    ReverseIronCondorAdapter,
+    ZeehbsAdapter,
+)
 from simulations.saas_builder.cohort_5_strip.strategies.types import (
     COMPARABILITY_PROOFS,
     NORMALIZED_SCORE_FORMULA_DOCSTRING,
@@ -59,12 +66,17 @@ __all__ = [
     "ComparabilityProof",
     "ComparabilityProofFalsifiedError",
     "ComparabilityProofMissingError",
+    "LongStraddleAdapter",
+    "LongStrangleAdapter",
     "NORMALIZED_SCORE_FORMULA_DOCSTRING",
     "NORMALIZED_SCORE_GRID_POINTS",
     "NORMALIZED_SCORE_GRID_SPAN",
     "NormalizedEnvelopeScore",
     "PrimitiveVariantVerifier",
+    "ReverseIronCondorAdapter",
+    "STRATEGY_COMPARISON_ANCHOR",
     "StrategyAdapter",
     "StrategyAdapterError",
+    "ZeehbsAdapter",
     "compute_normalized_score",
 ]
