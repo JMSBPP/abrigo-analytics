@@ -1,6 +1,6 @@
 ---
 spec_id: stochastic-fx-variant-design
-spec_version: v0.1 (initial draft — awaiting RC + MQ Wave-1 review)
+spec_version: v0.2 (Wave-1 RC ACCEPT_WITH_FLAGS + MQ BLOCK on v0.1; v0.2 reframes Pin Z1.3/Z1.4 to moment-matched per MQ-BLOCK-1/2/3; awaiting v0.2 Wave-1 re-review)
 emit_timestamp_utc: 2026-05-11
 parent_framework: notes/PRIMITIVES.md §15 open item — "Path A v3" stochastic-FX variant
 stage_2_results_anchor: notes/STAGE_2_RESULTS.md (R1–R8 closed forms under deterministic eq. (6))
@@ -8,7 +8,7 @@ stage_3_first_wave_spec: docs/specs/2026-05-11-stage-3-first-wave-design.md v0.2
 strip_anchor: simulations/saas_builder/cohort_5_strip/ (commit 3442852, audit_block 94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329)
 authority: CLAUDE.md anti-fishing invariants (NON-NEGOTIABLE); brainstorming flow; memory/feedback_pathological_halt_anti_fishing_checkpoint.md
 predecessor: none (first stochastic-FX spec)
-status: DRAFT — awaiting §10 Wave-1 RC+MQ 2-way review (both reviewers per wave)
+status: v0.2 — awaiting BOTH-reviewers re-dispatch per master-spec §6.1 (BLOCK requires RC+MQ re-review on the revision)
 ---
 
 # Stochastic-FX variant — design spec
@@ -102,112 +102,201 @@ artifact. Pin Z1.2 enforces this.
 
 ## §3 Components
 
+**File-tree layout** (RC-FLAG-1 disposition: function signatures
+removed; per-file responsibility described in prose below per
+`memory/feedback_no_code_in_specs_or_plans.md`):
+
 ```
 simulations/stochastic_fx/
-├── __init__.py                       Public API re-exports
-├── _errors.py                        StochasticFXError (base) +
-│                                     SDEParameterError +
-│                                     InversionTestFailedError +
-│                                     MCBudgetExceededError (reuse cohort_4 convention)
-├── types.py                          Value tier
-│   - GBMParameters (mu, sigma, x_0, T, dt, n_steps)
-│   - OUParameters (theta, mu_bar, sigma, x_0, T, dt, n_steps)
-│   - JumpDiffusionParameters (mu, sigma, lambda_jump, jump_mean,
-│                              jump_std, x_0, T, dt, n_steps)
-│   - PathEnsemble (family_id, paths: NDArray[(N, n_steps+1)],
-│                   sigma_T_per_path: NDArray[(N,)], audit_block,
-│                   parameters_canonical_json)
-│   - InversionVerdict (family_id, sympy_form_passes: bool,
-│                       sympy_residual: float, mc_ks_pvalue: float,
-│                       mc_n_paths: int, deterministic_limit_passes: bool,
-│                       passes: bool, tex_anchor: str, audit_block)
-├── generators.py                     Callable tier
-│   - GBMPathGenerator (frozen-dc, __call__(rng_seed: int, n_paths: int)
-│                       → PathEnsemble)
-│   - OUPathGenerator (similar)
-│   - JumpDiffusionPathGenerator (similar)
-├── variance_proxy.py                 Callable tier
-│   - sympy_inversion_check_gbm(parameters) → (analytic_eps_expr,
-│     deterministic_limit_residual)
-│   - sympy_inversion_check_ou(parameters) → (analytic_eps_expr,
-│     deterministic_limit_residual)
-│   - sympy_inversion_check_jump(parameters) → (analytic_eps_expr,
-│     deterministic_limit_residual)
-│   - mc_inversion_check(ensemble: PathEnsemble, x_bar: float)
-│     → (ks_pvalue, empirical_eps_array)
-│   - InversionVerifier (frozen-dc, __call__(parameters, ensemble, x_bar)
-│                        → InversionVerdict, combining symbolic + MC)
-├── emit.py                           IO Boundary tier
-│   - PathEnsembleEmitter (writes parquet under
-│                          simulations/stochastic_fx/data/, gitignored)
-│   - InversionVerdictEmitter (writes JSON v1.0 schema, gitignored)
-│   - TexFragmentEmitter (writes .tex fragments under
-│                         notes/stochastic_fx_tex/, NOT gitignored)
-│   - StochasticFXResultsEmitter (writes
-│                                 notes/STOCHASTIC_FX_RESULTS.md,
-│                                 committed)
-└── tests/                            (under simulations/tests/)
-    - test_saas_stochastic_fx.py       Hypothesis property tests +
-                                       regression-vs-deterministic +
-                                       inversion-verifier tests per family
+├── __init__.py
+├── _errors.py
+├── types.py
+├── generators.py
+├── variance_proxy.py
+├── moments.py
+└── emit.py
+
+simulations/tests/test_saas_stochastic_fx.py
 ```
 
-## §4 Data flow
+**Per-file responsibility:**
 
-For each SDE family the pipeline is:
+- `_errors.py` — Value tier. Typed exceptions: `StochasticFXError` (base);
+  `SDEParameterError` (invalid SDE parameter at `__post_init__`);
+  `InversionTestFailedError` (Z1.4 KS gate failure);
+  `MomentMatchFailedError` (Z1.3b moment-equality gate failure);
+  `MCBudgetExceededError` (reuse cohort_4 convention).
+
+- `types.py` — Value tier. One frozen-dataclass per SDE family for
+  parameters (GBMParameters / OUParameters / JumpDiffusionParameters),
+  plus `PathEnsemble` (carries paths, per-path σ_T, audit_block,
+  canonical parameters JSON) and `InversionVerdict` (carries the Z1.3a
+  algebraic-pass, Z1.3b moment-match-pass, Z1.4 KS-pass, audit_block,
+  tex_anchor). Constants for canonical parameter pins are defined here
+  (see §4.1 Per-family parameter pin table).
+
+- `generators.py` — Callable tier. One frozen-dataclass with `__call__`
+  per SDE family that samples a `PathEnsemble` given a pre-pinned
+  RNG seed and ensemble size. RNG handling per `numpy.random.default_rng`;
+  determinism per Pin Z1.2.
+
+- `variance_proxy.py` — Callable tier. Implements PRIMITIVES.md §6 eq.
+  (7) discretely on the sampled paths (matches B1 plan's σ_T contract).
+  Free function `compute_sigma_t_per_path(ensemble) → ndarray`.
+  Free function `apply_inversion(sigma_T_value, x_bar) → eps_value`
+  implements eq. (8) algebraically per Pin Z1.3a. NO Itô calculus
+  (sympy cannot perform stochastic calculus; per BLOCK-MQ-3
+  disposition the symbolic phase is strictly algebraic).
+
+- `moments.py` — Callable tier (NEW in v0.2 per BLOCK-MQ-2/3). One
+  function per SDE family returning the analytic `E[σ_T]` and
+  `Var[σ_T]` expressions HAND-DERIVED from literature (Hull,
+  Andersen-Piterbarg) and rendered via `sympy.latex(...)` into
+  `.tex` fragments. These are the non-trivial mathematical content
+  per BLOCK-MQ-3.
+
+- `emit.py` — IO Boundary tier. Classes for parquet ensemble emit,
+  JSON inversion-verdict emit (both gitignored under a new
+  `simulations/stochastic_fx/data/` directory, per RC-FLAG-4
+  disposition added explicitly to `.gitignore`), `.tex` fragment
+  emit (NOT gitignored — under `notes/stochastic_fx_tex/`), and the
+  consolidated `notes/STOCHASTIC_FX_RESULTS.md` emit (committed).
+
+- `test_saas_stochastic_fx.py` — Hypothesis property tests per
+  generator (statistical-property invariants of the path
+  distribution), regression-vs-zero-volatility-degenerate-limit
+  per Pin Z1.3a, moment-match tests per Pin Z1.3b, KS-test
+  reproducibility tests per Pin Z1.4, audit_block-determinism tests
+  per Pin Z1.2.
+
+## §4 Data flow + per-family math content
+
+### §4.1 Data flow (per SDE family)
+
+(Reframed in v0.2 per MQ-BLOCK-1/2/3 disposition. The previous
+"symbolic phase derives σ_T distribution" was infeasible — sympy
+cannot perform Itô calculus. The current framing splits the symbolic
+work into a trivial algebraic substitution (Z1.3a) and a hand-derived
+moment match (Z1.3b), and replaces the under-specified KS test with
+a moment-matched parametric reference (Z1.4).)
 
 1. **Parameter container construction** — `GBMParameters(...)` (or OU /
    jump-diffusion variant). Frozen-dc `__post_init__` validates: all
-   numeric fields finite; `sigma > 0`; `x_0 > 0`; `dt > 0`;
-   `n_steps >= 2`; family-specific constraints (OU: `theta > 0`;
-   jump-diffusion: `lambda_jump >= 0`).
+   numeric fields finite; volatility parameters > 0; spot > 0;
+   step size > 0; number of steps ≥ 2; family-specific constraints
+   (OU mean-reversion rate > 0; jump-diffusion jump intensity ≥ 0).
+   Canonical numerical pins per §4.2 table.
 
-2. **Path generation** —
-   `generator(rng_seed: int, n_paths: int) → PathEnsemble`. Uses
-   `numpy.random.default_rng(rng_seed)` for reproducibility. Returns a
-   PathEnsemble with the (N, n_steps+1) path matrix and per-path σ_T
-   computed via PRIMITIVES eq. (7) DISCRETELY on the sampled path
-   (matches the B1 plan's σ_T contract — MQ-FLAG-B1.1 disposition).
+2. **Path generation** — generator's `__call__(rng_seed, n_paths)`
+   returns a `PathEnsemble`. Uses `numpy.random.default_rng(rng_seed)`
+   for reproducibility per Pin Z1.2. The (N × T+1) path matrix is
+   produced by the family-specific SDE discretization (GBM:
+   Euler-Maruyama on log-scale; OU: exact transition; jump-diffusion:
+   Euler + compound-Poisson augmentation).
 
-3. **Inversion verification** —
-   `InversionVerifier()(parameters, ensemble, x_bar) → InversionVerdict`:
-   - **Symbolic phase**: derive analytic `ε(σ_T)` for the family by
-     simplifying the SDE's stationary or quasi-stationary variance
-     formula. Compute `deterministic_limit_residual = |analytic_eps_expr
-     evaluated at sigma→0 − √(8·σ_T_det/(X̄/Ȳ)²)|`. PASS iff
-     `≤ NUMERICAL_IDENTITY_TOL = 1e-6`.
-   - **MC phase**: compute empirical `ε̂_n = √(8·σ_T_n / x_bar²)` for
-     each of the N paths. KS-test the empirical distribution against
-     the analytic ε distribution sampled at the same N. PASS iff
-     `ks_pvalue >= 0.01`.
-   - Combine: `verdict.passes = sympy_form_passes AND
-     deterministic_limit_passes AND (ks_pvalue >= 0.01)`.
+3. **σ_T computation** — `compute_sigma_t_per_path(ensemble)` applies
+   PRIMITIVES.md §6 eq. (7) DISCRETELY to each sampled path
+   (matches the B1 plan's σ_T contract per MQ-FLAG-B1.1
+   disposition).
 
-4. **Emit** — three artifacts per family:
+4. **Three-tier verification per family** (replaces v0.1's symbolic +
+   KS pipeline; addresses BLOCK-MQ-1/2/3):
+   - **Phase A — Algebraic inversion (Pin Z1.3a, family-agnostic, trivial).**
+     For each path, verify pointwise that
+     `apply_inversion(σ_T_n, x_bar) == sqrt(8·σ_T_n / x_bar²)` to
+     float64 precision. This is an algebraic substitution that sympy
+     handles in O(1ms). PASS iff residual ≤ `NUMERICAL_IDENTITY_TOL`
+     (1e-6, reuses cohort_4 convention). Family-agnostic; passes
+     trivially under all three families.
+   - **Phase B — Moment match against hand-derived analytic (Pin Z1.3b).**
+     Per family, compute empirical `mean(σ_T_n)` and `var(σ_T_n)`
+     across the N-path ensemble. Compare against hand-derived analytic
+     `E[σ_T]` and `Var[σ_T]` from §4.2 (Hull, Andersen-Piterbarg
+     literature; rendered as `.tex` fragments via `sympy.latex()`).
+     PASS iff relative error on EACH moment ≤ `MOMENT_REL_TOL`
+     (default 0.05 — calibrated to MC noise floor at N=1000).
+   - **Phase C — KS goodness-of-fit against moment-matched reference (Pin Z1.4).**
+     Fit a parametric reference distribution (gamma OR lognormal,
+     selected per family in §4.2) to the analytic `E[σ_T]` and
+     `Var[σ_T]`. KS-test empirical `σ_T_n` samples against this
+     reference distribution. PASS iff `ks_pvalue ≥ 0.01` (calibrated
+     to a MC-noise-matched reference — see §8 anti-fishing posture
+     for the rationale).
+
+5. **Emit** — five artifacts per family:
    - Parquet: `simulations/stochastic_fx/data/path_ensemble_{family}.parquet`
-     (gitignored at `.gitignore:53` — under `simulations/saas_builder/data/`
-     is gitignored; we'll add `simulations/stochastic_fx/data/` to the
-     gitignore as a single-line addition).
+     (NEW gitignore line `simulations/stochastic_fx/data/`; RC-FLAG-4
+     disposition).
    - JSON: `simulations/stochastic_fx/data/inversion_verdict_{family}.json`
-     (gitignored).
-   - LaTeX fragment: `notes/stochastic_fx_tex/eps_inversion_{family}.tex`
-     (committed — used by future LaTeX-econ-paper consolidator).
+     (same gitignore).
+   - LaTeX fragment for the algebraic inversion:
+     `notes/stochastic_fx_tex/eps_inversion_{family}.tex` (committed).
+   - LaTeX fragment for the variance dynamics:
+     `notes/stochastic_fx_tex/sigma_t_moments_{family}.tex` (committed
+     — the genuinely non-trivial mathematical content per BLOCK-MQ-3).
+   - Consolidated summary `notes/STOCHASTIC_FX_RESULTS.md` once all
+     three families have verdicts; R-tagged sections per family.
 
-5. **Summary emit** — once all 3 families have verdicts, one consolidated
-   markdown emits to `notes/STOCHASTIC_FX_RESULTS.md` (parallel to
-   `notes/STAGE_2_RESULTS.md`), containing R-tagged sections per family
-   plus cross-family comparison plot fixtures (see §7 hook).
+### §4.2 Variance dynamics per family (new in v0.2 per BLOCK-MQ-3)
+
+The non-trivial mathematical content per family is the hand-derived
+analytic `E[σ_T]` and `Var[σ_T]`. These are HAND-DERIVED (from
+literature), not sympy-derived (sympy cannot perform Itô calculus).
+Sympy is used only to (a) algebraically simplify the final closed
+forms and (b) render LaTeX fragments via `sympy.latex(...)`.
+
+**Per-family parameter pin table (Pin Z1.1 + Pin Z1.3b anchor).**
+These values are FROZEN at this commit; ex-post adjustment requires
+CORRECTIONS-α + scoped Wave-1 re-review per Pin Z1.5. Canonical
+values consistent with the cohort_5_strip canonical fixture
+(`x_bar = X̄/Ȳ = 4000`, ε = 0.1, T = 12 months):
+
+| Family | Pinned parameters | Reference distribution for Phase C |
+|---|---|---|
+| **GBM** | drift μ = 0; volatility σ = 0.10/√12; spot x_0 = 4000; horizon T = 12; n_steps = 5000 (matches cohort_4 Nyquist convention) | Lognormal (σ_T is positive, right-skewed under GBM) |
+| **OU** | mean-reversion θ = 1.0; long-run mean μ̄ = 4000; volatility σ = 0.10·4000/√(2·1.0); spot x_0 = 4000; T = 12; n_steps = 5000 | Gamma (chi-squared-like stationary distribution) |
+| **Merton jump-diffusion** | drift μ = 0; diffusion σ = 0.05/√12 (half-attribution to diffusion); jump intensity λ = 1/year; jump-size mean μ_J = 0; jump-size std σ_J = 0.10; spot x_0 = 4000; T = 12; n_steps = 5000 | Lognormal (compound-Poisson + lognormal-diffusion is approximately lognormal at moderate λ) |
+
+**Hand-derived analytic moments** (rendered as `.tex` fragments per
+family in `notes/stochastic_fx_tex/sigma_t_moments_{family}.tex`):
+
+| Family | E[σ_T] (analytic, hand-derived) | Reference for derivation |
+|---|---|---|
+| GBM (mean-zero drift) | E[σ_T] = (X̄/Ȳ)²·(e^{σ²T} − 1)/(σ²T) (leading order in σT) | Hull §15 Itô variance estimator |
+| OU (stationary) | E[σ_T] = σ²/(2θ) exactly | Standard OU stationary variance |
+| Merton jump-diffusion (mean-zero drift) | E[σ_T] = (X̄/Ȳ)²·σ²·T + λ·(X̄/Ȳ)²·(e^{2(μ_J+σ_J²)} − 2e^{μ_J+σ_J²/2} + 1)·T (leading order) | Andersen-Piterbarg Vol I §2.7 |
+
+`Var[σ_T]` analytic forms are similarly hand-derived per family (see
+the corresponding `.tex` fragments). These tables are the canonical
+authority for Pin Z1.3b moment-match gate.
+
+**Trivial-degenerate limit** (replaces v0.1's "reduces to eq. (6)" claim
+per BLOCK-MQ-1). For each family, the zero-volatility-and-zero-jump
+limit collapses to a point mass at x_0:
+
+- GBM: σ → 0 ⟹ X_t ≡ x_0 ⟹ σ_T ≡ 0 ⟹ ε ≡ 0 (point mass).
+- OU: σ → 0 (or θ → ∞) ⟹ X_t ≡ μ̄ ⟹ σ_T ≡ 0 ⟹ ε ≡ 0 (point mass).
+- Merton: σ → 0 AND λ → 0 ⟹ X_t ≡ x_0 ⟹ σ_T ≡ 0 ⟹ ε ≡ 0 (point mass).
+
+This is a trivial degeneracy, not a reduction to eq. (6) (which is
+not the limit of any of these families along their parameter axes —
+eq. (6) requires a periodic drift kernel none of these families has).
+This is documented honestly as Pin Z1.3a's family-agnostic baseline,
+not as a non-trivial verification. The genuine verification content
+lives in Phase B (moment match per Pin Z1.3b) and Phase C (KS
+goodness-of-fit per Pin Z1.4).
 
 ## §5 Pin coverage
 
 | Pin | Description | Verifiable as |
 |---|---|---|
-| **Z1.1** | SDE parameters pre-pinned at spec authorship time (this v0.1 §4) BEFORE running the inversion verifier. Post-hoc adjustment requires CORRECTIONS-α and a fresh Wave-1 review. | Spec text + commit anchor. |
-| **Z1.2** | Path-ensemble determinism: same `rng_seed` → bit-exact ensemble AND bit-exact `audit_block`. | Hypothesis property test on `(rng_seed, n_paths) → (ensemble, audit_block)`. |
-| **Z1.3** | Variance-proxy sympy analytic form per family reduces to PRIMITIVES eq. (8) under the deterministic limit (σ → 0 for GBM; θ → ∞ for OU; λ_jump → 0 for jump-diffusion). | sympy.simplify residual ≤ 1e-6. |
-| **Z1.4** | MC KS p-value ≥ 0.01 for empirical ε̂-distribution vs analytic ε-distribution per family. | `scipy.stats.ks_2samp` test on N ≥ 1000 paths. |
-| **Z1.5** | Anti-fishing routing: observed family-level inversion-test FAILURES route to CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. NEVER silent parameter re-tuning. | HALT-routing table in §6 of this spec; verification at Wave-2 review. |
-| **Z1.6** | Strip preservation: cohort_5_strip's `IronCondor_strip.json` audit_block (`94150326…`) is UNCHANGED before and after this spec's implementation. | `git log -p simulations/saas_builder/data/IronCondor_strip.json` shows no commits between the strip's pin commit and the stochastic-fx package merge. |
+| **Z1.1** | SDE parameters pre-pinned at spec authorship time (this v0.2 §4.2 per-family table) BEFORE running any verification phase. Post-hoc adjustment requires CORRECTIONS-α + scoped Wave-1 re-review per Pin Z1.5 / master-spec §6.4. | Spec text + commit anchor + diff visibility. |
+| **Z1.2** | Path-ensemble determinism: same `rng_seed` → bit-exact ensemble AND bit-exact `audit_block`. | Hypothesis property test on (rng_seed, n_paths) → (ensemble, audit_block). |
+| **Z1.3a** | Algebraic inversion (family-agnostic): for each path, the pointwise identity `apply_inversion(σ_T_n, x_bar) == √(8·σ_T_n/x_bar²)` holds to float64 precision. (Replaces v0.1's ill-posed "reduces to eq. (6)" claim per BLOCK-MQ-1.) Per family, the trivial-degenerate limit (σ → 0, θ → ∞, λ → 0) yields the trivial point mass ε ≡ 0; this is documented honestly as the family-agnostic baseline, not as a non-trivial test. | Pointwise residual ≤ NUMERICAL_IDENTITY_TOL (1e-6). |
+| **Z1.3b** | Moment match against hand-derived analytic (per family): empirical `mean(σ_T_n)` and `var(σ_T_n)` across the N-path ensemble match the hand-derived analytic `E[σ_T]` and `Var[σ_T]` from §4.2 within relative tolerance. (BLOCK-MQ-3 disposition: moment derivation is hand-derived per literature; sympy renders the closed forms as `.tex` fragments but does NOT perform Itô calculus.) | Relative error on EACH moment ≤ MOMENT_REL_TOL (default 0.05). |
+| **Z1.4** | KS goodness-of-fit against moment-matched parametric reference (per family): fit a parametric reference distribution (lognormal for GBM/Merton, gamma for OU per §4.2 table) to the analytic `E[σ_T]` and `Var[σ_T]`; KS-test empirical `σ_T_n` samples against this reference. (BLOCK-MQ-2 disposition: replaces v0.1's tautological-or-infeasible KS framing with moment-matched parametric reference per MQ recommendation reading (c).) PASS iff `ks_pvalue ≥ 0.01` (calibration documented in §8). | `scipy.stats.ks_1samp` against the family's fitted reference; N ≥ 1000 paths. |
+| **Z1.5** | Anti-fishing routing: observed family-level test FAILURES at Z1.3a / Z1.3b / Z1.4 route to CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. NEVER silent parameter re-tuning. NEVER "increase N until passing" — the N=1000 floor is a Z1.5 invariant, not a parameter to grow. | HALT-routing table in §6 of this spec; verification at Wave-2 review. |
+| **Z1.6** | Strip preservation: cohort_5_strip's `IronCondor_strip.json` audit_block (`94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329`) is UNCHANGED before and after this spec's implementation. (RC-FLAG-3 disposition: verification by direct hex grep on the JSON file, not just `git log -p`.) | Bash: `grep -F '94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329' simulations/saas_builder/data/IronCondor_strip.json` returns the audit_block line before AND after the stochastic-fx package merge. |
 
 ## §6 Exit criteria and HALT routing
 
@@ -228,9 +317,10 @@ For each SDE family the pipeline is:
 
 | Trigger | Route |
 |---|---|
-| Family-level symbolic deterministic-limit residual > 1e-6 | HALT — disposition memo; CORRECTIONS-α v0.x → v0.(x+1) on this spec; scoped Wave-1 re-review per master-spec §6.4 semantic. NEVER silent re-tuning of SDE parameters. |
-| Family-level MC KS p-value < 0.01 | HALT — same routing as above. The KS gate failure is a structural rejection of the family's distributional inversion; document the failure and route to user-enumerated pivot (drop the family from the spec OR refine the parameters with explicit anti-fishing justification). |
-| Implementation breaks any cohort_5_strip test (Pin Z1.6) | HALT — implementation is anti-fishing-coupled to cohort_5_strip; route to cohort_5_strip review. |
+| Pin Z1.3a algebraic inversion residual > 1e-6 | HALT — float64 numerical defect; investigate `apply_inversion` implementation. This is family-agnostic, so failure indicates a bug, not a family-level scientific result. |
+| Pin Z1.3b moment-match relative error > MOMENT_REL_TOL per family | HALT — CORRECTIONS-α; either (a) hand-derived analytic moments in §4.2 are wrong (re-derive against literature), OR (b) the SDE discretization in `generators.py` doesn't faithfully sample the SDE's stationary measure (refine the discretization — e.g., switch from Euler-Maruyama to a higher-order scheme). NEVER adjust SDE parameters to pass. |
+| Pin Z1.4 KS p-value < 0.01 per family | HALT — CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. The KS failure is a structural rejection of the family's distributional fit to the moment-matched reference; honest dispositions are (a) drop the family from the spec, (b) substitute a different reference distribution shape (e.g., gamma for a previously-lognormal family), (c) refine the discretization. NEVER "increase N until passing" — that's the §8 anti-fishing posture violation. |
+| Pin Z1.6 audit_block hex grep fails (strip mutated) | HALT — implementation is anti-fishing-coupled to cohort_5_strip; route to cohort_5_strip review. |
 | Wave-1 or Wave-2 RC+MQ on this spec returns BLOCK | HALT per master-spec §6.1; CORRECTIONS-α in §11. |
 
 ## §7 Out of scope of this spec (deferred)
@@ -288,25 +378,51 @@ Anti-fishing-banned (would be a strip retuning). Pin Z1.6 enforces.
 
 ## §8 Anti-fishing posture
 
-- SDE parameter values for each family are PRE-PINNED in this spec
-  v0.1 §4 BEFORE the inversion verifier runs. Canonical values
-  documented in the per-family parameter docstrings; ex-post tuning
-  requires CORRECTIONS-α + fresh Wave-1 review.
-- Family-level inversion-test FAILURES are SCIENTIFIC RESULTS, not
-  tuning triggers (Pin Z1.5). A failed family is documented honestly,
-  not silently dropped or retuned to PASS.
-- The "expected" sympy form per family is derived from the SDE's
-  stationary or quasi-stationary variance closed form — NOT chosen to
-  match an observed Monte-Carlo distribution.
-- This spec does NOT pre-pin a target value for the KS p-value beyond
-  the conventional `≥ 0.01` threshold. Sub-conventional p-values are
-  honest rejections, not opportunities to re-run with more paths until
-  passing.
+- SDE parameter values for each family are PRE-PINNED in §4.2's
+  per-family parameter table BEFORE any verification phase runs.
+  Canonical values are diff-visible at the v0.2 commit; ex-post
+  tuning requires CORRECTIONS-α + fresh Wave-1 review.
+- Family-level test FAILURES at Z1.3a / Z1.3b / Z1.4 are SCIENTIFIC
+  RESULTS, not tuning triggers (Pin Z1.5). A failed family is
+  documented honestly, not silently dropped or retuned to PASS.
+- The hand-derived analytic moments in §4.2 are taken from literature
+  (Hull, Andersen-Piterbarg) — NOT chosen to match an observed Monte-
+  Carlo distribution. Literature anchor for each formula is cited
+  per family in the corresponding `.tex` fragment.
+- **KS-gate calibration (Pin Z1.4 threshold = 0.01 vs the conventional
+  0.05).** Per FLAG-MQ-1 in the v0.1 review: the 0.01 threshold is
+  permissive (vs the conventional 0.05) but is chosen here because the
+  test compares two MC-noise-bearing estimates of the same population
+  quantity — empirical σ_T_n from the family's discretized paths vs
+  a parametric reference fit to the family's hand-derived analytic
+  moments. The reference itself carries finite-sample uncertainty
+  (the discretization-implied moments converge to the analytic
+  moments only in the dt → 0 limit). A 0.01 threshold tolerates that
+  shared MC-noise floor while still rejecting genuine distributional
+  mismatches. **This calibration is FROZEN at v0.2 §8; ex-post
+  tightening (e.g., to 0.05) is admissible ONLY as a CORRECTIONS-α
+  v0.x → v0.(x+1) with documented rationale.**
+- **N-floor anti-fishing rule (Pin Z1.4 + Pin Z1.5).** Pin Z1.4
+  specifies `N ≥ 1000` as the MC-budget floor. This is a FLOOR, not a
+  parameter to grow. "Increasing N until the KS test passes" is an
+  anti-fishing pattern (peeking under the budget knob until the gate
+  trips green). If the family's KS test fails at N=1000, the family's
+  test FAILS — not "needs more paths". Honest dispositions per Pin
+  Z1.5 routing: drop the family, substitute the reference distribution
+  shape, OR refine the discretization. NEVER increase N silently.
 - Strip preservation (Pin Z1.6) prevents the most subtle anti-fishing
   pattern: re-emitting cohort_5_strip under stochastic-path expectations
   would let stochastic-FX results retroactively justify the existing
   strip. Pin Z1.6 keeps the strip-emit pinned at its deterministic-
-  fixture commit (`3442852`).
+  fixture commit (`3442852`); verification by direct hex grep on the
+  audit_block per RC-FLAG-3 disposition.
+- **No "deterministic limit reduces to eq. (6)" claim** (BLOCK-MQ-1
+  disposition). v0.1 made this claim and it was mathematically
+  ill-posed (none of GBM/OU/Merton has a periodic drift kernel
+  matching eq. (6)). v0.2 documents the trivial-degenerate limit
+  honestly as "all three families reduce to a point mass at x_0 under
+  zero-volatility-and-zero-jump; this is a trivial degeneracy, not a
+  reduction to eq. (6)." See §4.2.
 
 ## §9 Anti-coupling guard
 
@@ -339,9 +455,51 @@ Wave-1 ACCEPT or ACCEPT_WITH_FLAGS-disposed → writing-plans skill
 authoring of `docs/plans/2026-05-NN-stochastic-fx-variant.md` follows
 in a subsequent brainstorm cycle.
 
-## §11 CORRECTIONS-α (reserved patch log)
+## §11 CORRECTIONS-α (patch log)
 
-v0.1 has no corrections. Wave-1 RC+MQ may land v0.2 here.
+### §11.1 v0.1 → v0.2 (Wave-1 RC ACCEPT_WITH_FLAGS + MQ BLOCK disposition)
+
+**Wave-1 v0.1 review verdict:**
+- RC: ACCEPT_WITH_FLAGS (1 material FLAG-RC-1 on §3 code-like signatures; 3 NITs).
+- MQ: **BLOCK** (3 high-severity findings BLOCK-MQ-1/2/3 on math framing).
+
+Verdict files:
+- `scratch/2026-05-11-stochastic-fx-spec-review/rc-verdict.md`
+- `scratch/2026-05-11-stochastic-fx-spec-review/mq-verdict.md`
+
+Per master-spec §6.1 protocol, MQ BLOCK requires HALT + revise +
+re-dispatch BOTH reviewers. v0.2 lands the revisions below; v0.2
+Wave-1 re-review follows.
+
+| Finding | Severity | Disposition | Location |
+|---|---|---|---|
+| **BLOCK-MQ-1** | High | Pin Z1.3 split into Z1.3a (algebraic inversion, family-agnostic, trivial substitution) and Z1.3b (per-family moment match against hand-derived analytic moments). The v0.1 "reduces to eq. (6)" claim was mathematically ill-posed (none of GBM/OU/Merton has periodic drift kernel); replaced with honest "trivial degenerate limit yields point mass at x_0" in §4.2. | §4.2 trivial-degenerate-limit note + §5 Pin Z1.3a / Z1.3b split |
+| **BLOCK-MQ-2** | High | Pin Z1.4 reframed to MQ's recommended reading (c): moment-matched parametric reference. Empirical σ_T_n is KS-tested against a gamma OR lognormal reference fit to the family's hand-derived analytic E[σ_T] and Var[σ_T]. v0.1's "pushforward via same σ_T samples" tautology removed. | §4.1 Phase C + §5 Pin Z1.4 |
+| **BLOCK-MQ-3** | High | New `moments.py` Callable-tier module added in v0.2. Hand-derived analytic moments per family (Hull / Andersen-Piterbarg) replace the v0.1 sympy-derives-σ_T-distribution claim (which was infeasible — sympy cannot perform Itô calculus). Sympy is now scoped to (a) the trivial algebraic inversion in `variance_proxy.py` and (b) `sympy.latex()` rendering of the hand-derived moment expressions into `.tex` fragments. | §3 moments.py file added + §4.2 hand-derived moment tables + §5 Pin Z1.3b |
+| **FLAG-MQ-1** | Medium | KS-gate calibration rationale documented in §8: 0.01 vs 0.05 chosen because the test compares two MC-noise-bearing estimates of the same population quantity. Explicit "never increase N until passing" rule added. | §8 |
+| **FLAG-MQ-2** | Medium | §4.2 per-family table makes the family-parameter dependence of E[ε(σ_T)] explicit. The mapping `ε ↔ σ_T` is now framed honestly as a pointwise algebraic identity (Z1.3a) plus a distributional moment match (Z1.3b), not as a family-independent inversion. | §4.2 |
+| **NIT-MQ-1** | Low | §4.1 step 3 explicitly cites the B1 plan's σ_T discrete contract (MQ-FLAG-B1.1 disposition) to keep the discretization convention consistent across specs. | §4.1 |
+| **FLAG-RC-1** | Material | §3 ASCII tree's typed function signatures removed; per-file responsibilities described in prose per `memory/feedback_no_code_in_specs_or_plans.md`. | §3 |
+| **NIT-RC-2** | Low | §1 cross-references table now phrases PRIMITIVES.md §15 as "open item 2 (by bullet count)" with the caveat that §15 uses unnumbered bullets — no source numbering to anchor against; bullet count is the unambiguous reference. | §1 |
+| **NIT-RC-3** | Low | Pin Z1.6 verification switched from `git log -p` (proves file unchanged but not audit_block unchanged) to direct hex grep on the audit_block in the JSON file (proves both). | §5 Pin Z1.6 |
+| **NIT-RC-4** | Low | §4.1 step 5 ("Emit" section) clarifies that the new `simulations/stochastic_fx/data/` directory will require a NEW gitignore line (existing line 53 covers `simulations/saas_builder/data/` only). | §4.1 step 5 |
+
+### §11.2 Outstanding repo work (NOT this spec)
+
+The following are NOT spec changes but repo work that must land before
+implementation begins (RC-FLAG-4 disposition):
+
+1. **New `.gitignore` line.** Add `simulations/stochastic_fx/data/` to
+   `.gitignore` per RC-FLAG-4. Single-line addition; lands in the
+   stochastic-fx-package implementation plan's first task, NOT in this
+   spec.
+
+### §11.3 v0.2 Wave-1 re-review reserve
+
+Re-dispatch of BOTH RC + MQ on v0.2 is required per master-spec §6.1
+BLOCK protocol. Verdicts will land in:
+- `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.2/rc-verdict.md`
+- `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.2/mq-verdict.md`
 
 ## §12 References
 
