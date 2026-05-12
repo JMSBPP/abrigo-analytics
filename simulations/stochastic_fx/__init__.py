@@ -21,8 +21,10 @@ from simulations.stochastic_fx.types import (
     CANONICAL_MERTON,
     CANONICAL_OU,
     GBMParameters,
+    InversionVerdict,
     JumpDiffusionParameters,
     OUParameters,
+    PathEnsemble,
 )
 
 __all__ = [
@@ -31,10 +33,12 @@ __all__ = [
     "CANONICAL_OU",
     "GBMParameters",
     "InversionTestFailedError",
+    "InversionVerdict",
     "JumpDiffusionParameters",
     "MCBudgetExceededError",
     "MomentMatchFailedError",
     "OUParameters",
+    "PathEnsemble",
     "SDEParameterError",
     "StochasticFXError",
 ]
