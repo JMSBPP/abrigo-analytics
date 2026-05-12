@@ -67,9 +67,9 @@ Two non-primitive mechanisms appear in Panoptic but are out of scope for the str
 1. `admits_strip_emit = yes` (deterministic `{(K_i, w_i)}` tuple exists, per §3).
 2. `convexity_class == "long-vol"` (STRICT string equality; "mixed", "mixed-vol", or any directional-flavored compound class does NOT qualify).
 
-**Math justification.** Carr-Madan replication of σ_T (PRIMITIVES.md §10 eq. 18) is a *positive*-weighted integral of OTM put + call payoffs. Mixed-vol primitives (call_spread, put_spread, super_bull, super_bear, call_ratio_spread, zebra) carry negative distributional δ-mass at strike kinks — they lie OUTSIDE the long-vol cone and cannot serve as σ_T building blocks. The v0.3 predicate excludes them ex-ante by requiring strict `convexity_class == "long-vol"`. This tightens the v0.2 negation rule (`!= "short-vol"`), which over-admitted 8 mixed-vol primitives.
+**Math justification.** Carr-Madan replication of σ_T (PRIMITIVES.md §10 eq. 18) is a *positive*-weighted integral of OTM put + call payoffs. Mixed-vol primitives carry negative distributional δ-mass at strike kinks — outside the long-vol cone, unusable as σ_T building blocks. The v0.3 predicate excludes them ex-ante via strict `convexity_class == "long-vol"`, tightening the v0.2 negation rule (`!= "short-vol"`) which over-admitted 8 mixed-vol rows.
 
-**Reverse-IC baseline.** The §2 `iron_condor` row is classed `short-vol` under the *standard* (debit-paid) leg orientation, but the cohort_5_strip baseline uses the LONG-vol leg orientation (credit-wings flipped to debit-wings — see `simulations/saas_builder/__init__.py` package docstring describing the cohort-5 strip as a long-vol Carr-Madan 3-condor). Under that orientation the convexity class is treated as long-vol, qualifying it as the explicit baseline anchor.
+**Reverse-IC baseline.** §2's `iron_condor` is classed `short-vol` under standard (debit-paid) leg orientation; cohort_5_strip uses the LONG-vol orientation (credit-wings flipped to debit-wings — see `simulations/saas_builder/__init__.py` package docstring, "long-vol Carr-Madan 3-condor"), under which the convexity class is long-vol — qualifying it as the explicit baseline anchor.
 
 **Candidate set (rule-pass rows; not pre-ranked, per anti-fishing):**
 
@@ -81,13 +81,10 @@ Two non-primitive mechanisms appear in Panoptic but are out of scope for the str
 | zeehbs | candidate (with caveat) | Strip-emit eligible: six strikes, six weights — emit payload must span ≥2 SFPM positions (6 > 4-leg SFPM ceiling, §2 on-chain_liquidity column). §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds. |
 
 **Filtered-OUT by v0.3 predicate tightening** (were in v0.2 §5 but no longer qualify under strict equality):
-- `long_call` — `convexity_class = "long-vol (directional bullish)"`; compound class with directional flavor, not strict `"long-vol"`. Although it is a Carr-Madan atom, the strict-equality string predicate excludes the directionally-flavored row; revisit if §2 is amended to reclassify single-leg atoms as pure `"long-vol"`.
-- `long_put` — `convexity_class = "long-vol (directional bearish)"`; same compound-class exclusion as `long_call`.
-- `call_spread` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
-- `put_spread` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
-- `super_bull` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
-- `super_bear` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
-- `call_ratio_spread` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
-- `zebra` — mixed-vol — point-concavity at strike kinks (PRIMITIVES.md §10 anchor).
+- `long_call` — **primary: cohort_5_strip API-arity constraint.** Emit API accepts only 12-leg payloads (`STRIP_TOTAL_LEGS = 12`, pinned at `simulations/saas_builder/cohort_5_strip/types.py:49`); a 1-leg primitive does not fit. Secondary (cosmetic): `convexity_class = "long-vol (directional bullish)"` fails strict equality. Even under §2 reclassification to pure `"long-vol"`, API-arity would still exclude.[^arity]
+- `long_put` — same dual rationale: primary 1-leg-vs-12-leg API-arity exclusion; secondary string mismatch (`"long-vol (directional bearish)"`).[^arity]
+- `call_spread`, `put_spread`, `super_bull`, `super_bear`, `call_ratio_spread`, `zebra` — all mixed-vol (point-concavity at strike kinks, PRIMITIVES.md §10 anchor); excluded by the strict-equality predicate.
 
-**Count after v0.3 filter:** 3 candidates + 1 baseline = 4 rows. Within plan's "2–4 primitives" expected range.
+**Count after v0.3 filter:** 3 candidates + 1 baseline = 4 rows; within plan's "2–4 primitives" range.
+
+[^arity]: §2's `admits_strip_emit = "yes"` (annotated "trivial ladder") for `long_call`/`long_put` is a v0.2-era latent classification error: the cohort_5_strip emit API requires a 12-leg payload (`STRIP_TOTAL_LEGS = STRIP_CONDOR_COUNT * LEGS_PER_CONDOR = 12`, `simulations/saas_builder/cohort_5_strip/types.py:49`), so 1-leg primitives do not admit strip-emit regardless of analytic ladder-ability. Amending §2 is **out of scope for Task 1.2**; a separate follow-up task will land the disposition memo and §2 correction.
