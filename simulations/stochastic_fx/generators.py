@@ -13,9 +13,9 @@ handling pins determinism (Pin Z1.2): identical
 ``(params, rng_seed, n_paths)`` triples yield bit-exact ensembles AND
 bit-exact ``audit_block``\\ s.
 
-Task 3.1 shipped ``GBMPathGenerator``; Task 3.2 appends ``OUPathGenerator``
-(this module). ``JumpDiffusionPathGenerator`` (Task 3.3) appends in a
-subsequent commit.
+Task 3.1 shipped ``GBMPathGenerator``; Task 3.2 appended ``OUPathGenerator``;
+Task 3.3 (this commit) appends ``JumpDiffusionPathGenerator`` (Merton
+jump-diffusion).
 
 Discretization scheme (Plan §8.3.1, GBM family)
 ------------------------------------------------
@@ -70,10 +70,17 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from simulations.stochastic_fx.types import GBMParameters, OUParameters, PathEnsemble
+from simulations.stochastic_fx.types import (
+    GBMParameters,
+    JumpDiffusionParameters,
+    OUParameters,
+    PathEnsemble,
+)
 
 
-def _canonical_params_json(params: GBMParameters | OUParameters) -> str:
+def _canonical_params_json(
+    params: GBMParameters | OUParameters | JumpDiffusionParameters,
+) -> str:
     """Serialize a Parameters frozen-dc to a stable canonical JSON string.
 
     ``dataclasses.asdict`` flattens the frozen-dc to a plain ``dict`` of
@@ -82,7 +89,14 @@ def _canonical_params_json(params: GBMParameters | OUParameters) -> str:
     Python sessions. This canonical form is hashed into ``audit_block``
     AND stored on the returned ``PathEnsemble``. Single source of truth
     shared across all family generators (``GBMPathGenerator``,
-    ``OUPathGenerator``, ...).
+    ``OUPathGenerator``, ``JumpDiffusionPathGenerator``).
+
+    Helper signature accepts the closed-alphabet three-way union
+    ``GBMParameters | OUParameters | JumpDiffusionParameters`` rather
+    than a ``Protocol`` — the three Parameters families are a closed set
+    per the alphabet ``{"gbm", "ou", "merton"}`` (spec v0.3 §4.2), so a
+    Protocol would introduce a new type-name without value. Mirrors the
+    Task 3.2 widening precedent.
     """
     return json.dumps(dataclasses.asdict(params), sort_keys=True)
 
@@ -284,7 +298,146 @@ class OUPathGenerator:
         )
 
 
+@dataclass(frozen=True)
+class JumpDiffusionPathGenerator:
+    """Deterministic Merton jump-diffusion path-ensemble generator (Callable tier, Pin Z1.2).
+
+    Holds a :class:`~simulations.stochastic_fx.types.JumpDiffusionParameters`
+    frozen-dc and exposes a ``__call__(rng_seed, n_paths)`` surface that
+    returns a :class:`~simulations.stochastic_fx.types.PathEnsemble` with
+    ``family_id == "merton"``.
+
+    Discretization (Plan §8 Task 3.3)
+    ----------------------------------
+    Euler-Maruyama on log-scale for the continuous (GBM) component
+    augmented by a compound-Poisson jump component. Per step from
+    ``X_t`` to ``X_{t+dt}``:
+
+        log_diff_step    = (mu - sigma**2 / 2) * dt + sigma * sqrt(dt) * Z
+        N_jumps[i, t]    ~ Poisson(lambda_jump * dt)                   # int count
+        aggregated_log_jump[i, t]
+                         = N_jumps * jump_mean
+                           + sqrt(N_jumps) * jump_std * Z'
+        log_step         = log_diff_step + aggregated_log_jump
+        X_{t+dt}         = X_t * exp(log_step)
+
+    where ``Z, Z' ~ N(0, 1)`` are independent standard normals. The
+    aggregated-log-jump expression is the EXACT distributional
+    equivalent of summing ``N_jumps`` iid ``Normal(jump_mean,
+    jump_std**2)`` log-multipliers, conditioned on the count ``N_jumps``:
+    a Poisson-sum of normals with mean ``μ_J`` and variance ``σ_J²``,
+    conditional on count ``N``, is distributed as
+    ``Normal(N·μ_J, N·σ_J²)``. This yields O(n_paths · n_steps) work
+    instead of the naive O(total_jumps).
+
+    RNG-call order (Pin Z1.2 reproducibility surface)
+    --------------------------------------------------
+    A SINGLE ``numpy.random.default_rng(rng_seed)`` instance is consumed
+    in a FIXED order per call:
+
+    1. ``rng.standard_normal((n_paths, n_steps))`` — diffusion ``Z``;
+    2. ``rng.poisson(lambda_dt, (n_paths, n_steps))`` — jump counts;
+    3. ``rng.standard_normal((n_paths, n_steps))`` — conditional-jump
+       ``Z'``.
+
+    The order is load-bearing for bit-exact reproducibility — changing
+    it would change every audit_block in the package. Pin Z1.2.
+
+    σ_T per path (Spec v0.3 §6 eq. 7)
+    ----------------------------------
+    Identical convention to ``GBMPathGenerator`` / ``OUPathGenerator``:
+    discrete realised-variance sum-of-squared-deviations from the path
+    mean, normalised by ``T`` (not by ``n+1``). Family-agnostic.
+
+    Pin Z1.2 reproducibility: identical ``(params, rng_seed, n_paths)``
+    triples yield bit-exact ``paths``, ``sigma_t``, and ``audit_block``.
+    """
+
+    params: JumpDiffusionParameters
+
+    def __call__(self, rng_seed: int, n_paths: int) -> PathEnsemble:
+        """Sample ``n_paths`` Merton jump-diffusion trajectories.
+
+        Inputs (callee-validated; ``__post_init__`` on the returned
+        ``PathEnsemble`` cross-validates the output invariants):
+
+        - ``rng_seed`` — non-negative ``int`` seed for
+          ``numpy.random.default_rng``; Pin Z1.2 reproducibility surface.
+        - ``n_paths`` — positive ``int`` ensemble size; ``paths`` will have
+          shape ``(n_paths, n_steps + 1)``.
+
+        Returns
+        -------
+        PathEnsemble
+            Family ``"merton"``, validated by
+            :meth:`PathEnsemble.__post_init__`.
+        """
+        params = self.params
+        n_steps = params.n_steps
+        # Precomputed scalars (OU-style pattern): dt once, lambda_dt once.
+        dt = params.T / n_steps
+        lambda_dt = params.lambda_jump * dt
+
+        rng = np.random.default_rng(rng_seed)
+        # RNG-call order is LOAD-BEARING for Pin Z1.2 — see class
+        # docstring. Three streams sampled in fixed order:
+        # (a) diffusion Z, (b) Poisson counts, (c) conditional-jump Z'.
+        z_diff = rng.standard_normal((n_paths, n_steps))
+        n_jumps = rng.poisson(lambda_dt, (n_paths, n_steps))
+        z_jump = rng.standard_normal((n_paths, n_steps))
+
+        # (a) Diffusion log-step — identical to GBM (Plan §8.3.1 step 2):
+        # the trailing -sigma**2/2 is the Itô correction.
+        log_diff_step = (
+            params.mu - params.sigma**2 / 2.0
+        ) * dt + params.sigma * math.sqrt(dt) * z_diff
+
+        # (c) Aggregated log-jump per (i, t): Poisson-sum-of-normals
+        # conditional on count N is Normal(N·μ_J, N·σ_J²). Vectorized as
+        # N·μ_J + sqrt(N)·σ_J·Z'. When N_jumps[i, t] == 0 the contribution
+        # is exactly 0 (sqrt(0) * Z' = 0); when lambda_jump == 0 every N
+        # is 0 so the entire jump aggregate vanishes, collapsing the
+        # family to pure GBM (modulo extra RNG draws).
+        n_jumps_f = n_jumps.astype(np.float64)
+        aggregated_log_jump = (
+            n_jumps_f * params.jump_mean
+            + np.sqrt(n_jumps_f) * params.jump_std * z_jump
+        )
+
+        # Combined log-step.
+        log_step = log_diff_step + aggregated_log_jump
+
+        # Cumulative log path with a leading zero column so column 0 maps
+        # to log(x_0) after exponentiation; shape (n_paths, n_steps+1).
+        # Mirrors GBMPathGenerator path-construction discipline.
+        log_paths = np.concatenate(
+            [np.zeros((n_paths, 1), dtype=log_step.dtype), np.cumsum(log_step, axis=1)],
+            axis=1,
+        )
+        paths = params.x_0 * np.exp(log_paths)
+        # Column 0 must equal x_0 EXACTLY (bit-exact); enforce via direct
+        # assignment to avoid 1 * x_0 * exp(0) float-roundoff drift.
+        paths[:, 0] = params.x_0
+
+        # σ_T per path — spec v0.3 §6 eq. (7) DISCRETELY (family-agnostic).
+        path_means = np.mean(paths, axis=1, keepdims=True)
+        sigma_t = np.sum((paths - path_means) ** 2, axis=1) / params.T
+
+        canonical_params_json = _canonical_params_json(params)
+        audit_block = _compute_audit_block(canonical_params_json, rng_seed, paths)
+
+        return PathEnsemble(
+            family_id="merton",
+            paths=paths,
+            sigma_t=sigma_t,
+            canonical_params_json=canonical_params_json,
+            rng_seed=rng_seed,
+            audit_block=audit_block,
+        )
+
+
 __all__ = [
     "GBMPathGenerator",
+    "JumpDiffusionPathGenerator",
     "OUPathGenerator",
 ]

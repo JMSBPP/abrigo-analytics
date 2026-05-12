@@ -16,7 +16,11 @@ from simulations.stochastic_fx._errors import (
     SDEParameterError,
     StochasticFXError,
 )
-from simulations.stochastic_fx.generators import GBMPathGenerator, OUPathGenerator
+from simulations.stochastic_fx.generators import (
+    GBMPathGenerator,
+    JumpDiffusionPathGenerator,
+    OUPathGenerator,
+)
 from simulations.stochastic_fx.moments import (
     gbm_sigma_t_moments,
     merton_sigma_t_moments,
@@ -42,6 +46,7 @@ __all__ = [
     "InversionTestFailedError",
     "InversionVerdict",
     "JumpDiffusionParameters",
+    "JumpDiffusionPathGenerator",
     "MCBudgetExceededError",
     "MomentMatchFailedError",
     "OUParameters",

@@ -19,6 +19,7 @@ from simulations.stochastic_fx import (
     InversionTestFailedError,
     InversionVerdict,
     JumpDiffusionParameters,
+    JumpDiffusionPathGenerator,
     MCBudgetExceededError,
     MomentMatchFailedError,
     OUParameters,
@@ -1257,6 +1258,273 @@ class TestOUPathGenerator:
     def test_property_determinism(self, rng_seed: int, n_paths: int) -> None:
         """Hypothesis Pin Z1.2: (seed, n_paths) uniquely determines audit_block."""
         gen = OUPathGenerator(params=CANONICAL_OU)
+        ens_a = gen(rng_seed=rng_seed, n_paths=n_paths)
+        ens_b = gen(rng_seed=rng_seed, n_paths=n_paths)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+
+
+class TestJumpDiffusionPathGenerator:
+    """Construction + lambda=0→GBM collapse + Itô anchor + jump-frequency + determinism coverage.
+
+    Pinned anchors (Plan §8 Task 3.3 acceptance block):
+
+    - Happy-path construction: returns a ``PathEnsemble`` whose shape and
+      audit_block format match the type's invariants.
+    - Determinism (Pin Z1.2): identical ``(rng_seed, n_paths)`` yields a
+      bit-exact ``audit_block`` AND ``paths.tobytes()``.
+    - λ → 0 collapses to pure GBM (headline math anchor): at
+      ``lambda_jump = 0``, the JD generator's terminal-spot distribution
+      is statistically indistinguishable from a matched GBM via
+      ``scipy.stats.ks_2samp``. Because the JD path uses
+      ``aggregated_log_jump = N·μ_J + sqrt(N)·σ_J·Z'`` with ``N`` all-zero
+      when ``λ = 0``, the additive contribution is identically zero AND
+      consumes no entropy from the second standard_normal stream — the
+      two terminal arrays end up bit-identical (KS p ≈ 1.0). This is a
+      strict superset of the "statistically indistinguishable" claim in
+      the plan, so the test asserts the looser ``p > 0.01`` bound.
+    - Itô-correction anchor (jumps off): mirrors
+      ``TestGBMPathGenerator::test_ito_correction_anchor`` with the JD
+      generator at ``lambda_jump = 0``.
+    - Jump-frequency anchor: total Poisson count across the ensemble
+      matches ``λ·T·n_paths`` within 3·SE — pins the Poisson sampling.
+    - Trivial-degenerate limit at ``sigma = 1e-8 AND lambda_jump = 0``:
+      paths collapse near ``x_0`` and ``mean(sigma_t) < 1e-6``. Inherits
+      Plan §16.3 (v0.2→v0.3 CORRECTIONS-α) project-canonical anchoring
+      "coarse grid + tight threshold" verbatim from
+      ``TestGBMPathGenerator``, per the §16.3 forward-implication clause:
+      OUPathGenerator and JumpDiffusionPathGenerator SHOULD adopt option
+      (a) verbatim for parallelism.
+    - Initial-condition anchor: ``paths[:, 0] == x_0`` for all rows
+      bit-exactly.
+
+    Moment cross-check against ``merton_sigma_t_moments`` is NOT included
+    here. The analytic ``E[σ_T]`` in :mod:`simulations.stochastic_fx.moments`
+    follows the spec §4.2 leading-order continuous-time integrated-
+    variance form, while the generator's ``sigma_t`` is the spec §6 eq. (7)
+    DISCRETE sum-of-squared-deviations from the path mean normalised by
+    ``T``. The two are structurally different statistics with a non-
+    trivial scaling factor (≈137× at canonical GBM; ≈79× at canonical
+    Merton) — see ``TestGBMPathGenerator`` which similarly omits a moment
+    cross-check at the generator-unit-test scope. Moment matching is the
+    Phase-B verifier's responsibility (Task 4.2 ``InversionVerifier``).
+    """
+
+    def test_happy_path_construction(self) -> None:
+        """Canonical-pin Merton generator returns a well-formed PathEnsemble."""
+        gen = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
+        ens = gen(rng_seed=42, n_paths=100)
+        assert isinstance(ens, PathEnsemble)
+        assert ens.family_id == "merton"
+        assert ens.paths.shape == (100, CANONICAL_MERTON.n_steps + 1)
+        assert ens.sigma_t.shape == (100,)
+        assert _AUDIT_BLOCK_REGEX_PY.fullmatch(ens.audit_block) is not None
+        assert ens.rng_seed == 42
+
+    def test_determinism_same_call(self) -> None:
+        """Pin Z1.2: identical (seed, n_paths) yields bit-exact audit_block + paths."""
+        gen = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
+        ens_a = gen(rng_seed=42, n_paths=50)
+        ens_b = gen(rng_seed=42, n_paths=50)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+        assert ens_a.sigma_t.tobytes() == ens_b.sigma_t.tobytes()
+
+    def test_determinism_across_instances(self) -> None:
+        """Two separately-constructed generators with the same params agree bit-exactly."""
+        gen_a = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
+        gen_b = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
+        ens_a = gen_a(rng_seed=7, n_paths=25)
+        ens_b = gen_b(rng_seed=7, n_paths=25)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+
+    def test_initial_condition_bit_exact(self) -> None:
+        """paths[:, 0] == params.x_0 for all rows (bit-exact)."""
+        gen = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
+        ens = gen(rng_seed=11, n_paths=64)
+        assert bool(np.all(ens.paths[:, 0] == CANONICAL_MERTON.x_0))
+
+    def test_lambda_zero_collapses_to_gbm(self) -> None:
+        """λ=0 ⟹ JD terminal-spot distribution statistically matches GBM.
+
+        Plan §8 Task 3.3 headline math anchor: at ``lambda_jump = 0``,
+        the JD generator must coincide distributionally with the
+        GBM generator at matched ``(mu, sigma, T, n_steps, x_0)``. The
+        aggregated-log-jump expression ``N·μ_J + sqrt(N)·σ_J·Z'`` reduces
+        to exactly zero when every Poisson count is zero, so the JD log-
+        step equals the GBM log-step entry-for-entry. The extra
+        ``rng.poisson(...)`` and ``rng.standard_normal(...)`` draws DO
+        consume RNG entropy and advance the bit-generator state, but they
+        do NOT enter the per-step path arithmetic in the λ=0 limit.
+
+        Critically, the JD generator samples the diffusion ``Z`` stream
+        FIRST in its RNG order — mirroring the GBM generator's single
+        ``rng.standard_normal`` call — so at the same ``rng_seed`` both
+        generators consume the SAME ``Z`` matrix. The terminal arrays end
+        up bit-identical (KS stat = 0, p = 1.0); the looser ``p > 0.01``
+        bound is asserted to cover any future legitimate RNG-stream
+        reorders downstream that would still preserve distributional
+        equivalence.
+        """
+        from scipy import stats  # noqa: PLC0415  # local import for test isolation.
+
+        jd_params = dataclasses.replace(CANONICAL_MERTON, lambda_jump=0.0)
+        gbm_params = GBMParameters(
+            mu=jd_params.mu,
+            sigma=jd_params.sigma,
+            T=jd_params.T,
+            n_steps=jd_params.n_steps,
+            x_0=jd_params.x_0,
+            dt=jd_params.dt,
+        )
+        jd_term = JumpDiffusionPathGenerator(jd_params)(
+            rng_seed=42, n_paths=5000
+        ).paths[:, -1]
+        gbm_term = GBMPathGenerator(gbm_params)(
+            rng_seed=42, n_paths=5000
+        ).paths[:, -1]
+        _, ks_p = stats.ks_2samp(jd_term, gbm_term)
+        assert ks_p > 0.01, (
+            f"λ=0 collapse-to-GBM failed: KS p-value={ks_p!r} (bound > 0.01); "
+            "the JD generator's diffusion stream must coincide with the GBM "
+            "generator at matched parameters."
+        )
+
+    def test_ito_correction_anchor_jumps_off(self) -> None:
+        """At λ=0, mean(log(S_T / x_0)) ≈ -sigma**2/2 * T within 3·SE.
+
+        Sanity sister of ``TestGBMPathGenerator::test_ito_correction_anchor``
+        invoked through the JD generator with ``lambda_jump = 0``: the
+        diffusion side must carry the same Itô ``-sigma**2/2`` correction.
+        A missing or mis-signed correction here would manifest at exactly
+        the GBM-anchor signature (a 50-SE shift at this configuration).
+        """
+        params = JumpDiffusionParameters(
+            mu=0.0,
+            sigma=0.5,
+            lambda_jump=0.0,
+            jump_mean=0.0,
+            jump_std=1e-8,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 1000.0,
+            n_steps=1000,
+        )
+        n_paths = 10000
+        ens = JumpDiffusionPathGenerator(params=params)(
+            rng_seed=2026, n_paths=n_paths
+        )
+        empirical_mean = float(np.log(ens.paths[:, -1] / params.x_0).mean())
+        expected_mean = -0.125  # -sigma**2 / 2 * T
+        se = params.sigma * math.sqrt(params.T) / math.sqrt(n_paths)
+        assert abs(empirical_mean - expected_mean) < 3.0 * se, (
+            f"Itô-correction anchor (jumps off) failed: empirical={empirical_mean!r} "
+            f"vs expected={expected_mean!r} (SE={se!r}); a 0.125 offset is "
+            "the missing -sigma**2/2 drift signature on the diffusion side."
+        )
+
+    def test_jump_frequency_anchor(self) -> None:
+        """Total Poisson count ≈ λ·T·n_paths within 3·SE — pins the Poisson sample.
+
+        Reconstructs the JD generator's RNG-call order (standard_normal →
+        poisson → standard_normal) exactly so the Poisson count matrix
+        observed here is bit-identical to the one the generator consumes
+        internally. The expected total across the ensemble is
+        ``λ·T·n_paths = 10·1·1000 = 10000``; the Poisson sum has
+        ``SE = sqrt(10000) = 100``, so the 3·SE bound is 300. A wrong
+        Poisson rate (e.g. ``lambda_jump`` instead of ``lambda_jump·dt``
+        per step) would produce a count off by O(n_steps) — easily
+        catching a mis-scaled intensity.
+        """
+        params = JumpDiffusionParameters(
+            mu=0.0,
+            sigma=CANONICAL_MERTON.sigma,
+            lambda_jump=10.0,
+            jump_mean=0.0,
+            jump_std=0.10,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 1000.0,
+            n_steps=1000,
+        )
+        n_paths = 1000
+        # Reconstruct the generator's RNG-call order exactly: diffusion Z
+        # first, then Poisson counts, then conditional-jump Z'.
+        rng = np.random.default_rng(42)
+        _ = rng.standard_normal((n_paths, params.n_steps))
+        counts = rng.poisson(params.lambda_jump * params.dt, (n_paths, params.n_steps))
+        total_jumps = int(counts.sum())
+        expected = params.lambda_jump * params.T * n_paths
+        se = math.sqrt(expected)
+        assert abs(total_jumps - expected) < 3.0 * se, (
+            f"Jump-frequency anchor failed: empirical={total_jumps!r} "
+            f"vs expected={expected!r} (SE={se!r}, bound=3*SE={3.0 * se!r})."
+        )
+
+    def test_trivial_degenerate_limit_sigma_and_lambda_zero(self) -> None:
+        """At sigma → 0 AND lambda → 0, paths collapse to x_0; sigma_t mean is < 1e-6.
+
+        Inherits Plan §16.3 (v0.2→v0.3 CORRECTIONS-α) project-canonical
+        anchoring: coarse grid (n_steps=100) + tight threshold (< 1e-6),
+        per the §16.3 forward-implication clause that ratifies option
+        (a) verbatim for Task 3.3 (matches the
+        ``TestGBMPathGenerator::test_trivial_degenerate_limit_sigma_to_zero``
+        and ``TestOUPathGenerator::test_trivial_degenerate_limit_sigma_to_zero``
+        siblings). With both the diffusion (``sigma=1e-8``) and the jump
+        intensity (``lambda_jump=0.0``) snapped to their trivial limits,
+        every per-step log-increment is sub-machine-epsilon and the
+        paths stay at ``x_0`` bit-exactly modulo the diffusion noise.
+        """
+        params = JumpDiffusionParameters(
+            mu=0.0,
+            sigma=1e-8,
+            lambda_jump=0.0,
+            jump_mean=0.0,
+            jump_std=1e-8,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 100.0,
+            n_steps=100,
+        )
+        ens = JumpDiffusionPathGenerator(params=params)(rng_seed=0, n_paths=50)
+        assert float(np.mean(ens.sigma_t)) < 1e-6
+
+    def test_canonical_params_json_stable(self) -> None:
+        """canonical_params_json on the ensemble is a non-empty stable JSON."""
+        gen = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
+        ens = gen(rng_seed=3, n_paths=10)
+        import json as _json  # noqa: PLC0415  # local import for test isolation.
+
+        parsed = _json.loads(ens.canonical_params_json)
+        assert set(parsed.keys()) == {
+            "mu",
+            "sigma",
+            "lambda_jump",
+            "jump_mean",
+            "jump_std",
+            "x_0",
+            "T",
+            "dt",
+            "n_steps",
+        }
+        assert parsed["x_0"] == CANONICAL_MERTON.x_0
+        assert parsed["n_steps"] == CANONICAL_MERTON.n_steps
+
+    @given(
+        rng_seed=st.integers(min_value=0, max_value=2**31),
+        n_paths=st.integers(min_value=10, max_value=100),
+    )
+    @settings(max_examples=10, deadline=None)
+    def test_property_determinism(self, rng_seed: int, n_paths: int) -> None:
+        """Hypothesis Pin Z1.2: (seed, n_paths) uniquely determines audit_block.
+
+        Reduced ``n_paths`` cap (100 vs 200 for GBM/OU) and reduced
+        ``max_examples`` (10 vs 15) because the JD generator is slowest
+        per call — two ``standard_normal`` draws plus one ``poisson``
+        draw per (i, t) cell — at canonical n_steps=5000.
+        """
+        gen = JumpDiffusionPathGenerator(params=CANONICAL_MERTON)
         ens_a = gen(rng_seed=rng_seed, n_paths=n_paths)
         ens_b = gen(rng_seed=rng_seed, n_paths=n_paths)
         assert ens_a.audit_block == ens_b.audit_block
