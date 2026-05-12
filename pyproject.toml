@@ -18,6 +18,7 @@ dependencies = [
     "matplotlib>=3.9",
     "seaborn>=0.13",
     "scipy>=1.13",
+    "sympy>=1.14",
     "statsmodels>=0.14",
     "arch>=8.0",
     "linearmodels>=6.0",
