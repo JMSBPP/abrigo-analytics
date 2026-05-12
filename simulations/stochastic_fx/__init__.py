@@ -16,11 +16,25 @@ from simulations.stochastic_fx._errors import (
     SDEParameterError,
     StochasticFXError,
 )
+from simulations.stochastic_fx.types import (
+    CANONICAL_GBM,
+    CANONICAL_MERTON,
+    CANONICAL_OU,
+    GBMParameters,
+    JumpDiffusionParameters,
+    OUParameters,
+)
 
 __all__ = [
+    "CANONICAL_GBM",
+    "CANONICAL_MERTON",
+    "CANONICAL_OU",
+    "GBMParameters",
     "InversionTestFailedError",
+    "JumpDiffusionParameters",
     "MCBudgetExceededError",
     "MomentMatchFailedError",
+    "OUParameters",
     "SDEParameterError",
     "StochasticFXError",
 ]
