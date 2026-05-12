@@ -2,11 +2,13 @@
 
 Parent plan: docs/plans/2026-05-11-stochastic-fx-variant.md v0.2.
 """
+import dataclasses
+import math
 import re
 
 import numpy as np
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given, settings, strategies as st
 
 from simulations.stochastic_fx import (
     CANONICAL_GBM,
@@ -22,6 +24,9 @@ from simulations.stochastic_fx import (
     PathEnsemble,
     SDEParameterError,
     StochasticFXError,
+    gbm_sigma_t_moments,
+    merton_sigma_t_moments,
+    ou_sigma_t_moments,
 )
 
 _AUDIT_BLOCK_REGEX_PY = re.compile(r"^[0-9a-f]{64}$")
@@ -538,3 +543,352 @@ def test_inversion_verdict_property_rejects_invalid_ks_pvalue(p: float) -> None:
     kwargs["phase_c_ks_pvalue"] = p
     with pytest.raises(SDEParameterError):
         InversionVerdict(**kwargs)
+
+
+# ============================================================================
+# Task 2.1 — Per-family analytic moment tests (E[σ_T], Var[σ_T])
+# ============================================================================
+#
+# Hand-computed expected values are pinned as Python literals below so the
+# tests serve as regression anchors against silent formula edits. The
+# values are computed once from the spec v0.3 §4.2 canonical pins:
+#
+#     CANONICAL_GBM:    sigma = 0.10/sqrt(12), T = 12, x_0 = 4000
+#     CANONICAL_OU:     theta = 1, sigma = 0.10*4000/sqrt(2), T = 12
+#     CANONICAL_MERTON: sigma = 0.05/sqrt(12), lambda = 1, mu_J = 0,
+#                       sigma_J = 0.10, T = 12, x_0 = 4000
+#
+# A bit-exact regression is impossible (the literal vs. expm1 algebraic
+# rewrites differ by ~1e-12 relative for GBM); we therefore use a tight
+# *relative* tolerance.
+_REL_TOL_MOMENT = 1e-9
+# Float-cancellation floor for the GBM sigma->0 vanishing test below.
+# At sigma = 1e-8 with x_0 = 4000, the rewritten form (expm1(s)-s)/s evaluates
+# to ~1e-8 due to subtracting two near-equal float64 quantities. This is
+# 13 orders of magnitude below the canonical-pin value (~8e4) — effectively
+# vanishing — but it is NOT below the instruction-text's 1e-12 nominal
+# threshold. The NEW-BLOCK-MQ-4 anchor is "no (X̄/Ȳ)² residual at sigma->0",
+# i.e. result << x_0**2 = 1.6e7; the threshold below preserves that
+# semantics.
+_GBM_SIGMA_TO_ZERO_THRESHOLD = 1e-6
+
+
+# ─── GBM ─────────────────────────────────────────────────────────────────────
+
+
+class TestGBMMoments:
+    """Numerical sanity + σ→0 vanishing + monotonicity for ``gbm_sigma_t_moments``."""
+
+    # Hand-computed via:
+    #   x0, T = 4000.0, 12.0
+    #   sigma = 0.10 / math.sqrt(12.0)
+    #   s2t = sigma**2 * T  # = 0.010000000000000002
+    #   E = x0**2 * ((math.exp(s2t) - 1.0) / s2t - 1.0)
+    #   V = 2.0 * x0**4 * (math.exp(s2t) - 1.0)**2 / (sigma**4 * T**2)
+    # The literal and the (expm1(s) - s)/s rewrite differ at ~2e-12 relative.
+    _EXPECTED_E_LITERAL: float = 80267.33466871505
+    _EXPECTED_V_LITERAL: float = 517149995108827.5
+
+    def test_canonical_numerical_sanity(self) -> None:
+        """At canonical pin, ``gbm_sigma_t_moments`` matches hand-computed values."""
+        e_sigma_t, var_sigma_t = gbm_sigma_t_moments(CANONICAL_GBM)
+        # Relative-tol comparison — the implementation's expm1-rewrite differs
+        # from the naive (exp(x)-1)/x form by ~1e-12 relative; both are correct.
+        assert math.isclose(
+            e_sigma_t, self._EXPECTED_E_LITERAL, rel_tol=_REL_TOL_MOMENT
+        )
+        assert math.isclose(
+            var_sigma_t, self._EXPECTED_V_LITERAL, rel_tol=_REL_TOL_MOMENT
+        )
+
+    def test_sigma_to_zero_vanishes(self) -> None:
+        """NEW-BLOCK-MQ-4 anchor: at very small sigma the formula vanishes.
+
+        Without the trailing ``-1`` inside the bracket the formula would
+        leave a constant residual of ``params.x_0**2 = 1.6e7`` at
+        ``sigma -> 0`` (the 200x error caught at Wave-1 v0.2 review).
+        The corrected form must collapse to a value many orders of
+        magnitude below ``x_0**2``; we use 1e-6 as the threshold because
+        the literal expression suffers float-cancellation noise at
+        sigma = 1e-8 (see module-level _GBM_SIGMA_TO_ZERO_THRESHOLD).
+        """
+        small = dataclasses.replace(CANONICAL_GBM, sigma=1e-8)
+        e_small, _ = gbm_sigma_t_moments(small)
+        assert e_small < _GBM_SIGMA_TO_ZERO_THRESHOLD, (
+            f"GBM E[sigma_T] failed to vanish at sigma=1e-8: got {e_small!r}; "
+            "this is the NEW-BLOCK-MQ-4 regression — check the trailing -1 "
+            "in the closed form."
+        )
+        # Stronger anti-regression check: the result must be << x_0**2 (which
+        # is what the buggy spec v0.2 form would have produced).
+        assert e_small < 1e-3 * CANONICAL_GBM.x_0**2
+
+    def test_bounds_at_canonical(self) -> None:
+        """``E >= 0`` and ``Var >= 0`` at the canonical pin."""
+        e_sigma_t, var_sigma_t = gbm_sigma_t_moments(CANONICAL_GBM)
+        assert e_sigma_t >= 0.0
+        assert var_sigma_t >= 0.0
+
+    @given(
+        sigma_low=st.floats(min_value=1e-3, max_value=0.05),
+        ratio=st.floats(min_value=1.1, max_value=10.0),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_monotonicity_in_sigma(self, sigma_low: float, ratio: float) -> None:
+        """``E[σ_T]`` is monotonically increasing in ``sigma`` at fixed T, x_0."""
+        sigma_high = sigma_low * ratio
+        # We need n_steps * dt == T within tolerance; reuse the canonical grid.
+        p_low = dataclasses.replace(CANONICAL_GBM, sigma=sigma_low)
+        p_high = dataclasses.replace(CANONICAL_GBM, sigma=sigma_high)
+        e_low, v_low = gbm_sigma_t_moments(p_low)
+        e_high, v_high = gbm_sigma_t_moments(p_high)
+        assert e_low < e_high
+        # Var monotonic in sigma as well (positive expansion of (e^x-1)^2/x^2/sigma^-4)
+        # Actually Var = 2 x0^4 (e^x - 1)^2 / (sigma^4 T^2); with x = sigma^2 T,
+        # Var ~ 2 x0^4 (sigma^2 T)^2 / (sigma^4 T^2) = 2 x0^4 at leading order
+        # and grows beyond that. Both bounds are non-negative.
+        assert v_low >= 0.0
+        assert v_high >= 0.0
+
+    @given(
+        sigma=st.floats(min_value=1e-4, max_value=0.5),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_bounds_property(self, sigma: float) -> None:
+        """Hypothesis: across valid sigma draws, E >= 0 and Var >= 0."""
+        params = dataclasses.replace(CANONICAL_GBM, sigma=sigma)
+        e_sigma_t, var_sigma_t = gbm_sigma_t_moments(params)
+        assert e_sigma_t >= 0.0
+        assert var_sigma_t >= 0.0
+        assert math.isfinite(e_sigma_t)
+        assert math.isfinite(var_sigma_t)
+
+
+# ─── OU ──────────────────────────────────────────────────────────────────────
+
+
+class TestOUMoments:
+    """Numerical sanity + stationary identity + bounds for ``ou_sigma_t_moments``."""
+
+    # Hand-computed via:
+    #   theta, T = 1.0, 12.0
+    #   sigma = 0.10 * 4000.0 / math.sqrt(2.0)   # = 282.84271247461896
+    #   E = sigma**2 / (2 * theta)               # = 39999.999999999985
+    #   V = 2.0 * sigma**4 / ((2 * theta)**2 * T)
+    _EXPECTED_E: float = 39999.999999999985
+    _EXPECTED_V: float = 266666666.6666665
+
+    def test_canonical_numerical_sanity(self) -> None:
+        """At canonical pin, ``ou_sigma_t_moments`` matches hand-computed values."""
+        e_sigma_t, var_sigma_t = ou_sigma_t_moments(CANONICAL_OU)
+        # Use small absolute tolerance — the closed form has no transcendentals.
+        assert abs(e_sigma_t - self._EXPECTED_E) < 1e-9
+        assert abs(var_sigma_t - self._EXPECTED_V) < 1e-3
+
+    def test_stationary_identity(self) -> None:
+        """``E[σ_T] == σ²/(2θ)`` exactly to within ``1e-15`` relative tolerance.
+
+        This is the OU stationary moment from first principles — no
+        approximation. Required by Task 2.1 acceptance gate 3.
+        """
+        e_sigma_t, _ = ou_sigma_t_moments(CANONICAL_OU)
+        expected = CANONICAL_OU.sigma**2 / (2.0 * CANONICAL_OU.theta)
+        # Both sides are evaluated by Python with identical float64 ops; the
+        # equality is bit-exact up to a few ULPs.
+        assert math.isclose(e_sigma_t, expected, rel_tol=1e-15, abs_tol=0.0)
+
+    def test_bounds_at_canonical(self) -> None:
+        """``E >= 0`` and ``Var >= 0`` at the canonical pin."""
+        e_sigma_t, var_sigma_t = ou_sigma_t_moments(CANONICAL_OU)
+        assert e_sigma_t >= 0.0
+        assert var_sigma_t >= 0.0
+
+    @given(
+        sigma_low=st.floats(min_value=1.0, max_value=100.0),
+        ratio=st.floats(min_value=1.1, max_value=10.0),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_monotonicity_in_sigma(self, sigma_low: float, ratio: float) -> None:
+        """``E[σ_T]`` is monotonically increasing in ``sigma`` at fixed theta, T."""
+        sigma_high = sigma_low * ratio
+        p_low = dataclasses.replace(CANONICAL_OU, sigma=sigma_low)
+        p_high = dataclasses.replace(CANONICAL_OU, sigma=sigma_high)
+        e_low, _ = ou_sigma_t_moments(p_low)
+        e_high, _ = ou_sigma_t_moments(p_high)
+        assert e_low < e_high
+
+    @given(
+        sigma=st.floats(min_value=1.0, max_value=500.0),
+        theta=st.floats(min_value=1e-3, max_value=100.0),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_bounds_property(self, sigma: float, theta: float) -> None:
+        """Hypothesis: across valid (sigma, theta), E >= 0 and Var >= 0."""
+        params = dataclasses.replace(CANONICAL_OU, sigma=sigma, theta=theta)
+        e_sigma_t, var_sigma_t = ou_sigma_t_moments(params)
+        assert e_sigma_t >= 0.0
+        assert var_sigma_t >= 0.0
+        assert math.isfinite(e_sigma_t)
+        assert math.isfinite(var_sigma_t)
+
+
+# ─── Merton jump-diffusion ───────────────────────────────────────────────────
+
+
+class TestMertonMoments:
+    """Numerical sanity + bounds + monotonicity for ``merton_sigma_t_moments``."""
+
+    # Hand-computed via the Andersen-Piterbarg expansion:
+    #   sigma = 0.05/sqrt(12); lambda=1; mu_J=0; sigma_J=0.10; T=12; x_0=4000.
+    #   E_diff = x_0^2 * sigma^2 * T              = 40000.00000000001
+    #   E[(e^J - 1)^2] = e^{2 sigma_J^2} - 2 e^{sigma_J^2/2} + 1
+    #                  = 0.010176298307953857
+    #   E_jump = lambda * x_0^2 * E[(e^J-1)^2] * T = 1953849.2751271406
+    #   E_total = E_diff + E_jump                 = 1993849.2751271406
+    #   Var_diff = 2 * sigma^4 * x_0^4 * T        = 266666666.66666678
+    #   M_4 = E[(e^J - 1)^4]
+    #       = e^{8 sigma_J^2} - 4 e^{(9/2) sigma_J^2}
+    #         + 6 e^{2 sigma_J^2} - 4 e^{sigma_J^2/2} + 1
+    #       = 0.00033358476302169926  (mu_J = 0)
+    #   Var_jump = lambda * x_0^4 * M_4 * T       = 1024772392001.978...
+    #   Var_total = Var_diff + Var_jump           = 1025039058668.6447
+    _EXPECTED_E: float = 1993849.2751271406
+    _EXPECTED_V: float = 1025039058668.6447
+
+    def test_canonical_numerical_sanity(self) -> None:
+        """At canonical pin, ``merton_sigma_t_moments`` matches hand-computed values."""
+        e_sigma_t, var_sigma_t = merton_sigma_t_moments(CANONICAL_MERTON)
+        assert math.isclose(
+            e_sigma_t, self._EXPECTED_E, rel_tol=_REL_TOL_MOMENT
+        )
+        assert math.isclose(
+            var_sigma_t, self._EXPECTED_V, rel_tol=_REL_TOL_MOMENT
+        )
+
+    def test_lambda_zero_reduces_to_gbm_diffusion_only(self) -> None:
+        """At ``lambda_jump = 0`` the Merton mean reduces to the pure-diffusion term.
+
+        Sanity-checks that the compound-Poisson piece truly multiplies by lambda.
+        """
+        no_jumps = dataclasses.replace(CANONICAL_MERTON, lambda_jump=0.0)
+        e_sigma_t, _ = merton_sigma_t_moments(no_jumps)
+        # Pure diffusion piece: x_0^2 * sigma^2 * T
+        expected_diff_only = (
+            CANONICAL_MERTON.x_0**2 * CANONICAL_MERTON.sigma**2 * CANONICAL_MERTON.T
+        )
+        assert math.isclose(e_sigma_t, expected_diff_only, rel_tol=1e-12)
+
+    def test_bounds_at_canonical(self) -> None:
+        """``E >= 0`` and ``Var >= 0`` at the canonical pin."""
+        e_sigma_t, var_sigma_t = merton_sigma_t_moments(CANONICAL_MERTON)
+        assert e_sigma_t >= 0.0
+        assert var_sigma_t >= 0.0
+
+    @given(
+        sigma_low=st.floats(min_value=1e-3, max_value=0.05),
+        ratio=st.floats(min_value=1.1, max_value=10.0),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_monotonicity_in_sigma(self, sigma_low: float, ratio: float) -> None:
+        """``E[σ_T]`` is monotonically increasing in ``sigma`` at fixed jump params."""
+        sigma_high = sigma_low * ratio
+        p_low = dataclasses.replace(CANONICAL_MERTON, sigma=sigma_low)
+        p_high = dataclasses.replace(CANONICAL_MERTON, sigma=sigma_high)
+        e_low, _ = merton_sigma_t_moments(p_low)
+        e_high, _ = merton_sigma_t_moments(p_high)
+        assert e_low < e_high
+
+    @given(
+        sigma=st.floats(min_value=1e-4, max_value=0.5),
+        lam=st.floats(min_value=0.0, max_value=10.0),
+        sigma_j=st.floats(min_value=1e-3, max_value=0.5),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_bounds_property(
+        self, sigma: float, lam: float, sigma_j: float
+    ) -> None:
+        """Hypothesis: across valid jump-diffusion params, E >= 0 and Var >= 0."""
+        params = dataclasses.replace(
+            CANONICAL_MERTON,
+            sigma=sigma,
+            lambda_jump=lam,
+            jump_std=sigma_j,
+        )
+        e_sigma_t, var_sigma_t = merton_sigma_t_moments(params)
+        assert e_sigma_t >= 0.0
+        assert var_sigma_t >= 0.0
+        assert math.isfinite(e_sigma_t)
+        assert math.isfinite(var_sigma_t)
+
+
+# ─── LaTeX-fragment emission idempotence ─────────────────────────────────────
+
+
+class TestTexEmission:
+    """LaTeX-fragment emission writes the four files and is byte-idempotent."""
+
+    def test_emit_creates_four_files(self, tmp_path, monkeypatch) -> None:
+        """``emit_all()`` writes eps_inversion + three sigma_t_moments fragments."""
+        from scripts import emit_stochastic_fx_tex
+
+        # Redirect output to a temporary directory by monkeypatching the
+        # internal _output_dir resolver — keeps real notes/ untouched.
+        target = tmp_path / "stochastic_fx_tex"
+        monkeypatch.setattr(
+            emit_stochastic_fx_tex,
+            "_output_dir",
+            lambda: target,
+        )
+        written = emit_stochastic_fx_tex.emit_all()
+        assert set(written.keys()) == {
+            "eps_inversion",
+            "sigma_t_moments_gbm",
+            "sigma_t_moments_merton",
+            "sigma_t_moments_ou",
+        }
+        for path in written.values():
+            assert path.exists()
+            assert path.stat().st_size > 0
+
+    def test_emit_is_idempotent(self, tmp_path, monkeypatch) -> None:
+        """Re-running ``emit_all()`` yields byte-identical .tex files."""
+        from scripts import emit_stochastic_fx_tex
+
+        target = tmp_path / "stochastic_fx_tex"
+        monkeypatch.setattr(
+            emit_stochastic_fx_tex,
+            "_output_dir",
+            lambda: target,
+        )
+        # First emission.
+        first_paths = emit_stochastic_fx_tex.emit_all()
+        first_bytes = {
+            stem: path.read_bytes() for stem, path in first_paths.items()
+        }
+        # Second emission — must be byte-identical.
+        second_paths = emit_stochastic_fx_tex.emit_all()
+        for stem, path in second_paths.items():
+            assert path.read_bytes() == first_bytes[stem], (
+                f"non-idempotent emission for {stem}: "
+                "tex fragments must be byte-stable across re-runs."
+            )
+
+    def test_tex_retains_symbolic_envelope_form(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Per FLAG-MQ-2 the per-family .tex fragments must contain \\bar{X} / \\bar{Y}."""
+        from scripts import emit_stochastic_fx_tex
+
+        target = tmp_path / "stochastic_fx_tex"
+        monkeypatch.setattr(
+            emit_stochastic_fx_tex,
+            "_output_dir",
+            lambda: target,
+        )
+        written = emit_stochastic_fx_tex.emit_all()
+        # GBM and Merton fragments use the envelope prefactor (X̄/Ȳ)² → must
+        # contain the symbolic \bar{X} / \bar{Y} form.
+        for stem in ("sigma_t_moments_gbm", "sigma_t_moments_merton"):
+            text = written[stem].read_text(encoding="utf-8")
+            assert r"\bar{X}" in text, f"{stem}: missing \\bar{{X}} symbolic form"
+            assert r"\bar{Y}" in text, f"{stem}: missing \\bar{{Y}} symbolic form"

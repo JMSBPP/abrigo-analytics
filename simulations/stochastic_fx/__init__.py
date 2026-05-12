@@ -16,6 +16,11 @@ from simulations.stochastic_fx._errors import (
     SDEParameterError,
     StochasticFXError,
 )
+from simulations.stochastic_fx.moments import (
+    gbm_sigma_t_moments,
+    merton_sigma_t_moments,
+    ou_sigma_t_moments,
+)
 from simulations.stochastic_fx.types import (
     CANONICAL_GBM,
     CANONICAL_MERTON,
@@ -41,4 +46,7 @@ __all__ = [
     "PathEnsemble",
     "SDEParameterError",
     "StochasticFXError",
+    "gbm_sigma_t_moments",
+    "merton_sigma_t_moments",
+    "ou_sigma_t_moments",
 ]
