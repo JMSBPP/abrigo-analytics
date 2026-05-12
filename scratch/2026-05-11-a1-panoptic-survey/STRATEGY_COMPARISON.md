@@ -69,13 +69,13 @@ Two non-primitive mechanisms appear in Panoptic but are out of scope for the str
 
 **Math justification.** Carr-Madan replication of σ_T (PRIMITIVES.md §10 eq. 18) is a *positive*-weighted integral of OTM put + call payoffs. Mixed-vol primitives carry negative distributional δ-mass at strike kinks — outside the long-vol cone, unusable as σ_T building blocks. The v0.3 predicate excludes them ex-ante via strict `convexity_class == "long-vol"`, tightening the v0.2 negation rule (`!= "short-vol"`) which over-admitted 8 mixed-vol rows.
 
-**Reverse-IC baseline.** §2's `iron_condor` is classed `short-vol` under standard (debit-paid) leg orientation; cohort_5_strip uses the LONG-vol orientation (credit-wings flipped to debit-wings — see `simulations/saas_builder/__init__.py` package docstring, "long-vol Carr-Madan 3-condor"), under which the convexity class is long-vol — qualifying it as the explicit baseline anchor.
+**Reverse-IC baseline.** §2's `iron_condor` is classed `short-vol` under standard (debit-paid) leg orientation; cohort_5_strip uses the LONG-vol orientation (credit-wings flipped to debit-wings — see `simulations/saas_builder/cohort_5_strip/__init__.py` package docstring, "long-vol Carr-Madan 3-condor"), under which the convexity class is long-vol — qualifying it as the explicit baseline anchor.
 
 **Candidate set (rule-pass rows; not pre-ranked, per anti-fishing):**
 
 | primitive_id | role | one-line rationale (strip-emit eligibility · long-vol-strict qualification) |
 |---|---|---|
-| reverse_iron_condor (cohort_5_strip) | BASELINE — comparison anchor | Strip-emit eligible: four strikes, four sign-alternating weights, same SFPM 4-leg footprint as standard IC. Long-vol qualification: cohort_5_strip's reverse-orientation produces a long-vol Carr-Madan 3-condor (per `simulations/saas_builder/__init__.py` package docstring). |
+| reverse_iron_condor (cohort_5_strip) | BASELINE — comparison anchor | Strip-emit eligible: four strikes, four sign-alternating weights, same SFPM 4-leg footprint as standard IC. Long-vol qualification: cohort_5_strip's reverse-orientation produces a long-vol Carr-Madan 3-condor (per `simulations/saas_builder/cohort_5_strip/__init__.py` package docstring). |
 | long_straddle | candidate | Strip-emit eligible: two coincident strikes, equal positive weights. §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds; pure long-vol with no directional skew. |
 | long_strangle | candidate | Strip-emit eligible: two separated strikes, equal positive weights. §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds. |
 | zeehbs | candidate (with caveat) | Strip-emit eligible: six strikes, six weights — emit payload must span ≥2 SFPM positions (6 > 4-leg SFPM ceiling, §2 on-chain_liquidity column). §2 `convexity_class` value is exactly `"long-vol"` — strict equality holds. |
