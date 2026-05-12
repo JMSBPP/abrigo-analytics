@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Final, Literal, Protocol, TypeAlias
+from typing import Final, Literal, Protocol, TypeAlias, runtime_checkable
 
 from simulations.saas_builder.cohort_5_strip.types import (
     IronCondorStrip,
@@ -88,6 +88,7 @@ NORMALIZED_SCORE_FORMULA_DOCSTRING: Final[str] = (
 # ─── Protocols ────────────────────────────────────────────────────────────────
 
 
+@runtime_checkable
 class StrategyAdapter(Protocol):
     """Build an :class:`IronCondorStrip` from a non-reverse-IC primitive.
 
@@ -108,7 +109,9 @@ class StrategyAdapter(Protocol):
     :class:`NormalizedEnvelopeScore` wrapper, not on the strip
     itself.
 
-    Method contract:
+    Method contract (callable surface — matches the cohort_5_strip
+    convention shared with :class:`StripBuilder`, :class:`CondorBuilder`,
+    and :class:`CarrMadanEnvelopeVerifier`):
 
     - ``s_0`` finite, > 0 (spot price at which the strip is placed).
     - ``sigma_0`` finite, > 0 (Carr-Madan linearization point).
@@ -117,7 +120,7 @@ class StrategyAdapter(Protocol):
       ``__post_init__`` has run successfully.
     """
 
-    def build_strip(
+    def __call__(
         self, s_0: float, sigma_0: float, k_star: float
     ) -> IronCondorStrip:
         """Build the 12-leg strip representation of this primitive."""

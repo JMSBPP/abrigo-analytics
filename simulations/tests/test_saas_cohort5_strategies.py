@@ -46,6 +46,9 @@ from simulations.saas_builder.cohort_5_strip.strategies import (
     ZeehbsAdapter,
     compute_normalized_score,
 )
+from simulations.saas_builder.cohort_5_strip.strategies.types import (
+    StrategyAdapter,
+)
 
 # ─── Canonical strip fixture (mirrors test_saas_cohort5_strip.py) ────────────
 
@@ -316,6 +319,23 @@ def test_adapters_re_exported_from_package_root() -> None:
     assert hasattr(strategies, "LongStrangleAdapter")
     assert hasattr(strategies, "ZeehbsAdapter")
     assert STRATEGY_COMPARISON_ANCHOR.startswith("scratch/2026-05-11")
+
+
+def test_adapters_conform_to_strategy_adapter_protocol() -> None:
+    """All four Task 2.2 adapters satisfy the StrategyAdapter Protocol.
+
+    Verifies structural typing — adapters expose a ``__call__(s_0,
+    sigma_0, k_star) -> IronCondorStrip`` surface matching the Protocol
+    declared in ``strategies/types.py``. The Protocol is decorated with
+    ``@runtime_checkable`` to enable ``isinstance`` validation.
+    """
+    for adapter in (
+        ReverseIronCondorAdapter(),
+        LongStraddleAdapter(),
+        LongStrangleAdapter(),
+        ZeehbsAdapter(),
+    ):
+        assert isinstance(adapter, StrategyAdapter)
 
 
 def test_adapters_are_frozen_dataclasses() -> None:
