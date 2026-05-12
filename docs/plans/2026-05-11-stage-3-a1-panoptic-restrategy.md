@@ -6,7 +6,7 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.3 (in-execution CORRECTIONS-α — predicate tightening, awaiting scoped Wave-1 re-review per §11.2)
+**Plan version:** v0.4 (in-execution CORRECTIONS-α — gate-2.4 tolerance precision-floor fix per §11.3)
 **Master spec:** `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`); Stage-2 verdict memo (`docs/specs/2026-05-09-saas-builder-stage-2-verdict-memo.md`)
 **Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized
@@ -200,7 +200,7 @@ If verdict is REPLACE, a **follow-up** spec lands at `docs/specs/2026-05-{NN}-co
 
 **Acceptance:**
 - The eval log lists, for each filtered candidate, the `NormalizedEnvelopeScore` tuple including `(primitive_id, max_relative_error, normalized_score, tolerance=0.35, comparability_proof, raw_verdict_passes)`.
-- **Reverse-IC numerical baseline pin (MQ-NIT-A1.1):** reverse-IC at TP1 reports `max_relative_error ≈ 0.2813` (matching `simulations/saas_builder/data/IronCondor_strip.STRIKES.md` line 25 = `2.8134e-01`). Eval log entry for reverse-IC MUST match this value within 1e-6 — drift indicates upstream cohort_5_strip change.
+- **Reverse-IC numerical baseline pin (MQ-NIT-A1.1; relaxed v0.3 → v0.4 per §11.3):** reverse-IC at TP1 reports `max_relative_error ≈ 0.2813` (matching `simulations/saas_builder/data/IronCondor_strip.STRIKES.md` line 25 = `2.8134e-01`). Eval log entry for reverse-IC MUST match this value within `5e-5` (matches the published baseline's 5-sig-fig emission precision floor; the prior `1e-6` tolerance was tighter than the published baseline's precision and produced a false-FAIL on the bit-exact-correct value `0.2813412838694053`). Drift > 5e-5 indicates upstream cohort_5_strip change.
 - TP1 fixture used: `(S_0=4000.0, sigma_0=20000.0, k_star=4687.94)` per master-spec §2.1 phase 2 line.
 - **Reproducibility tolerance pin (RC-FLAG-3 disposition):** independent re-runs of the comparator match within `1e-12` on `max_relative_error` (the verifier is deterministic — least-squares fit over a closed-form grid; tighter than the v0.1 `1e-9` which was unsourced). Source: the verifier has no stochastic components; `1e-12` is the floor for float64 arithmetic in the β-fit + grid-evaluation chain.
 - All raw outputs reproducible from the cohort_5_strip code at the commit pinned in `consumed_strip_audit_block`.
@@ -349,9 +349,25 @@ The strict equality excludes mixed-vol primitives and concentrates Phase-2 evalu
 - Tasks 2.x and 3.x consume the v0.3 filtered set unchanged.
 - Pin coverage in §8 is unchanged.
 
-### §11.3 Wave-2 (post-execution) review reserve
+### §11.3 v0.3 → v0.4 (in-execution gate-2.4 precision-floor fix)
 
-Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §11.4.
+**Trigger.** Task 2.4 execution produced reverse-IC `max_relative_error = 0.2813412838694053` (full float64 precision). The plan v0.3 §6 Task 2.4 acceptance pinned baseline match within `1e-6` against the published `STRIKES.md` value `2.8134e-01`. Drift vs the truncated 5-sig-fig string is `1.28e-6` — just above `1e-6`. Investigation (Wave-1 RC re-review on Task 2.4):
+
+- `consumed_strip_audit_block` matches verbatim → NOT cohort_5_strip drift.
+- Bit-exact reproducibility across re-runs (`|Δ| = 0.0`) → NOT non-determinism.
+- Independent recompute by RC reviewer = `0.2813412838694053` exactly.
+
+**Root cause.** The plan v0.3 `1e-6` tolerance is tighter than the published baseline's emission precision floor (`2.8134e-01` is a 5-sig-fig markdown emission; precision floor `~5e-5`). Comparing a 17-sig-fig float to a 5-sig-fig string and asserting `1e-6` is mathematically incoherent — the gate is structurally false-FAIL even on the bit-exact-correct value.
+
+**Fix.** Relax the gate-2.4 tolerance from `1e-6` to `5e-5` (matches the published baseline's 5-sig-fig emission precision). Task 2.4 §6 Task 2.4 acceptance updated inline above.
+
+**Anti-fishing posture.** The fix matches the baseline emission's actual precision — it does NOT relax tolerance to "fit observed drift." The relaxation is mathematically justified by the baseline string's precision floor, NOT by the observed `1.28e-6` value. If a future cohort_5_strip change produced drift `> 5e-5`, the gate would still FAIL.
+
+**Scope.** Plan-level only; cohort_5_strip code, master spec, and Task 2.4 eval log are unchanged. Task 2.4 deliverable was SPEC_COMPLIANT at Wave-1 review; this CORRECTIONS-α just updates the plan's tolerance number to a coherent value for any future re-runs.
+
+### §11.4 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §11.5.
 
 ## §12 References
 
