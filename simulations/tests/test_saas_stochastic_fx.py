@@ -22,6 +22,7 @@ from simulations.stochastic_fx import (
     MCBudgetExceededError,
     MomentMatchFailedError,
     OUParameters,
+    OUPathGenerator,
     PathEnsemble,
     SDEParameterError,
     StochasticFXError,
@@ -1054,6 +1055,208 @@ class TestGBMPathGenerator:
     def test_property_determinism(self, rng_seed: int, n_paths: int) -> None:
         """Hypothesis Pin Z1.2: (seed, n_paths) uniquely determines audit_block."""
         gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens_a = gen(rng_seed=rng_seed, n_paths=n_paths)
+        ens_b = gen(rng_seed=rng_seed, n_paths=n_paths)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+
+
+class TestOUPathGenerator:
+    """Construction + mean-reversion + stationary-variance + determinism coverage.
+
+    Pinned anchors (Plan §8 Task 3.2 acceptance block):
+
+    - Happy-path construction: returns a ``PathEnsemble`` whose shape and
+      audit_block format match the type's invariants.
+    - Determinism (Pin Z1.2): identical ``(rng_seed, n_paths)`` yields a
+      bit-exact ``audit_block`` AND ``paths.tobytes()``.
+    - Mean reversion: at large ``theta * T`` the empirical mean of the
+      terminal cross-section converges to ``mu_bar`` within 5·SE.
+    - Stationary variance: at long T the cross-section variance matches
+      the OU stationary variance ``sigma**2 / (2*theta)`` within ~5% rel-err.
+    - Trivial-degenerate limit at ``theta = 1e8`` (effectively instantaneous
+      mean reversion): paths collapse near ``mu_bar`` and
+      ``mean(sigma_t) < 1e-3`` per Plan §8 Task 3.2 threshold.
+    - Trivial-degenerate limit at ``sigma = 1e-8``: paths track ``mu_bar``
+      and ``mean(sigma_t) < 1e-6`` per Plan §8 Task 3.2 threshold.
+
+    Both trivial-degenerate tests inherit the §16.3 (v0.2→v0.3
+    CORRECTIONS-α) project-canonical anchoring "coarse grid + tight
+    threshold" verbatim from ``TestGBMPathGenerator``, per the §16.3
+    forward-implication clause: OUPathGenerator and JumpDiffusionPathGenerator
+    SHOULD adopt option (a) verbatim for parallelism and to avoid
+    re-litigating the disposition per family.
+    """
+
+    def test_happy_path_construction(self) -> None:
+        """Canonical-pin OU generator returns a well-formed PathEnsemble."""
+        gen = OUPathGenerator(params=CANONICAL_OU)
+        ens = gen(rng_seed=42, n_paths=100)
+        assert isinstance(ens, PathEnsemble)
+        assert ens.family_id == "ou"
+        assert ens.paths.shape == (100, CANONICAL_OU.n_steps + 1)
+        assert ens.sigma_t.shape == (100,)
+        assert _AUDIT_BLOCK_REGEX_PY.fullmatch(ens.audit_block) is not None
+        assert ens.rng_seed == 42
+
+    def test_determinism_same_call(self) -> None:
+        """Pin Z1.2: identical (seed, n_paths) yields bit-exact audit_block + paths."""
+        gen = OUPathGenerator(params=CANONICAL_OU)
+        ens_a = gen(rng_seed=42, n_paths=50)
+        ens_b = gen(rng_seed=42, n_paths=50)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+        assert ens_a.sigma_t.tobytes() == ens_b.sigma_t.tobytes()
+
+    def test_determinism_across_instances(self) -> None:
+        """Two separately-constructed generators with the same params agree bit-exactly."""
+        gen_a = OUPathGenerator(params=CANONICAL_OU)
+        gen_b = OUPathGenerator(params=CANONICAL_OU)
+        ens_a = gen_a(rng_seed=7, n_paths=25)
+        ens_b = gen_b(rng_seed=7, n_paths=25)
+        assert ens_a.audit_block == ens_b.audit_block
+        assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+
+    def test_mean_reversion_at_large_theta_T(self) -> None:
+        """Mean-reversion anchor: at large theta*T, E[X_T] ≈ mu_bar within 5·SE.
+
+        With ``theta=10, T=10``, the decay factor ``exp(-theta*T) = exp(-100)``
+        is sub-machine-epsilon, so the initial condition contributes
+        effectively zero to the terminal distribution. The terminal cross-
+        section is then the OU stationary distribution centred on
+        ``mu_bar``. The stationary stdev is
+        ``sigma * sqrt(1 / (2*theta)) = 0.5 / sqrt(20) ≈ 0.1118``, so
+        SE at ``n_paths=1000`` is ≈ 0.00354; the 5·SE bound is ≈ 0.0177.
+
+        A missing or mis-signed ``exp(-theta*dt)`` decay term in the
+        exact-transition kernel would shift the empirical mean by
+        O(x_0 - mu_bar) = 95 — vastly larger than 5·SE.
+        """
+        params = OUParameters(
+            theta=10.0,
+            mu_bar=5.0,
+            sigma=0.5,
+            x_0=100.0,
+            T=10.0,
+            dt=10.0 / 10000.0,
+            n_steps=10000,
+        )
+        n_paths = 1000
+        ens = OUPathGenerator(params=params)(rng_seed=42, n_paths=n_paths)
+        terminal_mean = float(ens.paths[:, -1].mean())
+        stationary_stdev = params.sigma * math.sqrt(1.0 / (2.0 * params.theta))
+        se = stationary_stdev / math.sqrt(n_paths)
+        assert abs(terminal_mean - params.mu_bar) < 5.0 * se, (
+            f"Mean-reversion anchor failed: terminal mean={terminal_mean!r} "
+            f"vs expected mu_bar={params.mu_bar!r} (SE={se!r}, bound=5*SE)."
+        )
+
+    def test_stationary_variance(self) -> None:
+        """Stationary-variance anchor: Var(X_T) ≈ sigma**2 / (2*theta) within 5%.
+
+        After ``theta*T`` is large the cross-section variance converges to
+        the OU stationary variance. A missing or wrong
+        ``sqrt((1 - exp(-2*theta*dt)) / (2*theta))`` noise-scale factor in
+        the exact-transition kernel would produce a variance off by
+        O(dt) — easily blowing past the 5%-rel-err bound at the pinned
+        ``(theta=10, T=10, n_paths=10000)`` configuration.
+        """
+        params = OUParameters(
+            theta=10.0,
+            mu_bar=5.0,
+            sigma=0.5,
+            x_0=100.0,
+            T=10.0,
+            dt=10.0 / 10000.0,
+            n_steps=10000,
+        )
+        ens = OUPathGenerator(params=params)(rng_seed=2026, n_paths=10000)
+        empirical_var = float(ens.paths[:, -1].var())
+        theoretical_var = params.sigma**2 / (2.0 * params.theta)
+        rel_err = abs(empirical_var - theoretical_var) / theoretical_var
+        assert rel_err < 0.05, (
+            f"Stationary-variance anchor failed: empirical={empirical_var!r} "
+            f"vs theoretical={theoretical_var!r} (rel_err={rel_err!r}, bound=0.05)."
+        )
+
+    def test_trivial_degenerate_limit_theta_to_infinity(self) -> None:
+        """At theta → ∞ paths collapse to mu_bar; sigma_t mean is < 1e-3.
+
+        Inherits Plan §16.3 (v0.2→v0.3 CORRECTIONS-α) project-canonical
+        anchoring: coarse grid (n_steps=100) + tight threshold (< 1e-3)
+        rather than canonical-grid + relaxed threshold. The §16.3 forward-
+        implication clause ratifies this verbatim for Task 3.2 to avoid
+        re-litigating the disposition per family. ``x_0 == mu_bar`` so the
+        paths start at the long-run mean and have no decay-driven excursion.
+        """
+        params = OUParameters(
+            theta=1e8,
+            mu_bar=4000.0,
+            sigma=0.5,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 100.0,
+            n_steps=100,
+        )
+        ens = OUPathGenerator(params=params)(rng_seed=0, n_paths=50)
+        assert float(np.mean(ens.sigma_t)) < 1e-3
+
+    def test_trivial_degenerate_limit_sigma_to_zero(self) -> None:
+        """At sigma → 0 paths track mu_bar exactly; sigma_t mean is < 1e-6.
+
+        Inherits Plan §16.3 (v0.2→v0.3 CORRECTIONS-α) project-canonical
+        anchoring: coarse grid (n_steps=100) + tight threshold (< 1e-6)
+        rather than canonical-grid + relaxed threshold (matches the
+        ``TestGBMPathGenerator::test_trivial_degenerate_limit_sigma_to_zero``
+        sibling). ``x_0 == mu_bar`` so the deterministic exact-transition
+        kernel leaves the path identically at ``mu_bar`` modulo the
+        sub-machine-epsilon noise term.
+        """
+        params = OUParameters(
+            theta=1.0,
+            mu_bar=4000.0,
+            sigma=1e-8,
+            x_0=4000.0,
+            T=1.0,
+            dt=1.0 / 100.0,
+            n_steps=100,
+        )
+        ens = OUPathGenerator(params=params)(rng_seed=0, n_paths=50)
+        assert float(np.mean(ens.sigma_t)) < 1e-6
+
+    def test_initial_condition_bit_exact(self) -> None:
+        """paths[:, 0] == params.x_0 for all rows (bit-exact)."""
+        gen = OUPathGenerator(params=CANONICAL_OU)
+        ens = gen(rng_seed=11, n_paths=64)
+        assert bool(np.all(ens.paths[:, 0] == CANONICAL_OU.x_0))
+
+    def test_canonical_params_json_stable(self) -> None:
+        """canonical_params_json on the ensemble is a non-empty stable JSON."""
+        gen = OUPathGenerator(params=CANONICAL_OU)
+        ens = gen(rng_seed=3, n_paths=10)
+        import json as _json  # noqa: PLC0415  # local import for test isolation.
+
+        parsed = _json.loads(ens.canonical_params_json)
+        assert set(parsed.keys()) == {
+            "theta",
+            "mu_bar",
+            "sigma",
+            "x_0",
+            "T",
+            "dt",
+            "n_steps",
+        }
+        assert parsed["x_0"] == CANONICAL_OU.x_0
+        assert parsed["n_steps"] == CANONICAL_OU.n_steps
+
+    @given(
+        rng_seed=st.integers(min_value=0, max_value=2**31),
+        n_paths=st.integers(min_value=10, max_value=200),
+    )
+    @settings(max_examples=15, deadline=None)
+    def test_property_determinism(self, rng_seed: int, n_paths: int) -> None:
+        """Hypothesis Pin Z1.2: (seed, n_paths) uniquely determines audit_block."""
+        gen = OUPathGenerator(params=CANONICAL_OU)
         ens_a = gen(rng_seed=rng_seed, n_paths=n_paths)
         ens_b = gen(rng_seed=rng_seed, n_paths=n_paths)
         assert ens_a.audit_block == ens_b.audit_block

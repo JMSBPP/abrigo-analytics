@@ -13,9 +13,9 @@ handling pins determinism (Pin Z1.2): identical
 ``(params, rng_seed, n_paths)`` triples yield bit-exact ensembles AND
 bit-exact ``audit_block``\\ s.
 
-Task 3.1 ships ``GBMPathGenerator`` only; ``OUPathGenerator`` (Task 3.2)
-and ``JumpDiffusionPathGenerator`` (Task 3.3) append to this module in
-subsequent commits.
+Task 3.1 shipped ``GBMPathGenerator``; Task 3.2 appends ``OUPathGenerator``
+(this module). ``JumpDiffusionPathGenerator`` (Task 3.3) appends in a
+subsequent commit.
 
 Discretization scheme (Plan §8.3.1, GBM family)
 ------------------------------------------------
@@ -70,17 +70,19 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from simulations.stochastic_fx.types import GBMParameters, PathEnsemble
+from simulations.stochastic_fx.types import GBMParameters, OUParameters, PathEnsemble
 
 
-def _canonical_params_json(params: GBMParameters) -> str:
+def _canonical_params_json(params: GBMParameters | OUParameters) -> str:
     """Serialize a Parameters frozen-dc to a stable canonical JSON string.
 
     ``dataclasses.asdict`` flattens the frozen-dc to a plain ``dict`` of
     plain Python scalars; ``json.dumps(..., sort_keys=True)`` enforces a
     stable byte ordering so the resulting string is reproducible across
     Python sessions. This canonical form is hashed into ``audit_block``
-    AND stored on the returned ``PathEnsemble``.
+    AND stored on the returned ``PathEnsemble``. Single source of truth
+    shared across all family generators (``GBMPathGenerator``,
+    ``OUPathGenerator``, ...).
     """
     return json.dumps(dataclasses.asdict(params), sort_keys=True)
 
@@ -179,6 +181,110 @@ class GBMPathGenerator:
         )
 
 
+@dataclass(frozen=True)
+class OUPathGenerator:
+    """Deterministic OU path-ensemble generator (Callable tier, Pin Z1.2).
+
+    Holds an :class:`~simulations.stochastic_fx.types.OUParameters` frozen-dc
+    and exposes a ``__call__(rng_seed, n_paths)`` surface that returns a
+    :class:`~simulations.stochastic_fx.types.PathEnsemble` with
+    ``family_id == "ou"``.
+
+    Discretization (Plan §8 Task 3.2)
+    ----------------------------------
+    EXACT conditional-Gaussian transition for the Ornstein-Uhlenbeck SDE
+    ``dX_t = theta * (mu_bar − X_t) * dt + sigma * dW_t`` (Vasicek
+    dynamics — see e.g. Glasserman, *Monte Carlo Methods in Financial
+    Engineering*, §3.3). Per step from ``X_t`` to ``X_{t+dt}``:
+
+        X_{t+dt} = mu_bar
+                 + (X_t − mu_bar) * exp(−theta * dt)
+                 + sigma * sqrt((1 − exp(−2·theta·dt)) / (2·theta)) * Z
+
+    where ``Z ~ N(0, 1)``. This is EXACT (no Euler discretization error)
+    because the OU SDE admits a closed-form Gaussian transition density.
+    The decay factor ``exp(−theta · dt)`` and noise scale
+    ``sigma · sqrt((1 − exp(−2·theta·dt)) / (2·theta))`` are scalars
+    precomputed once outside the per-step loop.
+
+    σ_T per path (Spec v0.3 §6 eq. 7)
+    ----------------------------------
+    Identical convention to ``GBMPathGenerator``: discrete realised-variance
+    sum-of-squared-deviations from the path mean, normalised by ``T`` (not
+    by ``n+1``). The convention is family-agnostic.
+
+    Pin Z1.2 reproducibility: identical ``(params, rng_seed, n_paths)``
+    triples yield bit-exact ``paths``, ``sigma_t``, and ``audit_block``.
+    """
+
+    params: OUParameters
+
+    def __call__(self, rng_seed: int, n_paths: int) -> PathEnsemble:
+        """Sample ``n_paths`` OU trajectories under the held parameters.
+
+        Inputs (callee-validated; ``__post_init__`` on the returned
+        ``PathEnsemble`` cross-validates the output invariants):
+
+        - ``rng_seed`` — non-negative ``int`` seed for
+          ``numpy.random.default_rng``; Pin Z1.2 reproducibility surface.
+        - ``n_paths`` — positive ``int`` ensemble size; ``paths`` will have
+          shape ``(n_paths, n_steps + 1)``.
+
+        Returns
+        -------
+        PathEnsemble
+            Family ``"ou"``, validated by
+            :meth:`PathEnsemble.__post_init__`.
+        """
+        params = self.params
+        n_steps = params.n_steps
+        dt = params.T / n_steps
+        theta = params.theta
+        mu_bar = params.mu_bar
+        sigma = params.sigma
+
+        # Exact-transition scalar pre-factors (Glasserman §3.3): the OU
+        # SDE's conditional Gaussian transition has deterministic mean-
+        # decay ``decay`` and conditional stdev ``noise_scale``.
+        decay = math.exp(-theta * dt)
+        noise_scale = sigma * math.sqrt((1.0 - math.exp(-2.0 * theta * dt)) / (2.0 * theta))
+
+        rng = np.random.default_rng(rng_seed)
+        # Standard-normal innovations; shape (n_paths, n_steps).
+        z = rng.standard_normal((n_paths, n_steps))
+
+        # Allocate the path matrix and seed column 0 with the initial
+        # condition x_0 (bit-exact, no float drift). Shape (n_paths, n_steps+1).
+        paths = np.empty((n_paths, n_steps + 1), dtype=np.float64)
+        paths[:, 0] = params.x_0
+
+        # Iterate the OU EXACT-transition kernel per step. The body of
+        # this loop is the canonical Vasicek closed-form update; the
+        # ``+ noise_scale * z[:, t]`` term is the family's stochastic
+        # increment whose stationary variance is sigma**2 / (2*theta).
+        for t in range(n_steps):
+            paths[:, t + 1] = mu_bar + (paths[:, t] - mu_bar) * decay + noise_scale * z[:, t]
+
+        # σ_T per path — spec v0.3 §6 eq. (7) DISCRETELY: sum of squared
+        # deviations from the path mean, normalised by T (NOT by n+1).
+        # Family-agnostic; identical convention to GBMPathGenerator.
+        path_means = np.mean(paths, axis=1, keepdims=True)
+        sigma_t = np.sum((paths - path_means) ** 2, axis=1) / params.T
+
+        canonical_params_json = _canonical_params_json(params)
+        audit_block = _compute_audit_block(canonical_params_json, rng_seed, paths)
+
+        return PathEnsemble(
+            family_id="ou",
+            paths=paths,
+            sigma_t=sigma_t,
+            canonical_params_json=canonical_params_json,
+            rng_seed=rng_seed,
+            audit_block=audit_block,
+        )
+
+
 __all__ = [
     "GBMPathGenerator",
+    "OUPathGenerator",
 ]
