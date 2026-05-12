@@ -88,3 +88,18 @@ Two non-primitive mechanisms appear in Panoptic but are out of scope for the str
 **Count after v0.3 filter:** 3 candidates + 1 baseline = 4 rows; within plan's "2–4 primitives" range.
 
 [^arity]: §2's `admits_strip_emit = "yes"` (annotated "trivial ladder") for `long_call`/`long_put` is a v0.2-era latent classification error: the cohort_5_strip emit API requires a 12-leg payload (`STRIP_TOTAL_LEGS = STRIP_CONDOR_COUNT * LEGS_PER_CONDOR = 12`, `simulations/saas_builder/cohort_5_strip/types.py:49`), so 1-leg primitives do not admit strip-emit regardless of analytic ladder-ability. Amending §2 is **out of scope for Task 1.2**; a separate follow-up task will land the disposition memo and §2 correction.
+
+## §6 Comparability proof routing
+
+**Task 2.3b status: SKIPPED for this A1 execution.** Plan v0.3 §6 Task 2.3b is conditional on at least one Phase-1 filtered candidate adapter declaring `comparability_proof = "primitive_variant"`. Inspection of the four adapters landed under Task 2.2 (commit `6c871f0`, with downstream filter-set refinement at `d0aa41e`) shows none take that lane; every adapter routes to one of the two already-shipped verifier classes (`CarrMadanEnvelopeVerifier` for `tiled_body`, `NormalizedScoreVerifier` for `normalized_score`). The conditional therefore evaluates false and Task 2.3b records this rationale in lieu of authoring a third verifier.
+
+**Per-adapter `comparability_proof` routing (from Task 2.2 commit `6c871f0`):**
+
+- `reverse_iron_condor` → `tiled_body` — the strip satisfies the cohort_5_strip tiled-body convention; the existing `CarrMadanEnvelopeVerifier` applies unchanged, since the 12-leg payload is exactly a 3-tile reverse-IC ladder.
+- `long_straddle` → `normalized_score` — narrow-clustered geometry produces a non-zero strip floor at S_0, absorbed by the multiplicative correction the normalized-score verifier already implements.
+- `long_strangle` → `normalized_score` — wide-separated bodies likewise produce a non-zero strip floor at S_0, absorbed by the same multiplicative correction.
+- `zeehbs` → `normalized_score` — 6-leg primitive approximated by a 12-leg reverse-IC; the residual floor from the approximation is absorbed by the normalized-score correction.
+
+**Forward-deferral contract.** No `PrimitiveVariantVerifier` implementations are authored under this A1 plan; the `primitive_variant` lane remains DEFERRED. If a future Stage-3 wave introduces an adapter whose `comparability_proof = "primitive_variant"`, that wave must (a) author the verifier per the Task 2.3b spec in plan v0.3, (b) add an entry to `EnvelopeComparator.primitive_variant_verifiers` registering the new adapter, and (c) author an equivalence test against the shipped `CarrMadanEnvelopeVerifier` on a reverse-IC baseline so the two lanes agree on the existing tiled-body case before the new lane is consumed downstream.
+
+**Provenance.** Routing-decision evidence: Task 2.2 commit `6c871f0` (adapter `comparability_proof` field assignments) and Task 2.3 commit `d0aa41e` (Phase-1 candidate filter to deterministic-emit set). No further Task 2.3b artifacts are produced under this plan.
