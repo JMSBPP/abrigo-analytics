@@ -6,7 +6,7 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.2 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS — 8 FLAGs + 5 NITs disposed inline per §11.1)
+**Plan version:** v0.3 (in-execution CORRECTIONS-α — predicate tightening, awaiting scoped Wave-1 re-review per §11.2)
 **Master spec:** `docs/specs/2026-05-11-stage-3-first-wave-design.md` v0.2
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`); Stage-2 verdict memo (`docs/specs/2026-05-09-saas-builder-stage-2-verdict-memo.md`)
 **Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized
@@ -323,9 +323,33 @@ If Task 3.1 emitted KEEP, skip Task 3.2 entirely.
 | MQ-NIT-A1.1 | Cosmetic | Reverse-IC numerical baseline pin added: `max_relative_error ≈ 0.2813` at TP1, matches `IronCondor_strip.STRIKES.md` line 25. Eval log MUST match within 1e-6. | §6 Task 2.4 |
 | MQ-NIT-A1.2 | Cosmetic | Comparator tie-break: secondary sort by `primitive_id` ascending (lexicographic) on float-tie within 1e-12. | §6 Task 2.3 |
 
-### §11.2 Wave-2 (post-execution) review reserve
+### §11.2 v0.2 → v0.3 (in-execution predicate tightening; scoped Wave-1 re-review)
 
-Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §11.3.
+**Trigger.** Task 1.2 implementer applied the v0.2 filter rule `admits_strip_emit AND convexity_class != "short-vol"` strictly and produced 11 candidates + 1 baseline = 12, well above the plan's "2–4 primitives" estimate. The mismatch revealed a drafting slip in v0.2: the rule `!= "short-vol"` admits mixed-vol primitives (call_spread, put_spread, super_bull, super_bear, call_ratio_spread, zebra), which mathematically CANNOT cleanly Carr-Madan-replicate long-variance.
+
+**Math anchor (PRIMITIVES.md §10).** The Carr-Madan strip identity (eq. 18) replicates σ_T as a positive-weighted integral of OTM put + call payoffs. The integrand is non-negative everywhere; equivalently, the building blocks must be LONG-VOL primitives (positive Γ everywhere). Mixed-vol combos have regions of negative Γ and therefore do NOT admit a single 2/K²-weight Carr-Madan replication. The Phase-2 envelope verifier (centered-strip / β-fit / log-contract proxy) would either produce uninterpretable envelopes on mixed-vol candidates OR force them through the `comparability_proof = "normalized_score"` lane, where the multiplicative correction is itself derived under the assumption of monotone-convex payoff. **Either path is broken for mixed-vol.**
+
+**Predicate tightening (replaces v0.2 rule).** Filter rule v0.3:
+```
+candidate qualifies iff:
+    admits_strip_emit = "yes"
+  AND
+    convexity_class == "long-vol"    (strict; NOT "!= short-vol")
+```
+The strict equality excludes mixed-vol primitives and concentrates Phase-2 evaluation on the primitive family for which the envelope metric is mathematically defined.
+
+**This is NOT fishing because.** The predicate change is anchored ex-ante in PRIMITIVES.md §10 (a frozen Stage-2 derivation), not in the observed candidate counts. The motivation is mathematical correctness of the envelope metric, not target-count tuning. The §10 anchor was always available; v0.2's "!= short-vol" was a drafting error that this CORRECTIONS-α surfaces.
+
+**Scoped Wave-1 re-review.** Per master-spec §6.4, the predicate change requires fresh RC+MQ Wave-1 verdicts SCOPED TO THIS CORRECTIONS-α ENTRY ONLY (not a full plan re-review). Verdicts land in `scratch/2026-05-11-stage-3-a1-rc-mq-review/wave-1-v0.3/rc-verdict.md` and `mq-verdict.md`. Master spec is unchanged (the predicate refinement lives at the plan level, not the master-spec level).
+
+**Effect on Tasks 1.2 forward.**
+- Task 1.2 implementer re-runs §5 of `STRATEGY_COMPARISON.md` with the v0.3 predicate. Prior v0.2 §5 content is overwritten in-place; old §5 candidates not matching v0.3 are listed in the "filtered-out" sub-list with the new rationale.
+- Tasks 2.x and 3.x consume the v0.3 filtered set unchanged.
+- Pin coverage in §8 is unchanged.
+
+### §11.3 Wave-2 (post-execution) review reserve
+
+Wave-2 RC+MQ on this plan's exit deliverables lands its own block at §11.4.
 
 ## §12 References
 
