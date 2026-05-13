@@ -1994,7 +1994,14 @@ class TestInversionVerifier:
         the GBM auto-covariance kernel
         ``Cov(X_j, X_k) = x_0² (e^{σ²·dt·min(j,k)} − 1)``.
 
-        Hand-computed value (using float64 closed-form): E_an = 81.3148...
+        Per FLAG-MQ-V0.6-2 / NIT-RC-V0.6-1 dispositions (Wave-1 Task 4.2
+        2026-05-13): independently verified value is E_an ≈ 201.0031
+        (RC re-computed via separate code path). The prior docstring
+        numbers (81.3148, ~16.5) were authoring slips. To kill the
+        tautology risk that a shared np.expm1 bug between impl and test
+        would propagate undetected, this test re-derives the expected
+        value via PURE-STDLIB math.exp arithmetic (NOT numpy.expm1),
+        and additionally anchors against the hand-computed literal.
         """
         tractable = GBMParameters(
             mu=0.0,
@@ -2005,24 +2012,38 @@ class TestInversionVerifier:
             n_steps=10,
         )
         e_an, var_an = gbm_discrete_sigma_t_moments(tractable)
-        # Hand-computed via direct trace-identity expansion at N=11:
-        # μ = x_0·1_{N}, μ^T M μ = 0; tr(M Σ) = Σ_j Σ_jj − (Σ Σ_jk)/N
-        # with Σ_jj = x_0²·(e^{σ²·j·dt} − 1) and Σ_jk = x_0²·(e^{σ²·dt·min(j,k)} − 1).
-        # Computed via the same closed form (reference-independent of the
-        # implementation under test):
-        sigma2_dt = tractable.sigma ** 2 * tractable.dt
-        N = tractable.n_steps + 1
-        j_idx = np.arange(N)
-        min_jk = np.minimum.outer(j_idx, j_idx).astype(np.float64)
-        sigma_matrix = tractable.x_0 ** 2 * np.expm1(sigma2_dt * min_jk)
-        diag_sigma = float(np.trace(sigma_matrix))
-        sum_sigma = float(np.sum(sigma_matrix))
-        # μ^T M μ = 0 (constant μ); E_stat = tr(M Σ); E_an = E_stat / T.
-        expected_e = (diag_sigma - sum_sigma / N) / tractable.T
-        assert abs(e_an - expected_e) / abs(expected_e) < 1e-6
-        # Sanity: at this pin numeric value is ~16.5 — match by literal too.
-        # (Verified independently via the offline scratch derivation.)
-        assert 0.0 < e_an < 1e3
+
+        # Independent re-derivation via pure-stdlib math.exp (different
+        # code path from impl's numpy.expm1 — kills shared-transcription
+        # tautology risk per FLAG-MQ-V0.6-2).
+        sigma2_dt = tractable.sigma ** 2 * tractable.dt  # 0.001
+        N = tractable.n_steps + 1  # 11
+        x0sq = tractable.x_0 ** 2  # 10000
+
+        diag_sum = 0.0
+        for j in range(N):
+            diag_sum += x0sq * (math.exp(sigma2_dt * j) - 1.0)
+
+        total_sum = 0.0
+        for j in range(N):
+            for k in range(N):
+                total_sum += x0sq * (math.exp(sigma2_dt * min(j, k)) - 1.0)
+
+        # μ^T M μ = 0 (constant μ); E_an = (tr Σ − sum Σ / N) / T.
+        expected_e = (diag_sum - total_sum / N) / tractable.T
+
+        # Hardcoded hand-computed literal anchor — caught the v0.6
+        # docstring drift (RC independently computed 201.0031).
+        hand_computed_e = 201.0031
+
+        assert abs(e_an - expected_e) / abs(expected_e) < 1e-6, (
+            f"impl ({e_an}) vs independent math.exp re-derivation ({expected_e}) "
+            f"disagree beyond rel-err 1e-6 — shared transcription error possible"
+        )
+        assert abs(e_an - hand_computed_e) / hand_computed_e < 1e-3, (
+            f"impl ({e_an}) vs hand-computed literal ({hand_computed_e}) "
+            f"disagree beyond rel-err 1e-3 — regression anchor failure"
+        )
         assert var_an > 0.0
 
     # ── var_rel_err audit-trail populated for all three families ─────────────

@@ -661,6 +661,45 @@ surface — Pin Z1.3b row + §4.1 Phase B bullet + §11.6 (this section).
 Re-review verdicts land at
 `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.4/`.
 
+**Phase B Type-I rate disclosure (FLAG-MQ-V0.6-1 post-implementation
+disposition).** Independent MC-noise probe at 50 seeds, canonical pin,
+N=1000 revealed per-family Phase B mean-rel-err Type-I rates:
+
+| Family | mean rel-err at seed=42 | fraction seeds with mean rel-err > MOMENT_REL_TOL |
+|---|---|---|
+| GBM | 1.12% | ≈ 0% (low MC noise on σ_T mean) |
+| OU | 0.17% | ≈ 0% (low MC noise on σ_T mean) |
+| **Merton** | 0.70% (lucky) | **≈ 30%** (high σ_T variance from jump kurtosis inflates SE of the mean estimator at N=1000) |
+
+The Merton Type-I rate is intrinsic to the same MC-noise-vs-N-floor
+incompatibility that motivated dropping the variance gate (§11.6
+above) — just at the next moment. Theoretical SE of the mean estimator
+at N=1000 for canonical Merton: `SE_mean ≈ sqrt(Var[σ_T])/sqrt(N)` ≈
+`sqrt(8.3e16)/sqrt(1000)` ≈ 9.1e6, against `E[σ_T] ≈ 1.6e8`, so
+`SE_mean / mean ≈ 5.6%`, comparable to `MOMENT_REL_TOL = 0.05`. The
+~30% empirical Type-I rate is consistent with this analytic
+prediction (Gaussian tail integral beyond 1 SE from the mean ≈ 32%).
+
+**Operational consequence.** Task 6's end-to-end run uses a SINGLE
+spec-pinned seed (seed=42), which happens to fall in the
+mean-passes-Phase-B region for all three families at the canonical
+pin. If a future canonical-pin run lands in the ~30% Merton Phase-B
+rejection region under a different seed, Pin Z1.5 HALT routing
+applies: re-derive analytic OR refine discretization, NEVER seed
+re-roll. The seed-42 PASS is a Type-I-acceptable observation, not a
+silent-luck-of-the-seed circumvention.
+
+**Why this isn't a structural BLOCK on v0.4.** Unlike the v0.3 → v0.4
+Variance Type-I issue (where the floor of 8-30% spanned the gate at
+1-sigma intervals for ALL three families and the fraction within ±5%
+was 12-46%), the Phase B Mean gate is comfortable for GBM/OU (≈0%
+Type-I) and intermediate for Merton (~30%). Forcing further tolerance
+relaxation would inflate the GBM/OU acceptance region beyond useful
+sensitivity; per-family tolerance is anti-fishing-banned. The honest
+disposition is: document the Merton Phase-B Type-I rate; let
+seed=42's PASS stand; HALT-route any seed-42 failure to re-derivation.
+This matches the §11.7 Phase-C ~1% Type-I disclosure pattern.
+
 ### §11.7 v0.4 → v0.5 (Pin Z1.4 per-family reference dispatch; user disposition empirical-CDF-for-Merton, 2026-05-13)
 
 **Trigger.** Task 4.2 implementer resumed implementation under the v0.4 amended Phase B mean-only gate (which works correctly for all three families — mean rel-err 1.12% / 0.17% / 0.70% for GBM/OU/Merton, all well below `MOMENT_REL_TOL = 0.05`). Phase A (Pin Z1.3a algebraic identity) passes at machine epsilon. But Phase C (Pin Z1.4 KS goodness-of-fit) catastrophically rejected the canonical Merton ensemble: KS p-value = 3.41e-21 against the v0.4 moment-matched lognormal reference, vs the 0.01 floor. 20-seed pass rate: GBM 12/20, OU 18/20, Merton 0/20.
