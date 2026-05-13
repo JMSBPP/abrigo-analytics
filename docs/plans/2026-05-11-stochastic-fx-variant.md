@@ -390,7 +390,7 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
   5. Emit parquet, JSON, MD via the Phase-5 emitters.
 - Per family the `InversionVerdict.passes == True`:
   - Phase A residual ≤ NUMERICAL_IDENTITY_TOL (1e-6).
-  - Phase B mean and var relative errors ≤ MOMENT_REL_TOL (0.05).
+  - Phase B mean relative error ≤ MOMENT_REL_TOL (0.05). [v0.5 §16.5 mean-only gate per user disposition Option B 2026-05-13 — variance rel-err is still emitted to `InversionVerdict.phase_b_var_rel_err` for audit-trail observation but does NOT gate `phase_b_pass`. Full-distribution match preserved at Phase C below.]
   - Phase C KS p-value ≥ KS_PVALUE_FLOOR (0.01).
 - `notes/STOCHASTIC_FX_RESULTS.md` emitted with R-tagged sections per family + cross-family summary table.
 - `moment_verification_log.md` records each family's analytic-vs-empirical moments + relative errors.
