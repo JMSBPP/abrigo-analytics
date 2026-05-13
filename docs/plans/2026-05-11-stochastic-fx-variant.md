@@ -6,7 +6,7 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.3 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS-DISPOSED at v0.2; v0.3 adds §16.3 mid-execution CORRECTIONS-α for Task 3.1's grid-density precision-floor disposition per the A1 precedent)
+**Plan version:** v0.4 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS-DISPOSED at v0.2; v0.3 added §16.3 grid-density precision floor (Task 3.1); v0.4 adds §16.4 σ_T statistic-mismatch ratification (Task 3.3) routing moment-matching to Task 4.2 Phase B per user disposition)
 **Parent spec:** `docs/specs/2026-05-11-stochastic-fx-variant-design.md` v0.3 (Wave-1 ACCEPT_WITH_FLAGS-DISPOSED)
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`, audit `94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329` — PRESERVED unchanged per Pin Z1.6)
 **Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized once §16.1 corrections land
@@ -486,7 +486,7 @@ Both reviewers explicitly stated no full Wave-1 re-dispatch required; orchestrat
 
 ### §16.2 Wave-2 (post-execution) review reserve
 
-Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.4 once execution completes (renumbered to make room for §16.3 mid-execution disposition).
+Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.5 once execution completes (renumbered to make room for §16.3 + §16.4 mid-execution dispositions).
 
 ### §16.3 v0.2 → v0.3 (Task 3.1 mid-execution CORRECTIONS-α — grid-density precision floor)
 
@@ -507,6 +507,41 @@ v0.3 ratifies option (a) as the project-canonical choice for this test class —
 **RC-NIT-1 (Trivial) disposition.** The defensive `paths[:, 0] = params.x_0` reassignment is correctness-redundant under IEEE 754 (`exp(0) == 1.0` exactly) but readability-positive. Kept as-is.
 
 **MQ-FLAG-2 (Low) disposition.** Slice-equivalence convention (`gen(seed=42, n_paths=1000).paths[:500]` is NOT equal to `gen(seed=42, n_paths=500).paths` because the RNG state advances differently) deferred to a Task 5 emit.py docstring; not load-bearing for Task 3.1.
+
+### §16.4 v0.3 → v0.4 (Task 3.3 mid-execution CORRECTIONS-α — analytic-vs-empirical σ_T statistic mismatch)
+
+**Trigger:** Task 3.3 implementer self-flagged BLOCK-PROBE-1 during the inline math probe for `JumpDiffusionPathGenerator`. The probe compared `merton_sigma_t_moments(CANONICAL_MERTON)[0]` (analytic E[σ_T] = 1.99e+06) to `mean(JumpDiffusionPathGenerator(CANONICAL_MERTON)(rng_seed=7, n_paths=5000).sigma_t)` (empirical = 1.58e+08) and found a ~137× rel_err. Implementer correctly identified that the SAME ~137× gap exists at the GBM canonical pin (8.03e+04 analytic vs 1.10e+07 empirical) — confirming the discrepancy is a STRUCTURAL mismatch between two valid-but-different σ_T statistics, NOT a JD-aggregation defect.
+
+**Root cause analysis.** The two quantities measure different objects:
+
+1. **Task 2.1 `moments.py` analytic E[σ_T]** is the LEADING-ORDER continuous-time integrated-variance form (per Hull §15 / Andersen-Piterbarg §2.7): `E[(1/T)·∫_0^T (X_t − E[X̄])² dt]` ≈ `x_0² · ((exp(σ²T) − 1)/(σ²T) − 1)` for GBM, with sample-mean-centering neglected. Units: `[X]²`.
+
+2. **Task 3.x generator emit `sigma_t`** is the DISCRETE spec v0.3 §6 eq. (7) statistic: `(1/T) · Σ_{j=0}^{n_steps} (X_j − X̄_path)²`, a Riemann sum that scales as `O(n_steps)` relative to the continuous integral. At canonical `n_steps = 5000, T = 12` the discrete-to-continuous scale factor is `n_steps/T ≈ 417`; combined with the `Var[X̄_path]` centering correction and float64 cumulative-sum noise, the observed ~137× ratio is consistent with this purely-definitional gap.
+
+Both are valid σ_T proxies for the wage-volatility hedge analytic but they do NOT share population moments. The original spec v0.3 §8 Pin Z1.3b (moment match) implicitly assumed they would; the implementer's probe surfaced the assumption defect at the first cross-tier test.
+
+**User disposition (Option 1, 2026-05-13):** Ratify the implementer's omission of the cross-tier moments cross-check in Task 3.3's test class. Route moment-matching to Task 4.2's `InversionVerifier` Phase B, which is the canonical home for analytic-vs-empirical moment reconciliation in this plan.
+
+**Implementer disposition recorded.** `TestJumpDiffusionPathGenerator` class docstring documents the omission rationale; the probe-stated 10% rel-err target in the Task 3.3 implementer brief is RETIRED (had been a stretch goal; conflicts with the statistic-definitional gap). The plan §8 Task 3.3 acceptance block (lines 283-289) did NOT list a moment cross-check — only determinism + λ=0 KS collapse + trivial-degenerate — so the implementer's omission is fully spec-conformant.
+
+**Forward implication for Task 4.2 Phase B (InversionVerifier — moment-match).** Phase B must either:
+- **(b1)** Derive the analytic E[σ_T] / Var[σ_T] of the DISCRETE eq. (7) statistic at the canonical grid (depends on `n_steps`, `T`) and compare to empirical moments. Closed-form expressions exist via the auto-covariance structure of the SDE family (e.g., for GBM the discrete-grid integrated variance is `x_0² · Σ_j (exp(σ²·t_j) − 1) / T − x_0² · n_steps · Var[X̄_path] / T`). Implementer choice on whether to derive symbolically (sympy) or numerically (Monte Carlo at high-N reference).
+- **(b2)** Convert the discrete empirical to a continuous-form estimator by multiplying by the known scale factor `T / n_steps` (i.e., emit `empirical_continuous = sigma_t · T / (n_steps + 1)`) and compare against the existing moments.py analytic. Simpler but introduces a non-trivial bias for small T (mean-centering correction).
+- **(b3)** Sidestep moment-matching entirely and route Phase B to a KS-test (a la Phase C) on the cross-section of `sigma_t` at the canonical grid against a Monte Carlo reference distribution at much higher N.
+
+v0.4 RECOMMENDS option (b1) — derive the analytic of the discrete statistic — as the cleanest match to spec Pin Z1.3b. Pin Z1.3b's tolerance (`MOMENT_REL_TOL = 0.05`, per Task 4.2 acceptance) is retained but applies to the discrete-form comparison, NOT to the continuous-form moments.py output. Task 4.2 acceptance is updated to require an explicit discrete-statistic derivation OR a documented bias-correction step; pinning b1 vs b2 is left to the Task 4.2 implementer's analysis report.
+
+**Tasks 2.1 outputs (moments.py + `.tex` fragments + STOCHASTIC_FX_RESULTS.md template) are UNCHANGED.** They remain the canonical continuous-time analytic forms cited in `notes/stochastic_fx_tex/`. The discrete-statistic analytic is a Task 4.2 derivation, not a moments.py revision. This preserves the Task 2.1 audit_blocks and avoids Wave-2 re-review on Task 2.1.
+
+**Pin coverage update:** Pin Z1.3b's scope is clarified to "moment match between analytic-of-discrete-statistic and empirical-of-emitted-sigma_t". Task 4.2 acceptance to embed this clarification at execution time.
+
+**No Wave-1 re-dispatch required** for Task 3.3 — implementer made a correct judgment call surfacing the structural mismatch; user disposition routes it to Task 4.2. Tasks 3.1 and 3.2 are unaffected (they ship the same eq. (7) statistic; their moment cross-checks were not in their acceptance blocks). Task 4.2 plan section §9 Task 4.2 is the canonical site for the discrete-analytic derivation; no edit there at v0.4 — the Task 4.2 implementer brief at dispatch time will cite this §16.4 and select (b1/b2/b3) based on analysis.
+
+**Verdict files (Task 3.3 Wave-1 still pending dispatch per user halt — not yet scheduled):**
+- `scratch/2026-05-11-stochastic-fx-task-3.3-review/rc-verdict.md` (NOT YET WRITTEN)
+- `scratch/2026-05-11-stochastic-fx-task-3.3-review/mq-verdict.md` (NOT YET WRITTEN)
+
+When Wave-1 is resumed, both reviewers must read this §16.4 first; the moments cross-check test omission is RATIFIED, not in-scope.
 
 **Verdict files:**
 - `scratch/2026-05-11-stochastic-fx-task-3.1-review/rc-verdict.md`
