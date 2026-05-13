@@ -558,9 +558,12 @@ estimator across 100 independent seeds per family:
 The MC standard error on the sample variance at N is `SE_Var ≈
 sqrt((κ_eff − 1) / (N − 1)) · Var`, where `κ_eff` is the kurtosis-like
 4th-cumulant factor of the σ_T statistic. For canonical-pin families,
-`κ_eff` is in the range 4-15 (Merton's is largest because of jump
-heavy tails). At N=1000, `SE_Var/Var` is intrinsically 8-30% regardless
-of analytic-Var correctness.
+`κ_eff` is in the range 4-35 (MQ-V0.4-3 disposition: empirical Merton
+κ_eff at canonical pin lands at 33-35 because of jump heavy tails;
+the GBM/OU pair sits in 4-12). At N=1000, `SE_Var/Var` is intrinsically
+8-30% regardless of analytic-Var correctness — the MC-noise budget
+incompatibility with `MOMENT_REL_TOL=0.05` holds a fortiori at the
+revised upper κ_eff range.
 
 **Pins Z1.3b and Z1.5 were mathematically incompatible at v0.3.** Pin
 Z1.5 fixed N=1000 as anti-fishing (NEVER raise to pass); Pin Z1.3b
