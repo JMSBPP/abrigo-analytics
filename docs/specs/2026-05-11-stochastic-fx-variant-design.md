@@ -1,6 +1,6 @@
 ---
 spec_id: stochastic-fx-variant-design
-spec_version: v0.3 (Wave-1 v0.2: RC ACCEPT_WITH_FLAGS + MQ BLOCK (NEW-BLOCK-MQ-4 GBM E[σ_T] sign-mass error); v0.3 fixes GBM moment formula + closes RC-FLAG-1-v2 prose-ification residual; awaiting v0.3 Wave-1 re-review)
+spec_version: v0.4 (v0.3 ACCEPT_WITH_FLAGS-DISPOSED at Wave-1; v0.4 amends Pin Z1.3b to mean-only Phase B per user disposition Option B 2026-05-13 — the variance-match-at-N=1000 gate was structurally unsatisfiable due to MC-noise floor 8-30% per family vs MOMENT_REL_TOL=0.05. Full-distribution match remains in Phase C KS test against moment-matched reference. See §11.3 CORRECTIONS-α.)
 emit_timestamp_utc: 2026-05-11
 parent_framework: notes/PRIMITIVES.md §15 open item — "Path A v3" stochastic-FX variant
 stage_2_results_anchor: notes/STAGE_2_RESULTS.md (R1–R8 closed forms under deterministic eq. (6))
@@ -211,13 +211,27 @@ a moment-matched parametric reference (Z1.4).)
      handles in O(1ms). PASS iff residual ≤ `NUMERICAL_IDENTITY_TOL`
      (1e-6, reuses cohort_4 convention). Family-agnostic; passes
      trivially under all three families.
-   - **Phase B — Moment match against hand-derived analytic (Pin Z1.3b).**
-     Per family, compute empirical `mean(σ_T_n)` and `var(σ_T_n)`
-     across the N-path ensemble. Compare against hand-derived analytic
-     `E[σ_T]` and `Var[σ_T]` from §4.2 (Hull, Andersen-Piterbarg
-     literature; rendered as `.tex` fragments via `sympy.latex()`).
-     PASS iff relative error on EACH moment ≤ `MOMENT_REL_TOL`
-     (default 0.05 — calibrated to MC noise floor at N=1000).
+   - **Phase B — Mean match against hand-derived analytic (Pin Z1.3b, v0.4).**
+     Per family, compute empirical `mean(σ_T_n)` across the N-path
+     ensemble. Compare against hand-derived analytic `E[σ_T]` for the
+     DISCRETE eq. (7) statistic at the canonical grid (Hull,
+     Karatzas-Shreve, Andersen-Piterbarg literature; per
+     `simulations/stochastic_fx/variance_proxy.py` discrete-moment
+     functions added in Task 4.2 per plan §16.4 disposition b1).
+     PASS iff relative error on the MEAN ≤ `MOMENT_REL_TOL` (default
+     0.05). v0.4 amendment: variance was REMOVED from the Phase B gate
+     because at the Pin Z1.5 anti-fishing floor `N=1000`, the
+     sample-variance estimator's intrinsic standard error is 8-30% per
+     family (MC-noise budget probe: GBM 11%/22%/51% median/p90/max,
+     OU 5%/11%/18%, Merton 18%/54%/96%), structurally unsatisfiable
+     against `MOMENT_REL_TOL=0.05` regardless of analytic-Var
+     correctness. Full-distribution match (which constrains variance,
+     skew, kurtosis jointly via the empirical CDF) is preserved at
+     Phase C. The verdict's `phase_b_var_rel_err` field is still
+     computed and reported as an audit-trail observation but does NOT
+     gate composite_pass. See §11.3 CORRECTIONS-α for the disposition
+     record + the implementer's BLOCK probe at
+     `scratch/2026-05-13-task-4.2-discrete-moments/derivation.py`.
    - **Phase C — KS goodness-of-fit against moment-matched reference (Pin Z1.4).**
      Fit a parametric reference distribution (gamma OR lognormal,
      selected per family in §4.2) to the analytic `E[σ_T]` and
@@ -296,7 +310,7 @@ goodness-of-fit per Pin Z1.4).
 | **Z1.1** | SDE parameters pre-pinned at spec authorship time (this v0.2 §4.2 per-family table) BEFORE running any verification phase. Post-hoc adjustment requires CORRECTIONS-α + scoped Wave-1 re-review per Pin Z1.5 / master-spec §6.4. | Spec text + commit anchor + diff visibility. |
 | **Z1.2** | Path-ensemble determinism: same `rng_seed` → bit-exact ensemble AND bit-exact `audit_block`. | Hypothesis property test on (rng_seed, n_paths) → (ensemble, audit_block). |
 | **Z1.3a** | Algebraic inversion (family-agnostic): for each path, the pointwise identity `apply_inversion(σ_T_n, x_bar) == √(8·σ_T_n/x_bar²)` holds to float64 precision. (Replaces v0.1's ill-posed "reduces to eq. (6)" claim per BLOCK-MQ-1.) Per family, the trivial-degenerate limit (σ → 0, θ → ∞, λ → 0) yields the trivial point mass ε ≡ 0; this is documented honestly as the family-agnostic baseline, not as a non-trivial test. | Pointwise residual ≤ NUMERICAL_IDENTITY_TOL (1e-6). |
-| **Z1.3b** | Moment match against hand-derived analytic (per family): empirical `mean(σ_T_n)` and `var(σ_T_n)` across the N-path ensemble match the hand-derived analytic `E[σ_T]` and `Var[σ_T]` from §4.2 within relative tolerance. (BLOCK-MQ-3 disposition: moment derivation is hand-derived per literature; sympy renders the closed forms as `.tex` fragments but does NOT perform Itô calculus.) | Relative error on EACH moment ≤ MOMENT_REL_TOL (default 0.05). |
+| **Z1.3b** (v0.4) | Mean match against hand-derived analytic (per family): empirical `mean(σ_T_n)` across the N-path ensemble matches the hand-derived analytic `E[σ_T]` of the DISCRETE eq. (7) statistic at the canonical grid (Hull / Karatzas-Shreve / Andersen-Piterbarg; per `variance_proxy.py` discrete-moment functions added in Task 4.2 per plan §16.4 disposition b1). v0.4 dropped variance from this gate (was structurally unsatisfiable at N=1000 due to intrinsic 8-30% MC-noise floor on Var estimator — see §11.3). Variance rel-err is still computed and emitted to `InversionVerdict.phase_b_var_rel_err` as audit-trail observation but does not gate composite_pass. Full-distribution match (which jointly constrains all moments via empirical CDF) is preserved at Z1.4 KS test. | Relative error on the MEAN ≤ MOMENT_REL_TOL (default 0.05). |
 | **Z1.4** | KS goodness-of-fit against moment-matched parametric reference (per family): fit a parametric reference distribution (lognormal for GBM/Merton, gamma for OU per §4.2 table) to the analytic `E[σ_T]` and `Var[σ_T]`; KS-test empirical `σ_T_n` samples against this reference. (BLOCK-MQ-2 disposition: replaces v0.1's tautological-or-infeasible KS framing with moment-matched parametric reference per MQ recommendation reading (c).) PASS iff `ks_pvalue ≥ 0.01` (calibration documented in §8). | `scipy.stats.ks_1samp` against the family's fitted reference; N ≥ 1000 paths. |
 | **Z1.5** | Anti-fishing routing: observed family-level test FAILURES at Z1.3a / Z1.3b / Z1.4 route to CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. NEVER silent parameter re-tuning. NEVER "increase N until passing" — the N=1000 floor is a Z1.5 invariant, not a parameter to grow. | HALT-routing table in §6 of this spec; verification at Wave-2 review. |
 | **Z1.6** | Strip preservation: cohort_5_strip's `IronCondor_strip.json` audit_block (`94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329`) is UNCHANGED before and after this spec's implementation. (RC-FLAG-3 disposition: verification by direct hex grep on the JSON file, not just `git log -p`.) | Bash: `grep -F '94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329' simulations/saas_builder/data/IronCondor_strip.json` returns the audit_block line before AND after the stochastic-fx package merge. |
@@ -321,7 +335,7 @@ goodness-of-fit per Pin Z1.4).
 | Trigger | Route |
 |---|---|
 | Pin Z1.3a algebraic inversion residual > 1e-6 | HALT — float64 numerical defect; investigate `apply_inversion` implementation. This is family-agnostic, so failure indicates a bug, not a family-level scientific result. |
-| Pin Z1.3b moment-match relative error > MOMENT_REL_TOL per family | HALT — CORRECTIONS-α; either (a) hand-derived analytic moments in §4.2 are wrong (re-derive against literature), OR (b) the SDE discretization in `generators.py` doesn't faithfully sample the SDE's stationary measure (refine the discretization — e.g., switch from Euler-Maruyama to a higher-order scheme). NEVER adjust SDE parameters to pass. |
+| Pin Z1.3b MEAN match relative error > MOMENT_REL_TOL per family (v0.4 mean-only gate) | HALT — CORRECTIONS-α; either (a) hand-derived analytic `E[σ_T]` of the DISCRETE statistic is wrong (re-derive against literature; expansion uses centering projection `M = I − (1/N)·1·1^T` against the SDE family's auto-covariance kernel; see §4.2), OR (b) the SDE discretization in `generators.py` doesn't faithfully sample the SDE's stationary measure (refine the discretization — e.g., switch from Euler-Maruyama to a higher-order scheme). NEVER adjust SDE parameters to pass. Variance is no longer in this gate (v0.4 §11.3 disposition) — full-shape match constraint lives at Pin Z1.4. |
 | Pin Z1.4 KS p-value < 0.01 per family | HALT — CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. The KS failure is a structural rejection of the family's distributional fit to the moment-matched reference; honest dispositions are (a) drop the family from the spec, (b) substitute a different reference distribution shape (e.g., gamma for a previously-lognormal family), (c) refine the discretization. NEVER "increase N until passing" — that's the §8 anti-fishing posture violation. |
 | Pin Z1.6 audit_block hex grep fails (strip mutated) | HALT — implementation is anti-fishing-coupled to cohort_5_strip; route to cohort_5_strip review. |
 | Wave-1 or Wave-2 RC+MQ on this spec returns BLOCK | HALT per master-spec §6.1; CORRECTIONS-α in §11. |
@@ -524,6 +538,103 @@ Verdict files:
 Per master-spec §6.1, BOTH RC and MQ re-dispatch on v0.3. Narrow-scope
 per MQ's own note ("Re-review will be narrow-scope"); verdicts land
 in `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.3/`.
+
+### §11.6 v0.3 → v0.4 (Pin Z1.3b mean-only gate; user disposition Option B, 2026-05-13)
+
+**Trigger.** During Task 4.2 (`InversionVerifier` Phase A+B+C combiner)
+implementation, the dispatched implementer (AI Engineer) hand-derived
+the discrete eq. (7) statistic's analytic moments per family
+(disposition b1 per plan §16.4) and ran a Monte-Carlo-noise budget
+probe at the Pin Z1.5 anti-fishing floor `N=1000`. The probe
+characterized the intrinsic standard error of the SAMPLE variance
+estimator across 100 independent seeds per family:
+
+| Family | median rel-err on Var | p90 | max | fraction within ±5% |
+|---|---|---|---|---|
+| GBM | 11.0% | 22.1% | 51.3% | 28% |
+| OU | 5.2% | 11.2% | 18.3% | 46% |
+| Merton | 18.4% | 53.5% | 95.5% | 12% |
+
+The MC standard error on the sample variance at N is `SE_Var ≈
+sqrt((κ_eff − 1) / (N − 1)) · Var`, where `κ_eff` is the kurtosis-like
+4th-cumulant factor of the σ_T statistic. For canonical-pin families,
+`κ_eff` is in the range 4-15 (Merton's is largest because of jump
+heavy tails). At N=1000, `SE_Var/Var` is intrinsically 8-30% regardless
+of analytic-Var correctness.
+
+**Pins Z1.3b and Z1.5 were mathematically incompatible at v0.3.** Pin
+Z1.5 fixed N=1000 as anti-fishing (NEVER raise to pass); Pin Z1.3b
+required rel-err ≤ 5% on Variance. These two cannot both hold for
+canonical-pin parameters. The implementer correctly halted before
+committing any code — exactly the §16-anticipated BLOCK scenario.
+
+**User disposition (Option B, 2026-05-13):** drop variance from the
+Pin Z1.3b gate. Phase B becomes mean-only. Phase C's KS test against
+the moment-matched reference distribution (constructed from analytic
+E AND analytic Var per the NIT-MQ-1 method-of-moments construction)
+preserves the full-distribution constraint that variance-match would
+have separately provided.
+
+**Why Option B over Option A (per-family variance tolerance
+calibrated to MC budget):**
+
+1. KS at Phase C jointly constrains mean + var + skew + kurtosis via
+   the empirical CDF. A separate variance gate is redundant.
+2. Single tolerance `MOMENT_REL_TOL = 0.05` preserved across families —
+   no per-family tuning surface (which would look like fishing even
+   when calibrated).
+3. Smaller spec diff than Option A.
+
+**Why NOT Option D (fall back to b3 — replace Phase B with KS):** the
+b1 disposition's hand-derived analytic E[σ_T] is mathematically
+nontrivial (especially Merton with `μ_j = x_0 · φ₁^j` jump-induced
+drift) and provides a genuinely independent check on the SDE
+discretization. Retaining mean-match anchors phase B to literature
+(Hull, Karatzas-Shreve, Andersen-Piterbarg) rather than dissolving
+it into a second KS test.
+
+**Implementer's b1 analytic E[σ_T] formulas (load-bearing for the
+amended Pin Z1.3b)** — verified empirically at canonical pins with
+N=1000 producing 0.17% (OU), 0.70% (Merton), 1.12% (GBM) rel-err on
+the mean. All three families HAND-DERIVED, transcribed to Python in
+`simulations/stochastic_fx/variance_proxy.py` (forthcoming commit;
+scratch derivation at `scratch/2026-05-13-task-4.2-discrete-moments/derivation.py`):
+
+- **GBM** (Hull §15 / log-multiplicative martingale at μ=0):
+  `Cov(X_j, X_k) = x_0² · (exp(σ² · min(t_j, t_k)) − 1)` where
+  `t_j = j · dt`. Mean of σ_T uses centering projection
+  `M = I − (1/N)·1·1ᵀ`, yielding `E[σ_T·T] = tr(M Σ_GBM) +
+  μᵀ M μ` with `μ_j ≡ x_0` (constant) so `μᵀ M μ = 0`.
+
+- **OU stationary** (Karatzas-Shreve §5.6 / Glasserman §3.3 exact
+  transition; canonical `x_0 = μ_bar` so `μ_j ≡ μ_bar` and
+  `μᵀ M μ = 0`): `Cov(X_j, X_k) = (σ² / (2θ)) · exp(−θ · |t_k −
+  t_j|) · (1 − exp(−2θ · min(t_j, t_k)))`.
+
+- **Merton** (Andersen-Piterbarg §2.7 jump-MGF + log-multiplicative):
+  `log φ₁ = λ · dt · (exp(jump_mean²/2 + jump_std²/2) − 1)` and
+  `log φ₂ = σ² · dt + λ · dt · (exp(2·jump_mean² + 2·jump_std²) − 1)`
+  (canonical `jump_mean = 0` simplifies the first term to
+  `log φ₁ = λ · dt · (exp(jump_std²/2) − 1)`). Drift
+  `μ_j = x_0 · φ₁^j` (NOT constant — drifts ~6% over T at canonical
+  λ), so `μᵀ M μ ≠ 0`; full expansion required.
+  `Cov(X_j, X_k) = x_0² · φ₁^{|k−j|} · (φ₂^{min(j,k)} −
+  φ₁^{2·min(j,k)})`.
+
+The variance derivations under the Isserlis Gaussian-quadratic-form
+approximation are EXACT for OU (Gaussian process), 8% under-estimating
+for GBM (lognormal — missing 4th-cumulant terms), and 71%
+under-estimating for Merton (jump heavy kurtosis). Even with PERFECT
+analytic Var these would still face the intrinsic MC-noise budget
+above. The variance formulas are NOT shipped in v0.4 — they would
+have been the Phase B Var comparator under the old gate; under the
+v0.4 mean-only gate they are superseded by Phase C's full-shape KS.
+
+**Wave-1 re-review:** by master-spec §6.4 BLOCK protocol, BOTH RC
+and MQ re-dispatch on this amendment. NARROW scope per the change
+surface — Pin Z1.3b row + §4.1 Phase B bullet + §11.6 (this section).
+Re-review verdicts land at
+`scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.4/`.
 
 ## §12 References
 
