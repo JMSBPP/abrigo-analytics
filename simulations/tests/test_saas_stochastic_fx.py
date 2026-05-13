@@ -14,6 +14,7 @@ from simulations.stochastic_fx import (
     CANONICAL_GBM,
     CANONICAL_MERTON,
     CANONICAL_OU,
+    NUMERICAL_IDENTITY_TOL,
     GBMParameters,
     GBMPathGenerator,
     InversionTestFailedError,
@@ -27,9 +28,12 @@ from simulations.stochastic_fx import (
     PathEnsemble,
     SDEParameterError,
     StochasticFXError,
+    eq_8_inversion,
     gbm_sigma_t_moments,
     merton_sigma_t_moments,
     ou_sigma_t_moments,
+    phase_a_algebraic_check,
+    recompute_sigma_t,
 )
 
 _AUDIT_BLOCK_REGEX_PY = re.compile(r"^[0-9a-f]{64}$")
@@ -1529,3 +1533,190 @@ class TestJumpDiffusionPathGenerator:
         ens_b = gen(rng_seed=rng_seed, n_paths=n_paths)
         assert ens_a.audit_block == ens_b.audit_block
         assert ens_a.paths.tobytes() == ens_b.paths.tobytes()
+
+
+# ─── Task 4.1: variance_proxy.py — Phase-A algebraic inversion ───────────────
+
+
+class TestVarianceProxy:
+    """Phase-A algebraic checks per plan v0.4 §9 Task 4.1.
+
+    Three free functions under test:
+    - ``recompute_sigma_t`` — eq.(7) round-trip vs generator-stored σ_T.
+    - ``eq_8_inversion`` — closed-form ε = sqrt(8·σ_T / x̄²).
+    - ``phase_a_algebraic_check`` — Pin Z1.3a identity check.
+    """
+
+    def test_recompute_sigma_t_matches_generator_per_family(self) -> None:
+        """Per-family eq.(7) round-trip: independently-recomputed σ_T agrees with stored σ_T.
+
+        Pin Z1.3a fundamental check — if the recompute differs from the
+        generator's stored σ_T by more than NUMERICAL_IDENTITY_TOL on any
+        path, the formula has drifted between ``generators.py`` and
+        ``variance_proxy.recompute_sigma_t``.
+        """
+        cases = [
+            ("gbm", GBMPathGenerator(params=CANONICAL_GBM)),
+            ("ou", OUPathGenerator(params=CANONICAL_OU)),
+            ("merton", JumpDiffusionPathGenerator(params=CANONICAL_MERTON)),
+        ]
+        for family, gen in cases:
+            ens = gen(rng_seed=42, n_paths=100)
+            sigma_t_recomputed = recompute_sigma_t(ens)
+            assert sigma_t_recomputed.shape == ens.sigma_t.shape, (
+                f"{family}: shape mismatch"
+            )
+            max_diff = float(np.max(np.abs(sigma_t_recomputed - ens.sigma_t)))
+            assert max_diff < NUMERICAL_IDENTITY_TOL, (
+                f"{family}: max diff {max_diff!r} exceeds tol {NUMERICAL_IDENTITY_TOL!r}"
+            )
+
+    def test_eq_8_inversion_canonical_fixture(self) -> None:
+        """eq.(8) at (σ_T=20000, x̄=4000) returns EXACTLY 0.1.
+
+        Hand-verified: sqrt(8·20000 / 4000²) = sqrt(160000 / 16_000_000)
+                     = sqrt(0.01) = 0.1.
+        """
+        eps = eq_8_inversion(sigma_t=20000.0, x_bar=4000.0)
+        assert eps == pytest.approx(0.1, abs=1e-15)
+
+    def test_eq_8_inversion_trivial_degenerate_at_zero(self) -> None:
+        """Pin Z1.3a trivial-degenerate limit: σ_T=0 → ε=0 exactly."""
+        assert eq_8_inversion(sigma_t=0.0, x_bar=4000.0) == 0.0
+
+    @given(
+        sigma_t=st.floats(
+            min_value=0.0,
+            max_value=1e10,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
+        x_bar=st.floats(
+            min_value=1e-6,
+            max_value=1e10,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_eq_8_inversion_property_finite_nonnegative(
+        self, sigma_t: float, x_bar: float
+    ) -> None:
+        """Hypothesis: for valid (σ_T ≥ 0, x̄ > 0), ε is finite and ≥ 0."""
+        eps = eq_8_inversion(sigma_t=sigma_t, x_bar=x_bar)
+        assert math.isfinite(eps)
+        assert eps >= 0.0
+
+    def test_eq_8_inversion_rejects_negative_sigma(self) -> None:
+        """eq.(8) rejects σ_T < 0."""
+        with pytest.raises(SDEParameterError, match="sigma_t must be >= 0"):
+            eq_8_inversion(sigma_t=-1.0, x_bar=4000.0)
+
+    def test_eq_8_inversion_rejects_zero_x_bar(self) -> None:
+        """eq.(8) rejects x̄ = 0."""
+        with pytest.raises(SDEParameterError, match="x_bar must be > 0"):
+            eq_8_inversion(sigma_t=20000.0, x_bar=0.0)
+
+    def test_eq_8_inversion_rejects_negative_x_bar(self) -> None:
+        """eq.(8) rejects x̄ < 0."""
+        with pytest.raises(SDEParameterError, match="x_bar must be > 0"):
+            eq_8_inversion(sigma_t=20000.0, x_bar=-1.0)
+
+    def test_phase_a_algebraic_check_passes_per_family(self) -> None:
+        """Pin Z1.3a PASS at canonical fixtures for GBM, OU, Merton.
+
+        Closed-form identity ⇒ residual is essentially machine epsilon
+        for any well-formed ensemble, regardless of family.
+        """
+        cases = [
+            ("gbm", GBMPathGenerator(params=CANONICAL_GBM), CANONICAL_GBM.x_0),
+            ("ou", OUPathGenerator(params=CANONICAL_OU), CANONICAL_OU.x_0),
+            (
+                "merton",
+                JumpDiffusionPathGenerator(params=CANONICAL_MERTON),
+                CANONICAL_MERTON.x_0,
+            ),
+        ]
+        for family, gen, x_bar in cases:
+            ens = gen(rng_seed=42, n_paths=100)
+            pass_flag, residual = phase_a_algebraic_check(ens, x_bar=x_bar)
+            assert pass_flag is True, f"{family}: Phase A failed; residual={residual!r}"
+            assert residual < NUMERICAL_IDENTITY_TOL, (
+                f"{family}: residual {residual!r} exceeds tol "
+                f"{NUMERICAL_IDENTITY_TOL!r}"
+            )
+
+    def test_phase_a_algebraic_check_rejects_zero_x_bar(self) -> None:
+        """Phase A rejects x̄ = 0."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens = gen(rng_seed=42, n_paths=10)
+        with pytest.raises(SDEParameterError, match="x_bar must be > 0"):
+            phase_a_algebraic_check(ens, x_bar=0.0)
+
+    def test_phase_a_algebraic_check_rejects_negative_x_bar(self) -> None:
+        """Phase A rejects x̄ < 0."""
+        gen = GBMPathGenerator(params=CANONICAL_GBM)
+        ens = gen(rng_seed=42, n_paths=10)
+        with pytest.raises(SDEParameterError, match="x_bar must be > 0"):
+            phase_a_algebraic_check(ens, x_bar=-1.0)
+
+    def test_variance_proxy_tier_purity(self) -> None:
+        """``variance_proxy`` does NOT pull in sibling Callables at import time.
+
+        Tier-purity contract per plan v0.4 §9 Task 4.1: ``variance_proxy.py``
+        is Callable tier and must NOT import sibling Callables
+        ``moments`` or ``generators``. We verify by re-importing the
+        module into a fresh ``sys.modules`` slot and asserting the
+        forbidden modules don't appear among its transitive imports
+        triggered by ``variance_proxy`` alone.
+
+        We can't fully isolate transitive imports (other tests already
+        loaded those modules into ``sys.modules``), so the check is
+        STRUCTURAL: parse the source for forbidden ``from
+        simulations.stochastic_fx.moments`` / ``.generators`` imports.
+        """
+        import pathlib
+
+        src_path = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "stochastic_fx"
+            / "variance_proxy.py"
+        )
+        source = src_path.read_text(encoding="utf-8")
+        # Strip docstrings/comments mentioning sibling names — only `import`
+        # / `from ... import` statements matter.
+        import_lines = [
+            line.strip()
+            for line in source.splitlines()
+            if line.strip().startswith(("import ", "from "))
+        ]
+        joined = "\n".join(import_lines)
+        assert "simulations.stochastic_fx.moments" not in joined, (
+            f"variance_proxy imports forbidden sibling 'moments': {joined!r}"
+        )
+        assert "simulations.stochastic_fx.generators" not in joined, (
+            f"variance_proxy imports forbidden sibling 'generators': {joined!r}"
+        )
+        # And confirm the module itself loads without dragging the siblings
+        # into sys.modules if they weren't already there (best-effort check).
+        import importlib
+        import sys
+
+        sibling_already_loaded_moments = (
+            "simulations.stochastic_fx.moments" in sys.modules
+        )
+        sibling_already_loaded_generators = (
+            "simulations.stochastic_fx.generators" in sys.modules
+        )
+        # Force a reimport of variance_proxy
+        if "simulations.stochastic_fx.variance_proxy" in sys.modules:
+            del sys.modules["simulations.stochastic_fx.variance_proxy"]
+        importlib.import_module("simulations.stochastic_fx.variance_proxy")
+        if not sibling_already_loaded_moments:
+            assert "simulations.stochastic_fx.moments" not in sys.modules, (
+                "variance_proxy import pulled in moments"
+            )
+        if not sibling_already_loaded_generators:
+            assert "simulations.stochastic_fx.generators" not in sys.modules, (
+                "variance_proxy import pulled in generators"
+            )

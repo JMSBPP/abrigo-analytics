@@ -36,6 +36,12 @@ from simulations.stochastic_fx.types import (
     OUParameters,
     PathEnsemble,
 )
+from simulations.stochastic_fx.variance_proxy import (
+    NUMERICAL_IDENTITY_TOL,
+    eq_8_inversion,
+    phase_a_algebraic_check,
+    recompute_sigma_t,
+)
 
 __all__ = [
     "CANONICAL_GBM",
@@ -49,12 +55,16 @@ __all__ = [
     "JumpDiffusionPathGenerator",
     "MCBudgetExceededError",
     "MomentMatchFailedError",
+    "NUMERICAL_IDENTITY_TOL",
     "OUParameters",
     "OUPathGenerator",
     "PathEnsemble",
     "SDEParameterError",
     "StochasticFXError",
+    "eq_8_inversion",
     "gbm_sigma_t_moments",
     "merton_sigma_t_moments",
     "ou_sigma_t_moments",
+    "phase_a_algebraic_check",
+    "recompute_sigma_t",
 ]
