@@ -665,7 +665,15 @@ Re-review verdicts land at
 
 **Trigger.** Task 4.2 implementer resumed implementation under the v0.4 amended Phase B mean-only gate (which works correctly for all three families — mean rel-err 1.12% / 0.17% / 0.70% for GBM/OU/Merton, all well below `MOMENT_REL_TOL = 0.05`). Phase A (Pin Z1.3a algebraic identity) passes at machine epsilon. But Phase C (Pin Z1.4 KS goodness-of-fit) catastrophically rejected the canonical Merton ensemble: KS p-value = 3.41e-21 against the v0.4 moment-matched lognormal reference, vs the 0.01 floor. 20-seed pass rate: GBM 12/20, OU 18/20, Merton 0/20.
 
-**Root cause analysis.** The v0.4 §11.6 amendment rationale ("Phase C's KS test against the moment-matched reference distribution preserves the full-distribution constraint that variance-match would have separately provided") was correct for GBM/OU (log-multiplicative ↔ lognormal; Gaussian-quadratic ↔ gamma) but **wrong for Merton**, whose σ_T distribution is a Poisson-mixture-of-lognormals with empirical skew=10.4 and excess kurt=174 at canonical pin (λ=1, σ_J=0.10). A 2-parameter lognormal cannot match heavy-tail mixture geometry by shape, only by location+scale. Diagnostic: even substituting the empirical Var (forbidden NIT-MQ-1 tautology surface) for the reference's Var still yields KS p=6.9e-9 — the **shape mismatch is structural, not a moment-matching deficiency**. Only `.fit()` to the sample being tested reaches p=0.42, which is the NIT-MQ-1 tautology MQ originally flagged at v0.1.
+**Root cause analysis.** The v0.4 §11.6 amendment rationale ("Phase C's KS test against the moment-matched reference distribution preserves the full-distribution constraint that variance-match would have separately provided") was correct for GBM/OU (log-multiplicative ↔ lognormal; Gaussian-quadratic ↔ gamma) but **wrong for Merton**, whose σ_T distribution is a Poisson-mixture-of-lognormals with empirical skew=10.4 and excess kurt=174 at canonical pin (λ=1, σ_J=0.10). A 2-parameter lognormal cannot match heavy-tail mixture geometry by shape, only by location+scale. Diagnostic table (NIT-DIAG-1 disposition — explicit moment-source labelling):
+
+| Reference construction | KS p (Merton, seed=42, N=1000) | Status |
+|---|---|---|
+| Lognormal MoM from ANALYTIC (E_an, Var_an) where Var_an uses Isserlis Gaussian-quadratic-form (under-estimating by ~71%) | 3.41e-21 | v0.5 BLOCK (the canonical failure) |
+| Lognormal MoM from EMPIRICAL (E_emp, Var_emp) — diagnostic only, NIT-MQ-1 forbids this in production | 6.9e-9 | structural shape mismatch confirmed |
+| `scipy.stats.lognorm.fit(samples, floc=0)` against the tested sample — NIT-MQ-1 tautology surface | 0.42 | tautological by construction; v0.1's banned pattern |
+
+Only `.fit()` to the sample being tested reaches p=0.42, which is the NIT-MQ-1 tautology MQ originally flagged at v0.1. The **shape mismatch is structural, not a moment-matching deficiency** — regardless of whether the lognormal's parameters come from analytic or empirical moments, a 2-parameter lognormal can't represent Poisson-mixture-of-lognormals geometry.
 
 The implementer correctly HALTED before committing — exactly the §6 HALT-routing protocol's intent. The v0.4 implementation is otherwise complete (three discrete-moment functions, Phase A reuse, Pin Z1.5 N-floor, audit_block deterministic), gated only by the Merton Phase C structural failure.
 
@@ -692,6 +700,8 @@ The implementer correctly HALTED before committing — exactly the §6 HALT-rout
 3. **`N_REF` is pinned.** `N_REF = 100_000` is a frozen module-level constant. The "increase N (test) until passing" anti-fishing rule applies to the TEST ensemble (N=1000 floor); the REFERENCE ensemble at N_REF=100k is fixed-by-spec and not subject to that rule because it's the comparator, not the test sample.
 4. **No `.fit()` against the tested sample.** The reference is a DIFFERENT sample from the same SDE — the structural distinction NIT-MQ-1 was guarding against.
 5. **Phase C single-tail interpretation preserved.** KS-2-sample p-value below 0.01 still means "tested sample is statistically distinguishable from a high-N reference" — i.e., the SDE implementation has a bug or the N=1000 floor is too small for this family. The interpretation hasn't changed; only the reference shape has.
+
+**Type-I rate acknowledgment (FLAG-RC-V0.5-3 disposition).** Under H_0 (correctly-implemented SDE + sufficient N=1000), the KS-2-samp p-value is approximately uniform on [0, 1] (Smirnov 1948 asymptotic). With `KS_PVALUE_FLOOR = 0.01`, the expected Type-I false-rejection rate is ~1%. This means: on the order of 1 in 100 independent canonical-pin runs will spuriously trigger an `InversionTestFailedError` even under correct SDE implementation. This is the price of single-tail anti-fishing rigor. Implementation note: the canonical-pin run in Task 6 uses a SINGLE specified seed (seed=42); if that seed happens to land in the ~1% rejection region, the disposition is Pin Z1.4 HALT routing (re-derive analytic or refine discretization), NOT seed re-roll (which would be silent fishing per Pin Z1.5).
 
 **Implementer's verified Phase C results under v0.5 (expected at re-dispatch):**
 

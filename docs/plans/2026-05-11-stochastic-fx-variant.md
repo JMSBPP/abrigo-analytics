@@ -333,12 +333,14 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
   - **GBM, OU** (moment-matched parametric reference, NIT-MQ-1 method-of-moments construction — do NOT call `.fit()` against empirical data):
     - **GBM (lognormal):** given analytic `(E_an, Var_an)` from `gbm_discrete_sigma_t_moments(params)`, compute `s = sqrt(log(1 + Var_an/E_an**2))` and `scale = E_an / sqrt(1 + Var_an/E_an**2)`; construct `scipy.stats.lognorm(s=s, scale=scale)`. KS test: `scipy.stats.ks_1samp(ensemble.sigma_t, reference.cdf)`.
     - **OU (gamma):** given analytic `(E_an, Var_an)` from `ou_discrete_sigma_t_moments(params)`, compute `a = E_an**2 / Var_an` and `scale = Var_an / E_an`; construct `scipy.stats.gamma(a=a, scale=scale)`. KS test: `scipy.stats.ks_1samp(ensemble.sigma_t, reference.cdf)`.
-  - **Merton (v0.6 amendment, empirical-CDF reference via high-N reference run):** sample a high-resolution reference ensemble via `JumpDiffusionPathGenerator(params=CANONICAL_MERTON)(rng_seed=N_REF_SEED, n_paths=N_REF)` where `N_REF: Final[int] = 100_000` and `N_REF_SEED: Final[int] = 20260513` are FROZEN module-level constants in `variance_proxy.py`. Extract `reference_sigma_t = reference_ensemble.sigma_t`. KS test: `scipy.stats.ks_2samp(ensemble.sigma_t, reference_sigma_t)`. The reference is computed ONCE per Verifier invocation (cache via `functools.cache` on the helper function keyed by `(params canonical_json, N_REF, N_REF_SEED)` since the reference depends only on those — avoids re-sampling on every `__call__` if the same params are passed).
+  - **Merton (v0.6 amendment, empirical-CDF reference via high-N reference run):** sample a high-resolution reference ensemble via `JumpDiffusionPathGenerator(params=CANONICAL_MERTON)(rng_seed=N_REF_SEED, n_paths=N_REF)` where `N_REF: Final[int] = 100_000` and `N_REF_SEED: Final[int] = 20260513` are FROZEN module-level constants in `variance_proxy.py`. **Cache ONLY the `sigma_t` 1-D array** (`reference_sigma_t: np.ndarray` of shape `(N_REF,)` ≈ 800 KB), NOT the full `PathEnsemble` (which holds the `paths` 2-D matrix at `N_REF × (n_steps+1) × 8 bytes` ≈ 4 GB at canonical n_steps=5000 — would explode resident memory — per FLAG-RC-V0.5-1 disposition). The implementation pattern is a module-level `functools.cache`-decorated helper that returns only the `sigma_t` array, keyed on `(canonical_params_json_str, N_REF, N_REF_SEED)`. KS test: `scipy.stats.ks_2samp(ensemble.sigma_t, reference_sigma_t)`.
   - Populate `phase_c_ks_pvalue`. PASS iff `ks_pvalue ≥ KS_PVALUE_FLOOR = 0.01` (SINGLE-VALUED across all three families; no per-family relaxation). Raises `InversionTestFailedError` if p < `KS_PVALUE_FLOOR`.
   - **Anti-fishing invariants on Merton's high-N reference:** `N_REF` and `N_REF_SEED` are spec-pinned constants. The implementer MUST NOT vary them to make Merton pass. Changing either constitutes spec amendment via CORRECTIONS-α + scoped Wave-1 re-review.
 - **Anti-fishing rule (Pin Z1.5 enforcement at construction time):** the InversionVerifier rejects calls where `ensemble.paths.shape[0] != 1000` (the N=1000 floor per spec v0.3 §8). The check happens INSIDE `__call__` BEFORE any phase runs; raises `MCBudgetExceededError` if violated. N=1000 is a frozen module-level constant, NOT a parameter to grow.
 - `tex_anchor` populated with the relative path `notes/stochastic_fx_tex/sigma_t_moments_{family_id}.tex`.
-- `audit_block` is sha256 of (ensemble.audit_block + canonical-parameters JSON + x_bar + MOMENT_REL_TOL + KS_PVALUE_FLOOR), deterministic across re-runs.
+- `audit_block` is sha256 of (ensemble.audit_block + canonical-parameters JSON + x_bar + MOMENT_REL_TOL + KS_PVALUE_FLOOR + N_REF + N_REF_SEED), deterministic across re-runs. (v0.6 FLAG-RC-V0.5-5 disposition: binds the Merton high-N reference-run constants to the audit trail so changing either invalidates the digest.) For GBM and OU runs N_REF/N_REF_SEED are still hashed in (they're module-level constants regardless of which family dispatches) — preserves single-recipe audit_block across families.
+
+  `InversionVerdict.phase_c_n_paths` carries the TESTED ensemble's path count (N=1000 at the Pin Z1.5 floor), NOT N_REF (v0.6 FLAG-RC-V0.5-2 disposition). Rationale: the field's Task 1.3 docstring is "path-count used for the test sample"; N_REF is the reference, not the test. For Merton runs, the high-N reference's existence is recorded via the audit_block binding (above), not via `phase_c_n_paths`.
 - Round-trip read-back test: same inputs → same InversionVerdict audit_block.
 - Per-family unit tests at canonical pins: verify all three Phases PASS for GBM, OU, Merton.
 
@@ -630,11 +632,7 @@ Single `KS_PVALUE_FLOOR = 0.01` across all three families — no per-family thre
 
 When Task 4.2 implementation resumes under v0.6, the implementer brief MUST cite §16.7 first; the v0.5 lognormal-Merton reference is RETIRED.
 
-**Verdict files:**
-- `scratch/2026-05-11-stochastic-fx-task-3.1-review/rc-verdict.md`
-- `scratch/2026-05-11-stochastic-fx-task-3.1-review/mq-verdict.md`
-
-Both reviewers explicitly stated no Wave-1 re-dispatch required for this disposition; orchestrator-side v0.3 patch suffices.
+**Wave-1 re-review verdicts:** to land at `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.5/` (NOT yet written at the time of this commit; re-dispatch IS REQUIRED per master-spec §6.4 BLOCK protocol for this Pin-amendment — orchestrator dispatches both reviewers in parallel before Task 4.2 implementation resumes). FLAG-RC-V0.5-4 disposition: prior copy-paste error (citing Task 3.1 review paths + a "no re-dispatch" sentence imported from §16.3's pattern) corrected; this §16.7 disposition genuinely requires fresh RC+MQ Wave-1 re-review on the Pin Z1.4 row + §4.1 Phase C bullet + §11.7 + §16.7.
 
 ## §17 References
 
