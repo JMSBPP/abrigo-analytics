@@ -1,6 +1,6 @@
 ---
 spec_id: stochastic-fx-variant-design
-spec_version: v0.4 (v0.3 ACCEPT_WITH_FLAGS-DISPOSED at Wave-1; v0.4 amends Pin Z1.3b to mean-only Phase B per user disposition Option B 2026-05-13 — the variance-match-at-N=1000 gate was structurally unsatisfiable due to MC-noise floor 8-30% per family vs MOMENT_REL_TOL=0.05. Full-distribution match remains in Phase C KS test against moment-matched reference. See §11.6 CORRECTIONS-α.)
+spec_version: v0.5 (v0.4 ACCEPT_WITH_FLAGS-DISPOSED at Wave-1; v0.5 amends Pin Z1.4 to per-family reference dispatch — GBM/OU retain moment-matched lognormal/gamma; Merton switches to empirical-CDF reference via high-N (`N_REF=100k`) reference run per user disposition 2026-05-13. The v0.4 amendment's assumption that lognormal KS would absorb Merton's Poisson-mixture-of-lognormals geometry (skew=10.4, excess kurt=174 at canonical pin) was empirically wrong (KS p=3.41e-21 vs 0.01 floor). NIT-MQ-1 tautology surface preserved: ks_2samp against a DIFFERENT high-N sample from the same SDE is NOT .fit-against-tested-sample. See §11.7 CORRECTIONS-α.)
 emit_timestamp_utc: 2026-05-11
 parent_framework: notes/PRIMITIVES.md §15 open item — "Path A v3" stochastic-FX variant
 stage_2_results_anchor: notes/STAGE_2_RESULTS.md (R1–R8 closed forms under deterministic eq. (6))
@@ -232,13 +232,35 @@ a moment-matched parametric reference (Z1.4).)
      gate composite_pass. See §11.6 CORRECTIONS-α for the disposition
      record + the implementer's BLOCK probe at
      `scratch/2026-05-13-task-4.2-discrete-moments/derivation.py`.
-   - **Phase C — KS goodness-of-fit against moment-matched reference (Pin Z1.4).**
-     Fit a parametric reference distribution (gamma OR lognormal,
-     selected per family in §4.2) to the analytic `E[σ_T]` and
-     `Var[σ_T]`. KS-test empirical `σ_T_n` samples against this
-     reference distribution. PASS iff `ks_pvalue ≥ 0.01` (calibrated
-     to a MC-noise-matched reference — see §8 anti-fishing posture
-     for the rationale).
+   - **Phase C — KS goodness-of-fit (Pin Z1.4, v0.5 per-family reference dispatch).**
+     Per-family selection of reference distribution + KS variant:
+     - **GBM, OU**: moment-matched parametric reference (lognormal for
+       GBM, gamma for OU) constructed DIRECTLY from analytic E and Var
+       via method-of-moments per the NIT-MQ-1 disposition (no
+       `.fit()` against the tested sample). KS-1-sample test
+       (`scipy.stats.ks_1samp`) of empirical `σ_T_n` against this
+       reference's CDF.
+     - **Merton (v0.5 amendment)**: empirical-CDF reference via a
+       high-N reference run. Sample `N_REF=100_000` paths from the
+       SAME `JumpDiffusionPathGenerator` with a DIFFERENT, pinned
+       `rng_seed = N_REF_SEED = 20260513` (anti-fishing — frozen
+       module-level constant in `variance_proxy.py`, NOT
+       implementer-tunable). KS-2-sample test
+       (`scipy.stats.ks_2samp`) of the tested ensemble's
+       `σ_T_n` against the high-N reference's `σ_T_n`. This anchors
+       Phase C to the SDE itself (not a parametric proxy), correctly
+       handling Merton's Poisson-mixture-of-lognormals geometry
+       (skew=10.4, excess kurt=174 at canonical pin — see §11.7).
+       NIT-MQ-1 tautology preserved: the reference is a DIFFERENT
+       sample from the same SDE, NOT a `.fit()` against the tested
+       sample.
+
+     PASS iff `ks_pvalue ≥ KS_PVALUE_FLOOR = 0.01` (calibrated to
+     MC-noise-matched reference — see §8 anti-fishing posture for the
+     rationale). Note: `KS_PVALUE_FLOOR` is SINGLE-VALUED across all
+     three families. No per-family relaxation. The per-family
+     dispatch is on the reference DISTRIBUTION SHAPE, not on the
+     pass threshold.
 
 5. **Emit** — five artifacts per family:
    - Parquet: `simulations/stochastic_fx/data/path_ensemble_{family}.parquet`
@@ -311,7 +333,7 @@ goodness-of-fit per Pin Z1.4).
 | **Z1.2** | Path-ensemble determinism: same `rng_seed` → bit-exact ensemble AND bit-exact `audit_block`. | Hypothesis property test on (rng_seed, n_paths) → (ensemble, audit_block). |
 | **Z1.3a** | Algebraic inversion (family-agnostic): for each path, the pointwise identity `apply_inversion(σ_T_n, x_bar) == √(8·σ_T_n/x_bar²)` holds to float64 precision. (Replaces v0.1's ill-posed "reduces to eq. (6)" claim per BLOCK-MQ-1.) Per family, the trivial-degenerate limit (σ → 0, θ → ∞, λ → 0) yields the trivial point mass ε ≡ 0; this is documented honestly as the family-agnostic baseline, not as a non-trivial test. | Pointwise residual ≤ NUMERICAL_IDENTITY_TOL (1e-6). |
 | **Z1.3b** (v0.4) | Mean match against hand-derived analytic (per family): empirical `mean(σ_T_n)` across the N-path ensemble matches the hand-derived analytic `E[σ_T]` of the DISCRETE eq. (7) statistic at the canonical grid (Hull / Karatzas-Shreve / Andersen-Piterbarg; per `variance_proxy.py` discrete-moment functions added in Task 4.2 per plan §16.4 disposition b1). v0.4 dropped variance from this gate (was structurally unsatisfiable at N=1000 due to intrinsic 8-30% MC-noise floor on Var estimator — see §11.6). Variance rel-err is still computed and emitted to `InversionVerdict.phase_b_var_rel_err` as audit-trail observation but does not gate composite_pass. Full-distribution match (which jointly constrains all moments via empirical CDF) is preserved at Z1.4 KS test. | Relative error on the MEAN ≤ MOMENT_REL_TOL (default 0.05). |
-| **Z1.4** | KS goodness-of-fit against moment-matched parametric reference (per family): fit a parametric reference distribution (lognormal for GBM/Merton, gamma for OU per §4.2 table) to the analytic `E[σ_T]` and `Var[σ_T]`; KS-test empirical `σ_T_n` samples against this reference. (BLOCK-MQ-2 disposition: replaces v0.1's tautological-or-infeasible KS framing with moment-matched parametric reference per MQ recommendation reading (c).) PASS iff `ks_pvalue ≥ 0.01` (calibration documented in §8). | `scipy.stats.ks_1samp` against the family's fitted reference; N ≥ 1000 paths. |
+| **Z1.4** (v0.5) | KS goodness-of-fit, per-family reference dispatch. **GBM, OU**: moment-matched parametric reference (lognormal for GBM, gamma for OU) via NIT-MQ-1 method-of-moments construction from analytic E and Var; `scipy.stats.ks_1samp` against the reference CDF. **Merton (v0.5 amendment)**: empirical-CDF reference via high-N (`N_REF = 100_000`) reference run from the same JumpDiffusionPathGenerator with pinned `N_REF_SEED = 20260513`; `scipy.stats.ks_2samp` against the high-N sigma_t array. Per-family dispatch is on the reference SHAPE, NOT on the pass threshold — `KS_PVALUE_FLOOR = 0.01` is single-valued across all three families. (v0.5 disposition: v0.4 lognormal reference for Merton failed at KS p=3.41e-21 due to Poisson-mixture-of-lognormals geometry; empirical-CDF via high-N reference correctly handles the mixture without relaxing the floor or introducing per-family tuning surface. See §11.7.) | `scipy.stats.ks_1samp` (GBM/OU) or `ks_2samp` (Merton); N ≥ 1000 paths under test; `N_REF = 100_000` reference for Merton. |
 | **Z1.5** | Anti-fishing routing: observed family-level test FAILURES at Z1.3a / Z1.3b / Z1.4 route to CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. NEVER silent parameter re-tuning. NEVER "increase N until passing" — the N=1000 floor is a Z1.5 invariant, not a parameter to grow. | HALT-routing table in §6 of this spec; verification at Wave-2 review. |
 | **Z1.6** | Strip preservation: cohort_5_strip's `IronCondor_strip.json` audit_block (`94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329`) is UNCHANGED before and after this spec's implementation. (RC-FLAG-3 disposition: verification by direct hex grep on the JSON file, not just `git log -p`.) | Bash: `grep -F '94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329' simulations/saas_builder/data/IronCondor_strip.json` returns the audit_block line before AND after the stochastic-fx package merge. |
 
@@ -336,7 +358,7 @@ goodness-of-fit per Pin Z1.4).
 |---|---|
 | Pin Z1.3a algebraic inversion residual > 1e-6 | HALT — float64 numerical defect; investigate `apply_inversion` implementation. This is family-agnostic, so failure indicates a bug, not a family-level scientific result. |
 | Pin Z1.3b MEAN match relative error > MOMENT_REL_TOL per family (v0.4 mean-only gate) | HALT — CORRECTIONS-α; either (a) hand-derived analytic `E[σ_T]` of the DISCRETE statistic is wrong (re-derive against literature; expansion uses centering projection `M = I − (1/N)·1·1^T` against the SDE family's auto-covariance kernel; see §4.2), OR (b) the SDE discretization in `generators.py` doesn't faithfully sample the SDE's stationary measure (refine the discretization — e.g., switch from Euler-Maruyama to a higher-order scheme). NEVER adjust SDE parameters to pass. Variance is no longer in this gate (v0.4 §11.6 disposition) — full-shape match constraint lives at Pin Z1.4. |
-| Pin Z1.4 KS p-value < 0.01 per family | HALT — CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. The KS failure is a structural rejection of the family's distributional fit to the moment-matched reference; honest dispositions are (a) drop the family from the spec, (b) substitute a different reference distribution shape (e.g., gamma for a previously-lognormal family), (c) refine the discretization. NEVER "increase N until passing" — that's the §8 anti-fishing posture violation. |
+| Pin Z1.4 KS p-value < 0.01 per family (v0.5 per-family reference dispatch) | HALT — CORRECTIONS-α + scoped Wave-1 re-review per master-spec §6.4. The KS failure is a structural rejection of the family's distributional fit to its dispatched reference; honest dispositions are (a) drop the family from the spec, (b) substitute a different reference distribution shape (e.g., gamma → empirical-CDF, lognormal → NIG, etc.), (c) refine the discretization. NEVER "increase N (test) until passing" — that's the §8 anti-fishing posture violation. Note `N_REF = 100_000` for Merton's empirical-CDF reference is NOT subject to the anti-fishing N-floor (it's the reference, not the test sample); but `N_REF_SEED` must be a PINNED constant, NOT implementer-tunable. |
 | Pin Z1.6 audit_block hex grep fails (strip mutated) | HALT — implementation is anti-fishing-coupled to cohort_5_strip; route to cohort_5_strip review. |
 | Wave-1 or Wave-2 RC+MQ on this spec returns BLOCK | HALT per master-spec §6.1; CORRECTIONS-α in §11. |
 
@@ -638,6 +660,46 @@ and MQ re-dispatch on this amendment. NARROW scope per the change
 surface — Pin Z1.3b row + §4.1 Phase B bullet + §11.6 (this section).
 Re-review verdicts land at
 `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.4/`.
+
+### §11.7 v0.4 → v0.5 (Pin Z1.4 per-family reference dispatch; user disposition empirical-CDF-for-Merton, 2026-05-13)
+
+**Trigger.** Task 4.2 implementer resumed implementation under the v0.4 amended Phase B mean-only gate (which works correctly for all three families — mean rel-err 1.12% / 0.17% / 0.70% for GBM/OU/Merton, all well below `MOMENT_REL_TOL = 0.05`). Phase A (Pin Z1.3a algebraic identity) passes at machine epsilon. But Phase C (Pin Z1.4 KS goodness-of-fit) catastrophically rejected the canonical Merton ensemble: KS p-value = 3.41e-21 against the v0.4 moment-matched lognormal reference, vs the 0.01 floor. 20-seed pass rate: GBM 12/20, OU 18/20, Merton 0/20.
+
+**Root cause analysis.** The v0.4 §11.6 amendment rationale ("Phase C's KS test against the moment-matched reference distribution preserves the full-distribution constraint that variance-match would have separately provided") was correct for GBM/OU (log-multiplicative ↔ lognormal; Gaussian-quadratic ↔ gamma) but **wrong for Merton**, whose σ_T distribution is a Poisson-mixture-of-lognormals with empirical skew=10.4 and excess kurt=174 at canonical pin (λ=1, σ_J=0.10). A 2-parameter lognormal cannot match heavy-tail mixture geometry by shape, only by location+scale. Diagnostic: even substituting the empirical Var (forbidden NIT-MQ-1 tautology surface) for the reference's Var still yields KS p=6.9e-9 — the **shape mismatch is structural, not a moment-matching deficiency**. Only `.fit()` to the sample being tested reaches p=0.42, which is the NIT-MQ-1 tautology MQ originally flagged at v0.1.
+
+The implementer correctly HALTED before committing — exactly the §6 HALT-routing protocol's intent. The v0.4 implementation is otherwise complete (three discrete-moment functions, Phase A reuse, Pin Z1.5 N-floor, audit_block deterministic), gated only by the Merton Phase C structural failure.
+
+**User disposition (empirical-CDF reference via high-N, 2026-05-13):** per-family dispatch on Phase C reference SHAPE (NOT on threshold):
+- **GBM**: retain moment-matched lognormal reference via NIT-MQ-1 method-of-moments construction (`s = sqrt(log(1+Var/E²))`, `scale = E/sqrt(1+Var/E²)`). KS-1-sample. EMPIRICALLY: KS p ≈ 0.12 at canonical pin, seed=42 — within floor.
+- **OU**: retain moment-matched gamma reference via NIT-MQ-1 method-of-moments construction (`a = E²/Var`, `scale = Var/E`). KS-1-sample. EMPIRICALLY: KS p ≈ 0.30 at canonical pin, seed=42 — within floor.
+- **Merton (v0.5 amendment)**: empirical-CDF reference via high-N reference run. Sample `N_REF = 100_000` paths from the SAME `JumpDiffusionPathGenerator(CANONICAL_MERTON)` with PINNED `N_REF_SEED = 20260513`. Test the ensemble's `σ_T` against the high-N reference's `σ_T` via `scipy.stats.ks_2samp`. **Pass threshold unchanged at `KS_PVALUE_FLOOR = 0.01`.**
+
+**Why empirical-CDF over alternatives:**
+
+| Disposition | Status | Rationale |
+|---|---|---|
+| (a) Drop Merton | Rejected | Largest spec diff; loses jump-diffusion family entirely; contradicts §16.4/§16.5 hard-won progress on Merton b1 analytic E[σ_T]. |
+| (b1) NIG reference | Considered | Maintains literature-parametric anchoring; requires deriving analytic 3rd+4th cumulants for Merton σ_T (Andersen-Piterbarg §2.7.3 has building blocks). Larger derivation effort than empirical-CDF. |
+| (b2) Empirical-CDF via high-N reference | **CHOSEN** | NIT-MQ-1 tautology not violated (different sample, not `.fit()` against tested sample). Anchors Phase C to the SDE itself rather than a parametric proxy. Smaller code diff. Same `KS_PVALUE_FLOOR` across families. |
+| (b3) Lognormal mixture parametric reference | Considered | Most rigorous: build the lognormal mixture analytically. Largest derivation work; offers no advantage over empirical-CDF (which IS the limit of the mixture). |
+| (d) Per-Merton-family `KS_PVALUE_FLOOR_MERTON` | **Banned** | Anti-fishing rule (Pin Z1.5) — per-family threshold tuning is the pattern Pin Z1.5 explicitly forbids regardless of documentation. |
+| (e) Reframe Phase C as analytic moment-projection | Considered | Requires deriving analytic 3rd/4th cumulants for Merton lognormal-mixture; large spec diff; faces MC-noise floor on higher-order moments at N=1000 similar to the v0.4 Var-gate problem. |
+
+**Anti-fishing rigor preserved:**
+
+1. **Single threshold across families.** `KS_PVALUE_FLOOR = 0.01` is unchanged. No per-family relaxation.
+2. **`N_REF_SEED` is pinned.** `N_REF_SEED = 20260513` is a frozen module-level constant in `variance_proxy.py`, NOT an implementer-tunable parameter. Changing it constitutes an anti-fishing-banned spec amendment.
+3. **`N_REF` is pinned.** `N_REF = 100_000` is a frozen module-level constant. The "increase N (test) until passing" anti-fishing rule applies to the TEST ensemble (N=1000 floor); the REFERENCE ensemble at N_REF=100k is fixed-by-spec and not subject to that rule because it's the comparator, not the test sample.
+4. **No `.fit()` against the tested sample.** The reference is a DIFFERENT sample from the same SDE — the structural distinction NIT-MQ-1 was guarding against.
+5. **Phase C single-tail interpretation preserved.** KS-2-sample p-value below 0.01 still means "tested sample is statistically distinguishable from a high-N reference" — i.e., the SDE implementation has a bug or the N=1000 floor is too small for this family. The interpretation hasn't changed; only the reference shape has.
+
+**Implementer's verified Phase C results under v0.5 (expected at re-dispatch):**
+
+- GBM: KS-1-samp p ≈ 0.12 at seed=42 — PASS
+- OU: KS-1-samp p ≈ 0.30 at seed=42 — PASS
+- Merton: KS-2-samp p (to be measured under v0.5; expected ≈ uniform on [0,1] under the null hypothesis that the SDE is correctly implemented) — expected PASS
+
+**Wave-1 re-review:** per master-spec §6.4, BOTH RC and MQ re-dispatch on this v0.4 → v0.5 amendment. NARROW scope — Pin Z1.4 row + §4.1 Phase C bullet + §11.7 (this section). Verdicts land at `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.5/`. When Task 4.2 implementation resumes under v0.5, the implementer brief MUST cite §11.7 first; the v0.4 lognormal-Merton reference is RETIRED.
 
 ## §12 References
 

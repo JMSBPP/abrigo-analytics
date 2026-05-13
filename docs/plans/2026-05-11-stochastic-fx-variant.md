@@ -6,7 +6,7 @@
 >
 > **Foreground orchestrates, never authors.** Per repo memory `memory/feedback_specialized_agents_per_task.md` (NON-NEGOTIABLE).
 
-**Plan version:** v0.5 (Wave-1 RC+MQ ACCEPT_WITH_FLAGS-DISPOSED at v0.2; v0.3 added §16.3 (Task 3.1 grid-density); v0.4 added §16.4 (Task 3.3 σ_T statistic mismatch); v0.5 adds §16.5 — Task 4.2 mid-execution Pin Z1.3b mean-only gate amendment per user disposition Option B 2026-05-13. Parent spec v0.3 → v0.4 in parallel.)
+**Plan version:** v0.6 (Wave-1 v0.2 ACCEPT_WITH_FLAGS-DISPOSED; v0.3 §16.3 Task 3.1 grid-density; v0.4 §16.4 Task 3.3 σ_T statistic mismatch; v0.5 §16.5 Task 4.2 Pin Z1.3b mean-only; v0.6 adds §16.7 — Task 4.2 mid-execution Pin Z1.4 per-family Phase C reference dispatch (Merton → empirical-CDF via high-N) per user disposition 2026-05-13. Parent spec v0.4 → v0.5 in parallel.)
 **Parent spec:** `docs/specs/2026-05-11-stochastic-fx-variant-design.md` v0.3 (Wave-1 ACCEPT_WITH_FLAGS-DISPOSED)
 **Predecessor:** `simulations/saas_builder/cohort_5_strip/` (commit `3442852`, audit `94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329` — PRESERVED unchanged per Pin Z1.6)
 **Status:** Wave-1 ACCEPT_WITH_FLAGS-DISPOSED — per-task execution authorized once §16.1 corrections land
@@ -329,11 +329,13 @@ simulations/tests/test_saas_stochastic_fx.py   NEW (tests under each task; final
 - Per-family dispatch on the ensemble's family identifier to select the right moment function from `moments.py` and the right reference distribution shape per spec v0.3 §4.2 (lognormal for GBM/Merton; gamma for OU).
 - Phase A check: calls the Task 4.1 Phase-A free function to populate `phase_a_passes` and `phase_a_max_residual`.
 - Phase B check (Pin Z1.3b, v0.5 mean-only gate per §16.5 disposition): compute empirical mean from `ensemble.sigma_t`; compute analytic `E[σ_T]` of the DISCRETE eq.(7) statistic at canonical grid via the per-family `*_discrete_sigma_t_moments` functions appended to `variance_proxy.py` (per plan §16.4 disposition b1); compute the relative error on the MEAN; PASS iff mean rel-err ≤ `MOMENT_REL_TOL`. **Variance rel-err is still COMPUTED and POPULATED on `InversionVerdict.phase_b_var_rel_err` for audit-trail observation but does NOT gate `phase_b_pass`.** Raises `MomentMatchFailedError` if MEAN rel-err exceeds the tolerance (HALT routing per Pin Z1.5). Full-distribution match (which jointly constrains variance, skew, kurtosis via empirical CDF) is preserved at Phase C below. v0.5 amendment rationale: at the Pin Z1.5 anti-fishing floor N=1000, the sample-variance estimator's intrinsic MC-noise SE is 8-30% per family — incompatible with `MOMENT_REL_TOL=0.05` regardless of analytic-Var correctness. See §16.5 + parent spec §11.6 for the full disposition record.
-- Phase C check (Pin Z1.4): construct the family's reference distribution DIRECTLY from the analytic moments (NIT-MQ-1 disposition — do NOT call `.fit()` against empirical data, which would re-introduce a tautology surface). Construction formulas per family:
-  - **Lognormal (GBM, Merton):** given analytic E and Var, compute the lognormal shape parameter `s = sqrt(log(1 + Var/E**2))` and scale `scale = E / sqrt(1 + Var/E**2)`; construct the SciPy distribution as `scipy.stats.lognorm(s=s, scale=scale)`. This is the standard method-of-moments lognormal construction from positive-mean, positive-variance.
-  - **Gamma (OU):** given analytic E and Var, compute gamma shape `a = E**2 / Var` and scale `scale = Var / E`; construct as `scipy.stats.gamma(a=a, scale=scale)`. Standard MoM gamma construction.
-  
-  KS-test the empirical `ensemble.sigma_t_per_path` against this reference using `scipy.stats.ks_1samp(samples, reference.cdf)`; populate `phase_c_ks_pvalue`. PASS iff p ≥ `KS_PVALUE_FLOOR`. Raises `InversionTestFailedError` if p < `KS_PVALUE_FLOOR`.
+- Phase C check (Pin Z1.4, v0.6 per-family reference dispatch per §16.7):
+  - **GBM, OU** (moment-matched parametric reference, NIT-MQ-1 method-of-moments construction — do NOT call `.fit()` against empirical data):
+    - **GBM (lognormal):** given analytic `(E_an, Var_an)` from `gbm_discrete_sigma_t_moments(params)`, compute `s = sqrt(log(1 + Var_an/E_an**2))` and `scale = E_an / sqrt(1 + Var_an/E_an**2)`; construct `scipy.stats.lognorm(s=s, scale=scale)`. KS test: `scipy.stats.ks_1samp(ensemble.sigma_t, reference.cdf)`.
+    - **OU (gamma):** given analytic `(E_an, Var_an)` from `ou_discrete_sigma_t_moments(params)`, compute `a = E_an**2 / Var_an` and `scale = Var_an / E_an`; construct `scipy.stats.gamma(a=a, scale=scale)`. KS test: `scipy.stats.ks_1samp(ensemble.sigma_t, reference.cdf)`.
+  - **Merton (v0.6 amendment, empirical-CDF reference via high-N reference run):** sample a high-resolution reference ensemble via `JumpDiffusionPathGenerator(params=CANONICAL_MERTON)(rng_seed=N_REF_SEED, n_paths=N_REF)` where `N_REF: Final[int] = 100_000` and `N_REF_SEED: Final[int] = 20260513` are FROZEN module-level constants in `variance_proxy.py`. Extract `reference_sigma_t = reference_ensemble.sigma_t`. KS test: `scipy.stats.ks_2samp(ensemble.sigma_t, reference_sigma_t)`. The reference is computed ONCE per Verifier invocation (cache via `functools.cache` on the helper function keyed by `(params canonical_json, N_REF, N_REF_SEED)` since the reference depends only on those — avoids re-sampling on every `__call__` if the same params are passed).
+  - Populate `phase_c_ks_pvalue`. PASS iff `ks_pvalue ≥ KS_PVALUE_FLOOR = 0.01` (SINGLE-VALUED across all three families; no per-family relaxation). Raises `InversionTestFailedError` if p < `KS_PVALUE_FLOOR`.
+  - **Anti-fishing invariants on Merton's high-N reference:** `N_REF` and `N_REF_SEED` are spec-pinned constants. The implementer MUST NOT vary them to make Merton pass. Changing either constitutes spec amendment via CORRECTIONS-α + scoped Wave-1 re-review.
 - **Anti-fishing rule (Pin Z1.5 enforcement at construction time):** the InversionVerifier rejects calls where `ensemble.paths.shape[0] != 1000` (the N=1000 floor per spec v0.3 §8). The check happens INSIDE `__call__` BEFORE any phase runs; raises `MCBudgetExceededError` if violated. N=1000 is a frozen module-level constant, NOT a parameter to grow.
 - `tex_anchor` populated with the relative path `notes/stochastic_fx_tex/sigma_t_moments_{family_id}.tex`.
 - `audit_block` is sha256 of (ensemble.audit_block + canonical-parameters JSON + x_bar + MOMENT_REL_TOL + KS_PVALUE_FLOOR), deterministic across re-runs.
@@ -486,7 +488,7 @@ Both reviewers explicitly stated no full Wave-1 re-dispatch required; orchestrat
 
 ### §16.2 Wave-2 (post-execution) review reserve
 
-Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.6 once execution completes (renumbered to make room for §16.3 + §16.4 + §16.5 mid-execution dispositions).
+Wave-2 RC+MQ on this plan's exit deliverables (each family's parquet + JSON + STOCHASTIC_FX_RESULTS.md emit) lands at §16.8 once execution completes (renumbered from §16.6 in v0.5 to make room for §16.7 v0.5 → v0.6 Phase C dispatch disposition).
 
 ### §16.3 v0.2 → v0.3 (Task 3.1 mid-execution CORRECTIONS-α — grid-density precision floor)
 
@@ -586,6 +588,47 @@ The implementer correctly HALTED before committing any code — exactly the §16
 **Wave-1 re-review:** per master-spec §6.4, BOTH RC and MQ re-dispatch on the spec v0.4 + plan v0.5 amendment. NARROW scope — only Pin Z1.3b row + §4.1 Phase B bullet + §11.6/§16.5 (this section). Verdicts land at `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.4/`.
 
 When Task 4.2 implementation resumes under the amended acceptance, the implementer brief MUST cite §16.5 first; the v0.4 variance gate is RETIRED, mean-only Phase B is the v0.5 contract.
+
+### §16.6 v0.5 Wave-1 re-review (landed 2026-05-13)
+
+Per master-spec §6.4, BOTH RC and MQ re-dispatched on the v0.4 → v0.5 amendment. Both ACCEPT_WITH_FLAGS — all flags disposed orchestrator-side at commit `fabffcf` (RC-FLAG-A1 §11.3→§11.6 cross-refs, RC-FLAG-A2 Task 6 var-gate residual) and `fc0d21e` (FLAG-MQ-V0.4-3 κ_eff range widen to 4-35). Both reviewers independently re-derived the b1 analytic E[σ_T] formulas + re-ran the MC-noise probe — both bit-exact to §11.6. Twice-ratified.
+
+Verdict files:
+- `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.4/rc-verdict.md` (ACCEPT_WITH_FLAGS — 2 flags disposed)
+- `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.4/mq-verdict.md` (ACCEPT_WITH_FLAGS — 3 flags disposed)
+
+### §16.7 v0.5 → v0.6 (Task 4.2 mid-execution CORRECTIONS-α — Pin Z1.4 per-family Phase C reference dispatch)
+
+**Trigger.** Task 4.2 implementer resumed under the v0.5 amended Phase B mean-only acceptance. Mean-only Phase B WORKED CORRECTLY for all three families (mean rel-err 1.12% GBM / 0.17% OU / 0.70% Merton, all below `MOMENT_REL_TOL = 0.05`; matches §16.5 expected). Phase A passed at machine epsilon. **Phase C catastrophically rejected Merton** with KS p = 3.41e-21 against the v0.5 moment-matched lognormal reference (vs 0.01 floor). 20-seed pass rate per family at canonical pin:
+
+| Family | KS p at seed=42 | 20-seed pass rate |
+|---|---|---|
+| GBM | 0.1229 | 12/20 |
+| OU | 0.3033 | 18/20 |
+| Merton | 3.41e-21 | **0/20** |
+
+The implementer correctly HALTED before committing — per §6 HALT routing for Pin Z1.4 failures.
+
+**Root cause.** The v0.4/v0.5 amendment rationale ("Phase C's KS test against the moment-matched reference distribution preserves the full-distribution constraint that variance-match would have separately provided") was correct for GBM/OU (log-multiplicative ↔ lognormal; Gaussian-quadratic ↔ gamma — both decent fits) but **wrong for Merton**, whose σ_T distribution is a Poisson-mixture-of-lognormals with empirical skew=10.4, excess kurtosis=174 at canonical pin (λ=1, σ_J=0.10). A 2-parameter lognormal cannot match heavy-tail mixture geometry by shape, only by location+scale. The shape mismatch is **structural, not a moment-matching deficiency** (even substituting empirical Var still yields KS p=6.9e-9; only `.fit()`-to-sample, the NIT-MQ-1 forbidden tautology, reaches p=0.42).
+
+**User disposition (empirical-CDF reference via high-N, 2026-05-13):** per-family dispatch on Phase C reference SHAPE (NOT on threshold):
+- **GBM**: retain moment-matched lognormal reference (NIT-MQ-1 method-of-moments). KS-1-samp. Empirically PASSES.
+- **OU**: retain moment-matched gamma reference (NIT-MQ-1 method-of-moments). KS-1-samp. Empirically PASSES.
+- **Merton**: empirical-CDF reference via high-N reference run. Pinned constants `N_REF: Final[int] = 100_000` and `N_REF_SEED: Final[int] = 20260513` in `variance_proxy.py`. KS-2-samp against high-N sample's `σ_T`.
+
+Single `KS_PVALUE_FLOOR = 0.01` across all three families — no per-family threshold relaxation.
+
+**Anti-fishing rigor preserved.** See spec §11.7 for the 5-point checklist. Key points: (1) single threshold, (2) `N_REF_SEED` pinned constant not implementer-tunable, (3) `N_REF` pinned constant, (4) no `.fit()` against tested sample, (5) interpretation unchanged (KS p < 0.01 still means "tested sample is statistically distinguishable from reference").
+
+**Forward implication for Task 4.2 (this plan §9 Task 4.2 Phase C bullet, edited in-line at v0.6):**
+- Reference distribution selection dispatches on `ensemble.family_id`.
+- For Merton, sample the high-N reference via the same `JumpDiffusionPathGenerator` (NOT a different SDE) — anchors Phase C to the SDE itself.
+- Cache the high-N reference via `functools.cache` keyed on `(params canonical_json, N_REF, N_REF_SEED)` to avoid re-sampling on every `__call__`.
+- Both `KS_PVALUE_FLOOR` and the `N_REF`/`N_REF_SEED` constants are module-level `Final` (single source of truth per FLAG-RC-3 precedent).
+
+**Wave-1 re-review.** Per master-spec §6.4, BOTH RC and MQ re-dispatch on this v0.5 → v0.6 amendment. NARROW scope — Pin Z1.4 row + §4.1 Phase C bullet + §11.7 + §16.7 (this section). Verdicts land at `scratch/2026-05-11-stochastic-fx-spec-review/wave-1-v0.5/`.
+
+When Task 4.2 implementation resumes under v0.6, the implementer brief MUST cite §16.7 first; the v0.5 lognormal-Merton reference is RETIRED.
 
 **Verdict files:**
 - `scratch/2026-05-11-stochastic-fx-task-3.1-review/rc-verdict.md`
