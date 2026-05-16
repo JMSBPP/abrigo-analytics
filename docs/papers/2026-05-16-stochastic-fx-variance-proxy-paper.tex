@@ -1,0 +1,637 @@
+% =========================================================================
+% Stochastic-FX variance proxy — working paper draft
+% Repo: abrigo-analytics (HEAD 27fe058, plan v0.6 exit gate)
+% Paper covers PRIMITIVES.md §15 open item 2 closure:
+%   - PRIMITIVES.md §6 σ_T proxy and ε(σ_T) inversion as a unified mechanism
+%   - Four model instantiations (deterministic + GBM + OU + Merton)
+%   - cadCAD wrapping (bridge to dynamic-system simulation)
+%   - AI-cost-factor model as the immediate downstream consumer
+%   - Per-family canonical-pin verification (Phase A + Phase B + Phase C)
+% Skill: /latex-econ-model (notation conventions + structure)
+% =========================================================================
+\documentclass[11pt,letterpaper]{article}
+
+% --- Essential math packages (per latex-econ-model skill) ----------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{dsfont}
+
+% --- Document hygiene -----------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    urlcolor=blue!50!black,
+    citecolor=blue!50!black,
+}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\graphicspath{{../../notes/stochastic_fx_figures/}}
+
+% --- Theorem environments -------------------------------------------------
+\newtheorem{definition}{Definition}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{remark}{Remark}[section]
+\newtheorem{assumption}{Assumption}[section]
+
+% --- Standard econ commands -----------------------------------------------
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\text{Var}}
+\newcommand{\Cov}{\text{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\ind}{\mathds{1}}
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+% --- Project-specific commands --------------------------------------------
+% σ_T realized-variance proxy (PRIMITIVES.md §6 eq. 7)
+\newcommand{\sigmaT}{\sigma_{T}}
+% ε inversion (PRIMITIVES.md §6 eq. 8)
+\newcommand{\epsT}{\varepsilon(\sigmaT)}
+% FX path numerator / denominator
+\newcommand{\Xbar}{\bar{X}}
+\newcommand{\Ybar}{\bar{Y}}
+\newcommand{\xbar}{\bar{x}}
+% (Y, M, X) triple notation
+\newcommand{\Ymx}{(Y,\,M,\,X)}
+% Centering projection M = I - (1/N) 1 1^T
+\newcommand{\centerProj}{\mathcal{M}}
+% Pin tags
+\newcommand{\PinZ}[1]{\textsc{pin Z1.#1}}
+
+\title{%
+    The $\sigmaT$ Variance Proxy and Its $\varepsilon$ Inversion: \\
+    A Unified Mechanism Across Deterministic and Stochastic FX Dynamics \\
+    \large with a cadCAD-wrapping Bridge to the AI-Cost-Factor Downstream Consumer
+}
+\author{%
+    Juan Manuel Serrano \\
+    \texttt{juan.serranotmf@gmail.com}
+}
+\date{2026-05-16 \quad (working paper draft)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We close \textsf{notes/PRIMITIVES.md} \S15 open item 2 (\emph{stochastic-FX
+variant — Path A v3}) by verifying, across three SDE families (geometric
+Brownian motion, Ornstein--Uhlenbeck, and Merton jump-diffusion), that the
+realized-variance proxy
+\(\sigmaT = T^{-1} \sum_{j} (X_j - \bar X_{\text{path}})^2\)
+admits a single family-agnostic inversion
+\(\varepsilon(\sigmaT) = \sqrt{8\,\sigmaT/\xbar^{2}}\)
+that holds pointwise (\PinZ{3a}, algebraic identity) and distributionally
+(\PinZ{3b} mean-only moment match against literature-derived discrete-statistic
+analytic moments; \PinZ{4} Kolmogorov--Smirnov goodness-of-fit against
+per-family-dispatched reference distributions). Phase B (moment) and
+Phase C (KS) verdicts pass at canonical pin under each SDE family at a fixed
+\(N = 1000\) Monte-Carlo budget (\PinZ{5} anti-fishing floor); audit-block
+hash determinism (\PinZ{2}) is bit-exact across both intra-process and
+inter-process re-runs.
+
+The unified mechanism is wrapped, in a forthcoming integration, into a
+cadCAD dynamic-agent simulation where the verified $\sigmaT$ machinery
+becomes the structural M-side substrate for downstream
+\(\Ymx\)-triple iterations. We position the AI-cost-factor model
+(\textsf{docs/specs/2026-05-16-ai-cost-factor-model-design.md} v0.2.0,
+under construction) as the immediate downstream consumer: its candidate-X
+identification step is independent of the verification this paper provides,
+but its eventual M-design step inherits the \(\sigmaT\)-replicating
+Carr--Madan strip (\textsf{cohort\_5\_strip}, deterministic instantiation)
+and the per-family stochastic verification floor.
+
+The paper makes no causal claim about the wage-to-productive-capital
+ratchet that motivates the broader Abrigo operating framework; the
+contribution is strictly the verification floor on the $\sigmaT$ mechanism
+that any downstream \(\Ymx\) instrument family must clear before its
+M-design step is admissible.
+\end{abstract}
+
+\tableofcontents
+
+% =========================================================================
+\section{Unified framework: $\sigmaT$ as a structural primitive}
+\label{sec:framework}
+% =========================================================================
+
+\subsection{Operating context and the $\Ymx$-triple unit of work}
+\label{sec:framework:ymx}
+
+The Abrigo operating framework, summarized in \texttt{CLAUDE.md}, takes as
+its highest-level goal the minimization of income inequality framed in
+post-Keynesian terms (distribution as institutionally determined rather
+than equilibrium-given). The product family pursued by the project is
+\emph{permissionless on-chain perpetual convex instruments} settled on
+Panoptic, with denomination chosen per target population (Mento-native
+\textsf{COPm}/\textsf{BRLm}/\textsf{KESm}/\textsf{EURm}/\textsf{USDm},
+USDC, ETH, or sectoral baskets). The transmission channel from wage to
+productive capital runs through a \emph{premium-funded ratchet}: a wage
+earner pays a small recurring premium out of wage income, and the
+instrument's accumulated convex payoff and roll yield convert over time
+into productive-capital exposure that absent the instrument the wage
+earner would never cross the wage--capital boundary to obtain.
+
+The operating unit of work is the \(\Ymx\)-triple:
+\begin{itemize}
+    \item $Y$ — outcome variable measuring a target population's exposure
+        to the wage-to-capital transition;
+    \item $M$ — the Panoptic pool configuration hosting the hedge
+        (underlying pair, strike/range geometry, payoff shape);
+    \item $X$ — the major risk currently blocking that transition for
+        the target population.
+\end{itemize}
+
+This paper does not introduce a new \(\Ymx\)-triple. It verifies a
+\emph{shared substrate} that every \(\Ymx\)-triple containing a convex
+on-chain hedge inherits.
+
+\subsection{The $\sigmaT$ proxy and the $\varepsilon$ inversion}
+\label{sec:framework:sigmaT}
+
+\begin{definition}[Realized-variance proxy, $\sigmaT$]
+\label{def:sigmaT}
+Let $\{X_j\}_{j=0}^{n}$ denote a discrete FX-rate path observed at
+$n+1$ equally spaced timepoints $t_j = j \cdot \Delta t$ on the
+trading horizon $[0, T]$, with $\Delta t = T/n$ and
+$\bar{X}_{\text{path}} = (n+1)^{-1}\sum_{j=0}^{n} X_j$ the path's
+sample mean. The discrete realized-variance proxy is
+\begin{equation}
+    \sigmaT \;\coloneqq\; \frac{1}{T}\sum_{j=0}^{n}
+    \bigl(X_j - \bar{X}_{\text{path}}\bigr)^{2}.
+    \label{eq:sigmaT}
+\end{equation}
+\end{definition}
+
+Equation~\eqref{eq:sigmaT} is the discrete-time form of
+\textsf{notes/PRIMITIVES.md} \S6 eq.~(7). The normalization is by $T$
+(not by $n+1$): the statistic carries units of $[X]^{2}$, and it scales
+proportionally to grid density. This is intentional and load-bearing:
+under any continuous-time FX-path generator, the sum-of-squared
+deviations sample more variation as $n \to \infty$, and dividing by $T$
+preserves comparability across grids at fixed $T$.
+
+\begin{definition}[$\varepsilon$ inversion]
+\label{def:eps}
+Given a realized-variance proxy $\sigmaT$ and an FX mean $\xbar$
+(typically the canonical pin $\xbar = \bar{X}/\bar{Y} = 4000$ for the
+COP/USD-denominated cohort), the inversion is
+\begin{equation}
+    \epsT \;=\; \sqrt{\frac{8\,\sigmaT}{\xbar^{2}}}.
+    \label{eq:eps}
+\end{equation}
+\end{definition}
+
+Equation~\eqref{eq:eps} is \textsf{PRIMITIVES.md} \S6 eq.~(8). It is
+purely algebraic: no SDE-family parameter enters; the relation is
+family-agnostic. The square-root form ensures (\PinZ{3a} trivial-degenerate
+limit) that
+\(
+    \lim_{\sigmaT \to 0^{+}} \epsT \;=\; 0,
+\)
+which captures the geometric fact that a flat (deterministic) path has
+zero implied volatility per unit FX mean.
+
+\subsection{Verification structure: three phases, six pins}
+\label{sec:framework:phases}
+
+The verification this paper reports has three phases, each anchored to a
+distinct numbered pin in
+\textsf{docs/specs/2026-05-11-stochastic-fx-variant-design.md} v0.5:
+
+\begin{description}
+    \item[Phase A — algebraic identity (\PinZ{3a}).] For each path's
+        $\sigmaT^{(n)}$, the pointwise identity
+        $\bigl(\varepsilon(\sigmaT^{(n)})\bigr)^{2} = 8\sigmaT^{(n)} / \xbar^{2}$
+        holds to float64 precision (\textsc{numerical\_identity\_tol} $= 10^{-6}$).
+        Family-agnostic; reduces to a re-evaluation of~\eqref{eq:eps}.
+
+    \item[Phase B — mean-only moment match (\PinZ{3b}, spec v0.5 amendment).]
+        Empirical mean of $\sigmaT^{(n)}$ across the $N$-path ensemble
+        matches the hand-derived analytic $\E[\sigmaT]$ for the
+        DISCRETE statistic~\eqref{eq:sigmaT} at the canonical grid,
+        within $\textsc{moment\_rel\_tol} = 0.05$. The discrete-statistic
+        analytic uses the centering-projection identity
+        \(
+            \E[\sigmaT \cdot T] = \mathrm{tr}\bigl(\centerProj\,\Sigma\bigr)
+                                  + \mu^{\top} \centerProj\, \mu
+        \)
+        where $\centerProj = I_{n+1} - (n+1)^{-1}\mathbf{1}\mathbf{1}^{\top}$
+        and $\Sigma$ is the SDE-family-specific auto-covariance kernel
+        on the canonical grid. Variance is NOT in this gate (see
+        Remark~\ref{rem:mean-only}).
+
+    \item[Phase C — Kolmogorov--Smirnov goodness-of-fit (\PinZ{4},
+        spec v0.5 amendment).] Per-family dispatch on the reference
+        distribution shape (not on the threshold):
+        \begin{itemize}
+            \item GBM: method-of-moments lognormal reference fit to the
+                analytic $(\E, \Var)$, tested via
+                \texttt{scipy.stats.ks\_1samp}.
+            \item OU: method-of-moments gamma reference fit to the
+                analytic $(\E, \Var)$, tested via \texttt{ks\_1samp}.
+            \item Merton: empirical-CDF reference via a high-$N$
+                ($N_{\textsc{ref}} = 100\,000$) reference run from the
+                same SDE, tested via \texttt{ks\_2samp}. This avoids the
+                shape mismatch between Merton's Poisson-mixture-of-lognormals
+                geometry and the 2-parameter lognormal alternative.
+        \end{itemize}
+        Single threshold across all three families:
+        $\textsc{ks\_pvalue\_floor} = 0.01$.
+\end{description}
+
+\begin{remark}[Why mean-only Phase B; what variance discloses]
+\label{rem:mean-only}
+At the \PinZ{5} anti-fishing path-count floor $N = 1000$, the standard
+error of the sample-variance estimator on $\sigmaT$ is intrinsically
+$\sqrt{(\kappa_{\text{eff}} - 1)/(N-1)}$ where $\kappa_{\text{eff}}$
+ranges 4--35 across the three families (driven by jump kurtosis for
+Merton). This produces an 8\%--30\% Monte-Carlo noise floor on the
+variance estimator — strictly incompatible with
+$\textsc{moment\_rel\_tol} = 0.05$. The spec v0.4 attempt to gate
+variance against the same 5\% tolerance was mathematically
+unsatisfiable; v0.5 \S11.6 dropped variance from the Phase B gate.
+Variance relative error is still computed and emitted on the
+\textsf{InversionVerdict} as an audit-trail observation (it is not
+zero); the full-distribution match is preserved at Phase C, where the
+KS test against a moment-matched reference constrains the joint shape
+(mean, variance, skewness, kurtosis) via the empirical CDF.
+\end{remark}
+
+\subsection{Pin coverage and anti-fishing posture}
+\label{sec:framework:pins}
+
+The six pins anchoring this paper are:
+
+\begin{center}
+\begin{tabular}{@{}lp{0.7\textwidth}@{}}
+\toprule
+\textbf{Pin} & \textbf{Statement} \\
+\midrule
+\PinZ{1} & SDE parameters pre-pinned ex-ante per family (Definition~\ref{def:canonical-pins} below). \\
+\PinZ{2} & Path-ensemble determinism: identical
+            $(\text{params}, \text{rng\_seed}, n_{\text{paths}})$
+            triples yield bit-exact paths and bit-exact audit\_block. \\
+\PinZ{3a} & Algebraic identity \(\bigl(\epsT\bigr)^{2} = 8\sigmaT/\xbar^{2}\)
+            to float64 precision. \\
+\PinZ{3b} & Mean-only moment match against discrete-statistic analytic
+            $\E[\sigmaT]$ within 5\%. \\
+\PinZ{4} & Per-family Phase C KS p-value $\geq 0.01$. \\
+\PinZ{5} & Anti-fishing routing: failures route to \textsc{corrections-$\alpha$}
+            and scoped two-reviewer re-review; NEVER silent parameter
+            re-tuning; NEVER ``increase $N$ until passing''; \(N=1000\)
+            is an invariant, not a parameter to grow. \\
+\PinZ{6} & Strip preservation: the
+            \textsf{cohort\_5\_strip}/\textsf{IronCondor\_strip.json}
+            audit\_block remains byte-equal across the verification
+            plan's execution window. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\PinZ{5} carries forward the broader project's anti-fishing invariants
+($N_{\min} = 75$, $\textsc{power}_{\min} = 0.80$,
+$\textsc{mdes\_sd} = 0.40$ SD-units of $Y$, pre-pinned sign expectation
+and lag structure). For this paper specifically, three concrete
+anti-fishing prohibitions hold across all four model instantiations:
+(i)~no silent threshold relaxation, (ii)~no seed re-roll on failure,
+(iii)~no $N$-floor lowering. The four spec amendments
+(\S11.6, \S11.7 of the parent spec; \S16.3, \S16.4, \S16.5, \S16.7 of
+the plan) are each subjected to scoped two-reviewer re-review per
+\textsf{master-spec} \S6.4, and each preserves these three prohibitions.
+
+\subsection{Downstream consumer: the AI-cost-factor model}
+\label{sec:framework:downstream}
+
+The verification floor established by this paper is the immediate
+prerequisite for an \(\Ymx\)-triple targeting the COP-denominated AI-tooling
+cost burden borne by non-subscribed LATAM developers (the AI-cost-factor
+model under construction, spec v0.2.0; see
+\S\ref{sec:cadcad:cost-factor}). That model's X-channel identification
+step (R5 descriptive risk quantification + R4-Stage-3 vol-clustering
+regression) operates on the empirical cost path, NOT on $\sigmaT$
+directly. But should X-identification yield a candidate FX-vol risk
+that admits Panoptic-eligible M-design, the M-side instrument is a
+$\sigmaT$-replicating strip and inherits the per-family stochastic
+verification floor of this paper.
+
+This positioning is asymmetric on purpose: the $\sigmaT$ machinery is
+\emph{substrate} for downstream \(\Ymx\)-triple iterations, not the
+final product. The contribution of this paper is the substrate
+verification; downstream consumers carry their own identification
+burdens.
+
+% =========================================================================
+\section{Deterministic instantiation: Carr--Madan replication}
+\label{sec:deterministic}
+% =========================================================================
+
+\paragraph{Section charge for content fill.}
+This section instantiates the framework's first concrete model: the
+deterministic FX-path generator \textsf{PRIMITIVES.md} \S5 eq.~(6)
+$f(t) = E^{-2} |\cos(E t)|$ and the corresponding $\sigmaT$-replicating
+Carr--Madan 12-leg IronCondor strip committed at
+\textsf{simulations/saas\_builder/cohort\_5\_strip/} (audit\_block
+\texttt{94150326332b90e5\ldots aaf329}, \PinZ{6}). Cite
+\textsf{notes/STAGE\_2\_RESULTS.md} R1 (\(\sigma_0\) anchor) for the
+deterministic-limit reduction.
+
+% =========================================================================
+\section{Stochastic instantiation I: geometric Brownian motion}
+\label{sec:gbm}
+% =========================================================================
+
+\paragraph{Section charge for content fill.}
+Section presents the GBM SDE
+$dX_t = \mu X_t \,dt + \sigma X_t \,dW_t$
+with the Euler--Maruyama log-scale discretization (Itô correction
+$-\sigma^{2}/2$); the discrete-statistic analytic $\E[\sigmaT]$ via the
+centering-projection identity against the GBM auto-covariance kernel
+$\Cov(X_j, X_k) = x_{0}^{2}\bigl(\exp(\sigma^{2} \min(t_j, t_k)) - 1\bigr)$
+at $\mu = 0$ canonical; verification: Phase A residual $\sim 7 \times 10^{-15}$,
+Phase B mean rel-err $1.12\%$, Phase C lognormal-MoM KS p-value $0.123$.
+LaTeX fragment in \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_gbm.tex}.
+Cite Hull (Options, Futures, and Other Derivatives, \S15).
+
+% =========================================================================
+\section{Stochastic instantiation II: Ornstein--Uhlenbeck}
+\label{sec:ou}
+% =========================================================================
+
+\paragraph{Section charge for content fill.}
+Section presents the OU SDE
+$dX_t = \theta(\bar\mu - X_t)\,dt + \sigma\, dW_t$
+with the exact Vasicek transition (NOT Euler); stationary auto-covariance
+$\Cov(X_j, X_k) = (\sigma^{2}/(2\theta))\,\exp(-\theta|t_k - t_j|)
+\bigl(1 - \exp(-2\theta \min(t_j, t_k))\bigr)$ at $x_0 = \bar\mu$
+canonical (so the mean term vanishes); verification: Phase A residual
+$\sim 4 \times 10^{-15}$, Phase B mean rel-err $0.17\%$, Phase C
+gamma-MoM KS p-value $0.303$.
+LaTeX fragment in \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_ou.tex}.
+Cite Karatzas \& Shreve (Brownian Motion and Stochastic Calculus, \S5.6).
+
+% =========================================================================
+\section{Stochastic instantiation III: Merton jump-diffusion}
+\label{sec:merton}
+% =========================================================================
+
+\paragraph{Section charge for content fill.}
+Section presents the Merton jump-diffusion SDE
+$dX_t = \mu X_t\,dt + \sigma X_t\,dW_t + X_{t^-}(J - 1)\,dN_t$
+where $N_t$ is a Poisson process of intensity $\lambda$ and $J$ is
+lognormal; Euler--Maruyama log-scale diffusion augmented by compound-Poisson
+log-jumps; conditional-Gaussian aggregation via
+$\text{aggregated\_log\_jump} = N \mu_{J} + \sqrt{N}\, \sigma_{J}\, Z'$;
+discrete-statistic analytic $\E[\sigmaT]$ with non-constant drift
+$\mu_{j} = x_{0}\,\phi_{1}^{j}$ where
+$\log\phi_{1} = \lambda\Delta t\bigl(\exp(\sigma_{J}^{2}/2) - 1\bigr)$;
+verification: Phase A residual $\sim 2 \times 10^{-13}$, Phase B mean
+rel-err $0.70\%$, Phase C empirical-CDF KS-2-samp p-value $0.116$
+(at hardware-constrained $N_{\textsc{ref}} = 5000$; production
+$N_{\textsc{ref}} = 100\,000$).
+LaTeX fragment in \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_merton.tex}.
+Cite Andersen \& Piterbarg (Interest Rate Modeling Vol.~I, \S2.7).
+
+% =========================================================================
+\section{cadCAD wrapping: bridge to dynamic-system simulation}
+\label{sec:cadcad}
+% =========================================================================
+
+\subsection{Motivation and scope}
+\label{sec:cadcad:motivation}
+
+\paragraph{Section charge for content fill.}
+Subsection explains why a cadCAD wrapping is necessary even after the
+$\sigmaT$ machinery verifies under three SDE families: the verification
+floor establishes that the inversion mechanism holds, but downstream
+\(\Ymx\)-triple iterations need to simulate the interaction of multiple
+state variables (FX path, cost path, replicating-portfolio position,
+hedge accumulation) over time. The cadCAD framework
+(\textsf{cadCAD-org/cadCAD}) provides a dynamic-agent simulation engine
+with state variables, policy functions, and partial state update blocks
+(PSUBs) suitable for this composition.
+
+\subsection{State variables and PSUB design}
+\label{sec:cadcad:psub}
+
+\paragraph{Section charge for content fill.}
+Subsection introduces the cadCAD state-variable signature: at each time
+step $t$, the simulation tracks the FX path $X_t$ (sampled from one of
+the three SDE families plus the deterministic baseline), the cost
+trajectory $C_t$ (for the AI-cost-factor model, downstream consumer),
+the replicating-portfolio's $\sigmaT$ accumulation, the wage-funded
+premium contribution rate, and the convex-payoff-to-productive-capital
+ratchet variable. PSUBs:
+(i)~FX-path-advance (SDE-family-dispatched);
+(ii)~$\sigmaT$ accumulator update;
+(iii)~premium-payment-and-position-update;
+(iv)~ratchet-conversion at threshold crossings.
+
+\subsection{The AI-cost-factor model as downstream consumer}
+\label{sec:cadcad:cost-factor}
+
+The AI-cost-factor model specified at
+\textsf{docs/specs/2026-05-16-ai-cost-factor-model-design.md} v0.2.0
+(currently under construction; v0.1.0 rejected by all three reviewers
+with five \textsc{block}s on identification and unitization grounds)
+targets the COP-denominated AI-tooling cost burden borne by
+non-subscribed LATAM developers. The cost-factor's identification stage
+(\S2.1 R5 descriptive risk quantification + \S2.2 R4-Stage-3 vol-clustering
+regression on log-COP-cost-returns) is independent of the
+verification this paper provides; PASS on the cost-factor's
+identification opens an M-design step that consumes the verified
+$\sigmaT$-replicating mechanism.
+
+The coupling in the cadCAD simulation is asymmetric:
+\begin{enumerate}
+    \item The FX-path PSUB (one of the four SDE families) produces $X_t$.
+    \item The cost-trajectory PSUB consumes $X_t$ and emits $C_t$ as a
+        function of (token usage demand, API rate-card, $X_t$).
+    \item The $\sigmaT$ accumulator (PRIMITIVES.md \S6 eq.~(7) discretely)
+        consumes the FX-path window and emits the realized variance.
+    \item The replicating-portfolio PSUB (Carr--Madan 12-leg IronCondor
+        instantiation) consumes $\sigmaT$ and the inversion
+        $\epsT$ to construct the hedge position.
+    \item The wage-funded premium PSUB drains a fixed share of the
+        cohort's wage income each step, recapitalizing the position.
+    \item The ratchet variable accumulates the convex payoff and crosses
+        the productive-capital-equivalence threshold per the cohort's
+        denomination.
+\end{enumerate}
+
+This paper does not implement the cadCAD wrapping; the implementation
+work is the immediate next deliverable, specified to follow doc-first
+sequencing from this paper's framework. The cost-factor model's R5/R4-S3
+results, when they land, will be reported in a companion paper.
+
+\subsection{What the cadCAD wrapping does NOT do}
+\label{sec:cadcad:nondoes}
+
+\paragraph{Section charge for content fill.}
+Subsection lists the explicit exclusions: cadCAD wrapping does NOT
+re-validate the $\sigmaT$ machinery (that's this paper's job); does NOT
+estimate the cost-factor model's identification parameters (that's the
+cost-factor spec's job); does NOT cross the wage-to-capital boundary
+empirically (the ratchet variable's threshold crossings are simulated
+under the cohort's assumed denomination, not empirically observed).
+
+% =========================================================================
+\section{Results: canonical-pin verification per family}
+\label{sec:results}
+% =========================================================================
+
+\paragraph{Section charge for content fill.}
+Section reports the canonical-pin verification verdict per family,
+sourced from \textsf{notes/STOCHASTIC\_FX\_RESULTS.md} (the
+authoritative Stage-3 open-item 2 closure document). Cross-family
+summary table; per-family $(\sigma, \theta, \lambda, \sigma_J)$ parameter
+pins; per-family $(\text{Phase A residual}, \text{Phase B mean rel-err}, \text{Phase B var rel-err (audit-trail)}, \text{Phase C KS p-value}, \text{audit\_block})$
+tuples. Inline cross-check via \textsf{scratch/2026-05-11-stochastic-fx-execution/driver.py}
+re-runnable from a fresh checkout (\PinZ{2} cross-process determinism).
+Per-family interpretation paragraphs: GBM (lognormal $\sigmaT$ shape
+absorbs both first and second moments); OU (Gaussian quadratic form
+yields exact $\E[\sigmaT] = \sigma^{2}/(2\theta)$ at $x_0 = \bar\mu$;
+gamma reference fits cleanly); Merton (mixture geometry requires the
+empirical-CDF Phase C dispatch per spec v0.5 \S11.7).
+
+% =========================================================================
+\section{Discussion: what the verification floor unlocks}
+\label{sec:discussion}
+% =========================================================================
+
+\paragraph{Section charge for content fill.}
+Section synthesizes the four model-instantiation results into a single
+statement of what the verification floor unlocks for downstream
+\(\Ymx\)-triple iterations. Three honest limitations: (i)~mean-only
+Phase B at $N = 1000$ has a 0\%--30\% Type-I rate per family
+(spec v0.5 \S11.6 disclosure); (ii)~the Merton Phase C reference at
+hardware-constrained $N_{\textsc{ref}} = 5000$ matches the production
+$N_{\textsc{ref}} = 100\,000$ in the same KS p-value ballpark per the
+Wave-2 robustness probe (KS p $\approx 0.12$--$0.14$), but production
+hardware $\geq 8$ GB free is the binding constraint for the canonical
+reference; (iii)~the deterministic eq.~(6) generator produces synchronized
+paths whose ergodic content is artificial, motivating the stochastic
+extension this paper closes. Forward statement: AI-cost-factor model
+(downstream consumer) inherits this floor; cadCAD wrapping is the next
+deliverable; an instrument-deployment study under live Panoptic
+liquidity is gated on M-design step success in a future \(\Ymx\)-iteration
+not yet specified.
+
+% =========================================================================
+\appendix
+% =========================================================================
+
+\section{Per-family analytic-moment derivations}
+\label{app:moments}
+
+\paragraph{Appendix charge for content fill.}
+Per-family derivation of $\E[\sigmaT]$ for the DISCRETE statistic
+\eqref{eq:sigmaT} via the projection identity
+$\E[\sigmaT \cdot T] = \mathrm{tr}(\centerProj\,\Sigma) + \mu^{\top}\centerProj\,\mu$.
+Sub-appendices A.1 GBM, A.2 OU, A.3 Merton. Each cites the textbook
+auto-covariance kernel + transcribes the centering-projection
+computation. The scratch derivation script
+\textsf{scratch/2026-05-13-task-4.2-discrete-moments/derivation.py} is
+the load-bearing artefact.
+
+\section{Anti-fishing audit trail across spec amendments}
+\label{app:antifishing}
+
+\paragraph{Appendix charge for content fill.}
+Appendix walks the four spec amendments (\S11.6, \S11.7 of the parent
+spec; \S16.3, \S16.4, \S16.5, \S16.7 of the plan) and confirms each
+preserves the three concrete anti-fishing prohibitions (no silent
+threshold relaxation, no seed re-roll, no $N$-floor lowering). Each
+amendment's Wave-1 RC + MQ Delphi-independent re-review verdict files
+are cited; Wave-2 RC + MQ at plan-exit are cited.
+
+\section{cadCAD-implementation spec (forward-looking)}
+\label{app:cadcad-spec}
+
+\paragraph{Appendix charge for content fill.}
+Appendix sketches the cadCAD implementation spec that this paper
+nominates for the immediate next deliverable: directory structure
+(\textsf{simulations/cadcad/}), state-variable declarations, PSUB
+implementations per the six PSUB roles itemized in
+\S\ref{sec:cadcad:psub}, integration tests crossing the four FX
+families and the AI-cost-factor cost trajectory, anti-fishing
+invariants carried forward.
+
+% =========================================================================
+% References
+% =========================================================================
+\bibliographystyle{plain}
+% TODO: produce notes/papers-bib/stochastic-fx-paper.bib with Hull,
+%       Karatzas-Shreve, Andersen-Piterbarg, Carr-Madan, Merton (1976),
+%       Vasicek (1977), Itô, cadCAD whitepaper, Panoptic whitepaper,
+%       post-Keynesian distribution literature.
+\begin{thebibliography}{10}
+\bibitem{hull-2017}
+    Hull, John C. (2017). \emph{Options, Futures, and Other Derivatives},
+    10th ed. Pearson. \S15.
+
+\bibitem{karatzas-shreve-1991}
+    Karatzas, Ioannis \& Steven E. Shreve (1991).
+    \emph{Brownian Motion and Stochastic Calculus},
+    2nd ed. Springer. \S5.6 (Ornstein--Uhlenbeck process).
+
+\bibitem{andersen-piterbarg-2010}
+    Andersen, Leif B. G. \& Vladimir V. Piterbarg (2010).
+    \emph{Interest Rate Modeling, Volume I: Foundations and Vanilla Models}.
+    Atlantic Financial Press. \S2.7 (jump-diffusion moments).
+
+\bibitem{carr-madan-2001}
+    Carr, Peter \& Dilip Madan (2001).
+    Optimal Positioning in Derivative Securities.
+    \emph{Quantitative Finance} 1(1), 19--37.
+
+\bibitem{merton-1976}
+    Merton, Robert C. (1976).
+    Option Pricing When Underlying Stock Returns Are Discontinuous.
+    \emph{Journal of Financial Economics} 3, 125--144.
+
+\bibitem{vasicek-1977}
+    Vasicek, Oldrich (1977).
+    An Equilibrium Characterization of the Term Structure.
+    \emph{Journal of Financial Economics} 5(2), 177--188.
+
+\bibitem{cadcad}
+    cadCAD: complex Adaptive Dynamics Computer-Aided Design.
+    \url{https://github.com/cadCAD-org/cadCAD}.
+
+\bibitem{panoptic-2023}
+    Panoptic: Perpetual Options on Uniswap.
+    Technical whitepaper. 2023.
+
+\bibitem{abrigo-stochastic-fx-spec}
+    Abrigo Analytics (2026). Stochastic-FX variant design spec, v0.5.
+    \texttt{docs/specs/2026-05-11-stochastic-fx-variant-design.md},
+    in \texttt{abrigo-analytics} repository.
+
+\bibitem{abrigo-stochastic-fx-plan}
+    Abrigo Analytics (2026). Stochastic-FX variant implementation plan, v0.6.
+    \texttt{docs/plans/2026-05-11-stochastic-fx-variant.md},
+    in \texttt{abrigo-analytics} repository.
+
+\bibitem{abrigo-ai-cost-factor}
+    Abrigo Analytics (2026). AI-Cost Factor Model design spec, v0.2.0
+    (under construction).
+    \texttt{docs/specs/2026-05-16-ai-cost-factor-model-design.md},
+    in \texttt{abrigo-analytics} repository.
+
+\end{thebibliography}
+
+\end{document}
