@@ -154,7 +154,7 @@ psub_1 = {
 
 Two policies and two variables share a dict namespace; ordering and composition semantics are implicit.
 
-**Functional replacement.** Each PSUB is a single named free function that internally calls its constituent policies (also free functions) and applies them via `dataclasses.replace`. No dict registry. Composition order is explicit in the function body:
+**Functional replacement.** Each PSUB is a single named free function that internally calls its constituent policies (also free functions) and constructs the post-PSUB `State` either via `dataclasses.replace(state, ...)` or via the `State(...)` constructor directly (both are equivalent — the constructor re-validates `__post_init__` invariants from scratch, which is the stronger of the two; v0.1 Phase 1 driver uses the constructor pattern per Wave-1 MQ-F1 disposition). No dict registry. Composition order is explicit in the function body:
 
 ```python
 def psub_1_fx_advance(
@@ -248,7 +248,7 @@ def run_simulation(config: Config) -> Trajectory:
 
 ## §3 Per-PSUB docstring template (`contract-docstrings` skill)
 
-Every PSUB function in `simulations/cadcad/psubs.py` MUST carry a docstring matching this template:
+Every PSUB function in `simulations/cadcad/psubs.py` MUST cover the eight content elements below — verbatim subsection headings are preferred but narrative-prose coverage is also acceptable provided every element is locatable (Wave-1 RC-F2 disposition softened the v0.1 "must match this template" to "must cover the content elements in some form"):
 
 ```python
 def psub_<N>_<role>(
@@ -310,11 +310,15 @@ Three-tier discipline per `CLAUDE.md` §`simulations/ discipline` and the preced
 
 **Allowed cross-package import**: `simulations.cadcad.*` may import `simulations.stochastic_fx.*` at module top (lazy imports inside function bodies are also fine for forward references).
 
+**Runtime-vs-code-level tier purity (Wave-1 RC-F3 disposition).** Tier purity is enforced **at the source-text level** (the imports declared at module top in each `.py` file), NOT at the `sys.modules` level after package import. The package `__init__.py` eagerly re-exports symbols from `types`, `psubs`, and `driver`, so a user who does `import simulations.cadcad` (or even `import simulations.cadcad.types`) will see all three submodules loaded in `sys.modules`. This is benign: each submodule's own AST imports remain tier-pure. Reviewers probing tier purity should run the AST-based check against each `.py` file in isolation rather than scanning `sys.modules` after a package import.
+
 ---
 
 ## §5 Determinism + audit_block recipe
 
-Per Pin Z1.2 (paper §1.4 + spec v0.5 §5), every simulation run produces a deterministic audit_block. The recipe for `simulations/cadcad/` mirrors the `simulations/stochastic_fx/` convention:
+Per Pin Z1.2 (paper §1.4 + spec v0.5 §5), every simulation run produces a deterministic audit_block. Two recipe variants are admissible; either preserves Pin Z1.2 strong-form determinism. The v0.1 implementer chose Variant B per Wave-1 RC-F1 disposition.
+
+### Variant A — explicit-LE-seed (mirrors `simulations/stochastic_fx/generators.py` convention)
 
 ```python
 def _compute_audit_block(
@@ -324,24 +328,38 @@ def _compute_audit_block(
     S_path: NDArray[np.float64],
     # ... all other path arrays in fixed order ...
 ) -> str:
-    """Deterministic SHA-256 audit_block (Pin Z1.2).
-
-    Inputs hashed in fixed order:
-    1. canonical_config_json.encode("utf-8")
-    2. rng_seed.to_bytes(8, "little")
-    3. X_path.tobytes()
-    4. S_path.tobytes()
-    5. ... (each path array in alphabetical or declaration order)
-    """
+    """Deterministic SHA-256 audit_block (Pin Z1.2)."""
     hasher = hashlib.sha256()
     hasher.update(canonical_config_json.encode("utf-8"))
-    hasher.update(rng_seed.to_bytes(8, "little"))
+    hasher.update(rng_seed.to_bytes(8, "little"))   # explicit LE-byte seed step
     for path_array in (X_path, S_path, C_path, P_path, W_path, R_path):
         hasher.update(path_array.tobytes())
     return hasher.hexdigest()
 ```
 
-Validation: at the end of `run_simulation`, the orchestrator runs the recipe AND a re-run cross-check (same config + same rng_seed produces bit-exact identical audit_block). This is the Pin Z1.2 strong-form test (cross-process determinism — see Wave-2 RC R5).
+### Variant B — seed-inside-canonical-JSON (cadCAD convention, v0.1 driver implementation)
+
+```python
+def _compute_audit_block(
+    canonical_config_json: str,  # rng_seed is already a field inside this JSON
+    X_path: NDArray[np.float64],
+    S_path: NDArray[np.float64],
+    # ... all other path arrays in fixed order ...
+) -> str:
+    """Deterministic SHA-256 audit_block (Pin Z1.2)."""
+    hasher = hashlib.sha256()
+    hasher.update(canonical_config_json.encode("utf-8"))
+    # rng_seed is part of canonical_config_json via json.dumps(asdict(config), sort_keys=True)
+    for path_array in (X_path, S_path, C_path, P_path, W_path, R_path):
+        hasher.update(path_array.tobytes())
+    return hasher.hexdigest()
+```
+
+**Why Variant B is acceptable for cadCAD.** The `Config` frozen-dc carries the seed as a field; `json.dumps(asdict(config), sort_keys=True)` produces a stable byte serialization that includes the seed in a deterministic position. Hashing the seed a second time as 8-byte LE adds no information; omitting it preserves Pin Z1.2 strong-form determinism while reducing recipe duplication.
+
+**Variant A is preserved** for backward-compatibility with `simulations/stochastic_fx/generators.py` where `canonical_params_json` historically did NOT include the seed (the seed was a sibling argument to the hashing function, not a field on the Parameters dataclass).
+
+Validation: at the end of `run_simulation`, the orchestrator runs the recipe AND a re-run cross-check (same config + same rng_seed produces bit-exact identical audit_block). This is the Pin Z1.2 strong-form test (cross-process determinism — see Wave-2 RC R5 + Phase 1 RC-R2 / MQ-MQ4).
 
 ---
 

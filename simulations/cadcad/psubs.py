@@ -225,58 +225,43 @@ def psub_1_fx_advance(state: CadCADState, fx_path: np.ndarray) -> float:
 
 
 def psub_2_sigma_t_accumulator(state: CadCADState, fx_path: np.ndarray) -> float:
-    """PSUB-2 — σ_T-accumulator update (paper §6.2 PSUB-2, eq. 7).
+    """PSUB-2 helper — GRID-NORMALIZED sum-of-squared-deviations (NOT eq.(7)).
 
-    Computes the discrete realised-variance proxy
+    This is a building-block primitive that returns the running
+    sum-of-squared-deviations divided by ``(state.step + 1)`` GRID UNITS,
+    NOT by the realised horizon ``T_{j+1} = (state.step + 1) * dt``.
 
-        S_{j+1} = (1 / T_{j+1}) * sum_{k=0..j+1} (X_k − mean(X[:j+2]))**2
+        return = sum_{k=0..j+1} (X_k − mean(X[:j+2]))**2 / (state.step + 1)
 
-    where ``T_{j+1} = (state.step + 1) * dt`` is the realised horizon at
-    step ``j + 1``. This is the ON-PATH analog of the per-path σ_T form
-    used in ``simulations.stochastic_fx.generators`` (where σ_T is summed
-    over the FULL path and normalised by the FULL horizon ``T``). The
-    PSUB form is the running accumulator — at the final step
-    ``j + 1 == n_steps`` the value coincides with the per-path σ_T of the
-    underlying generator (modulo float arithmetic).
+    To obtain the eq.(7) σ_T proxy (paper Definition 1.1, normalised by
+    ``T_{j+1}``), use :func:`psub_2_sigma_t_accumulator_with_dt` instead.
+    The driver uses ``_with_dt`` exclusively; this dt-free variant is
+    retained as a unit-test anchor against the deviation-sum component
+    of the formula (Wave-1 MQ-F2 disposition: prior docstring misleadingly
+    claimed dt was "recovered indirectly"; in fact dt does not appear in
+    this function at all).
 
     Parameters
     ----------
     state
         The current ``CadCADState`` at step ``j``. Only ``state.step`` is
-        consumed by this PSUB.
+        consumed.
     fx_path
-        The full pre-sampled FX path of shape ``(n_steps + 1,)`` from
-        :func:`pre_sample_fx_path`. The dt is recovered indirectly via
-        the requirement that the σ_T accumulator's normalising horizon
-        equals ``(state.step + 1) * dt``; this PSUB takes ``dt`` from the
-        path-length-derived horizon — see :func:`run_simulation` for how
-        the driver wires this together.
+        The full pre-sampled FX path of shape ``(n_steps + 1,)``.
 
     Returns
     -------
     float
-        ``S_{j+1}`` per the running σ_T formula above. NOTE: the formula
-        is normalised by the realised horizon ``T_{j+1}`` (NOT by the
-        number of samples) to match the stochastic-fx σ_T convention
-        (Pin MQ-FLAG-B1.1 disposition). Step 0 (``state.step == 0``)
-        produces ``S_1`` from the first two path entries.
+        Sum-of-squared-deviations from the path-mean over the window
+        ``fx_path[: state.step + 2]``, divided by ``(state.step + 1)``.
+        This is NOT σ_T in the eq.(7) sense — see ``_with_dt`` variant.
     """
     # Slice path[0..j+1] inclusive — the running window at step j+1.
     window = fx_path[: state.step + 2]
     mean = window.mean()
     sum_sq_dev = float(np.sum((window - mean) ** 2))
-    # Realised horizon T_{j+1} normalises by (state.step + 1) GRID UNITS
-    # of width dt. The driver passes dt implicitly via the path's
-    # grid-consistency invariant — recover dt from state via the running
-    # horizon below.
-    realised_horizon_units = float(state.step + 1)
-    # NOTE: this returns the SUM-OF-SQUARED-DEVIATIONS normalised by the
-    # number of grid intervals (step + 1). To convert to a dt-scaled
-    # realised variance, callers (e.g. the driver) multiply / divide by
-    # the global dt as appropriate. Phase 1 holds dt-scaling inside
-    # ``psub_2_sigma_t_accumulator_with_dt`` (below) so the dt is
-    # explicit in the call surface.
-    return sum_sq_dev / realised_horizon_units
+    grid_intervals = float(state.step + 1)
+    return sum_sq_dev / grid_intervals
 
 
 def psub_2_sigma_t_accumulator_with_dt(
