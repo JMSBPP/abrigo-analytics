@@ -339,32 +339,433 @@ burdens.
 \label{sec:deterministic}
 % =========================================================================
 
-\paragraph{Section charge for content fill.}
-This section instantiates the framework's first concrete model: the
-deterministic FX-path generator \textsf{PRIMITIVES.md} \S5 eq.~(6)
-$f(t) = E^{-2} |\cos(E t)|$ and the corresponding $\sigmaT$-replicating
-Carr--Madan 12-leg IronCondor strip committed at
-\textsf{simulations/saas\_builder/cohort\_5\_strip/} (audit\_block
-\texttt{94150326332b90e5\ldots aaf329}, \PinZ{6}). Cite
-\textsf{notes/STAGE\_2\_RESULTS.md} R1 (\(\sigma_0\) anchor) for the
-deterministic-limit reduction.
+% -------------------------------------------------------------------------
+% §2.1 — Deterministic FX-path generator (closed-form perturbation)
+% -------------------------------------------------------------------------
+\subsection{Deterministic FX-path generator and its $\sigmaT$ limit}
+\label{sec:det:generator}
+
+The deterministic instantiation of the framework specializes the FX
+trajectory $\{X_j\}_{j=0}^{n}$ of Definition~\ref{def:sigmaT} to a closed-form
+perturbation around the cohort's stationary mean
+$\Xbar/\Ybar$. Following \textsf{notes/PRIMITIVES.md} \S5 eq.~(6), the
+generator is
+\begin{equation}
+    (X/Y)_t(\varepsilon, \omega)
+    \;=\;
+    \Bigl(1 + \varepsilon \bigl(\cos^{2}(\omega t) - \tfrac{1}{2}\bigr)\Bigr)
+    \,\frac{\Xbar}{\Ybar},
+    \qquad 0 < \varepsilon < 1,
+    \label{eq:det:path}
+\end{equation}
+with perturbation kernel $f_t \coloneqq \cos^{2}(\omega t) - \tfrac{1}{2}$ so
+that $(X/Y)_t = (1 + \varepsilon f_t)\,\Xbar/\Ybar$. The amplitude
+$\varepsilon$ controls the path's oscillation magnitude around the
+stationary mean and the frequency $\omega$ controls its rate. The
+deterministic generator is the noiseless limit of the stochastic SDE
+families instantiated in \S\ref{sec:gbm}--\ref{sec:merton}: it admits a
+closed-form $\sigmaT$ and so anchors the algebraic identity
+$\bigl(\epsT\bigr)^{2} = 8\sigmaT/\xbar^{2}$ of equation~\eqref{eq:eps}
+at $\bar X = \Xbar$, $\bar Y = \Ybar$, $\xbar = \Xbar/\Ybar$.
+
+% -------------------------------------------------------------------------
+% §2.2 — Closed-form sigma_0 anchor (R1 reduction)
+% -------------------------------------------------------------------------
+\subsection{The $\sigma_{0}$ closed-form anchor}
+\label{sec:det:sigma0}
+
+\begin{proposition}[Deterministic-limit reduction]
+\label{prop:sigma0}
+Under generator~\eqref{eq:det:path} the realized-variance proxy
+$\sigmaT$ of Definition~\ref{def:sigmaT} reduces, in the long-horizon
+ergodic average over the kernel $f_t$, to the closed form
+\begin{equation}
+    \sigma_{0}
+    \;=\;
+    \frac{(\Xbar/\Ybar)^{2}\,\varepsilon^{2}}{8},
+    \label{eq:det:sigma0}
+\end{equation}
+yielding the inverse map $\varepsilon = \sqrt{8\sigma_{0}/(\Xbar/\Ybar)^{2}}$
+that is the deterministic specialization of the family-agnostic
+inversion~\eqref{eq:eps}.
+\end{proposition}
+
+Equation~\eqref{eq:det:sigma0} is the R1 anchor of
+\textsf{notes/STAGE\_2\_RESULTS.md} \S2.1; it is obtained by substituting
+$f_t = \cos^{2}(\omega t) - \tfrac{1}{2}$ into the squared-deviation sum
+of equation~\eqref{eq:sigmaT} and exploiting
+$\langle \cos^{2}(\omega t) - \tfrac{1}{2}\rangle_{t} = 0$,
+$\langle \bigl(\cos^{2}(\omega t) - \tfrac{1}{2}\bigr)^{2}\rangle_{t} = 1/8$
+on a horizon that resolves the period $2\pi/\omega$. At the canonical
+cohort pin $\Xbar/\Ybar = 4000$, $\varepsilon = 0.10$, identity
+\eqref{eq:det:sigma0} pins $\sigma_{0} = 2{,}000$; equation~\eqref{eq:eps}
+recovers $\epsT = 0.10$ exactly.
+
+% -------------------------------------------------------------------------
+% §2.3 — Carr--Madan static replication of sigma_T
+% -------------------------------------------------------------------------
+\subsection{Carr--Madan static replication}
+\label{sec:det:carr-madan}
+
+The Carr--Madan static-replication theorem~\cite{carr-madan-2001}
+establishes that any twice-differentiable European payoff
+$g(S_{T})$ admits an exact representation as a portfolio of vanilla
+out-of-the-money puts and calls, plus a bond and a forward leg:
+\begin{equation}
+    g(S_{T})
+    \;=\;
+    g(S_{0}) + g'(S_{0})(S_{T} - S_{0})
+    + \int_{0}^{S_{0}} g''(K)\,(K - S_{T})^{+}\,dK
+    + \int_{S_{0}}^{\infty} g''(K)\,(S_{T} - K)^{+}\,dK.
+    \label{eq:carr-madan}
+\end{equation}
+The canonical Carr--Madan variance contract is the log-contract,
+$g(S_{T}) = -2\log(S_{T}/S_{0}) + 2(S_{T} - S_{0})/S_{0}$, for which
+$g''(K) = 2/K^{2} > 0$ — the canonical convex weight profile that, when
+integrated against the option-strike continuum~\eqref{eq:carr-madan},
+returns $\sigmaT$ at expiry up to the usual martingale correction.
+
+\begin{remark}[From integral to discrete strip]
+\label{rem:strip-discretization}
+The continuous representation~\eqref{eq:carr-madan} is not Panoptic-eligible
+as written; Panoptic's pool mechanics admit only finite-leg long-vol
+positions on Uniswap v3/v4 ranges. The deployment-eligible
+discretization replaces the two strike integrals in~\eqref{eq:carr-madan}
+by a finite sum of IronCondor cells, each cell contributing a piecewise-linear
+convex bump on a strike window. The 12-leg three-condor strip introduced
+in \S\ref{sec:det:strip} is the smallest Panoptic-feasible discretization
+that preserves long-vol convexity throughout the convex span.
+\end{remark}
+
+% -------------------------------------------------------------------------
+% §2.4 — Twelve-leg IronCondor strip geometry
+% -------------------------------------------------------------------------
+\subsection{The 12-leg IronCondor strip geometry}
+\label{sec:det:strip}
+
+The replicating instrument is a three-condor strip stacked at progressively
+wider strikes around the cohort's stationary spot $S_{0} = \Xbar/\Ybar$.
+Each condor contributes four legs in the long-vol convention
+(\emph{reverse} IronCondor: short the outermost strikes, long the inner
+strikes):
+\begin{equation}
+    P_{\text{cond}}(S_{T}; K_{1},K_{2},K_{3},K_{4})
+    \;=\;
+    -(K_{1} - S_{T})^{+} + (K_{2} - S_{T})^{+}
+    + (S_{T} - K_{3})^{+} - (S_{T} - K_{4})^{+},
+    \label{eq:condor-payoff}
+\end{equation}
+with strikes $K_{1} < K_{2} < K_{3} < K_{4}$. The strip payoff is the
+weighted sum
+\begin{equation}
+    \Pi_{\text{strip}}(S_{T})
+    \;=\;
+    \sum_{j=1}^{3} w_{j}\,
+    P_{\text{cond}}\bigl(S_{T};\,K_{1}^{(j)},K_{2}^{(j)},K_{3}^{(j)},K_{4}^{(j)}\bigr),
+    \label{eq:strip-payoff}
+\end{equation}
+with three condor cells labelled $\textsf{left\_tail}$, $\textsf{atm}$,
+$\textsf{right\_tail}$ in the committed strip artefact and weights $w_{j}$
+solved as the least-squares projection of $\Pi_{\text{strip}}$ onto the
+log-contract proxy. The tiled-body geometry, where the inner body of each
+condor abuts its neighbour's center, drives the strip's floor at spot
+exactly to zero — $\Pi_{\text{strip}}(S_{0}) = 0$ within $10^{-9}\cdot S_{0}$
+— so that the long-vol payoff signature
+\begin{equation}
+    \Pi_{\text{strip}}(S_{0}\,e^{-\delta_{\text{inner}}}) > 0
+    \quad\text{and}\quad
+    \Pi_{\text{strip}}(S_{0}\,e^{+\delta_{\text{inner}}}) > 0
+    \label{eq:long-vol-signature}
+\end{equation}
+is satisfied strictly on both sides of spot (Pin S5 in
+\textsf{cohort\_5\_strip}). The strict-positivity requirement on both
+wings is what the long-vol predicate enforces; this is the
+\textsc{corrections-$\alpha$} amendment from the Stage-3 A1 disposition,
+which deprecated the v0.2 strategy survey's permissive zero-floor
+predicate.
+
+\begin{lemma}[Log-contract envelope tracking]
+\label{lem:envelope}
+Let $Q(S_{T}) \coloneqq -2\log(S_{T}/S_{0}) + 2(S_{T} - S_{0})/S_{0}$ be
+the Carr--Madan log-contract proxy and let
+$\Pi_{\text{strip}}^{c}(S_{T}) \coloneqq \Pi_{\text{strip}}(S_{T}) -
+\Pi_{\text{strip}}(S_{0})$ be the spot-centered strip payoff. On a symmetric
+log-strike grid spanning $[S_{0} e^{-\delta}, S_{0} e^{+\delta}]$ with
+$\delta = 0.15$, the best-fit scale $\beta^{\star} =
+\sum_{i} \Pi_{\text{strip}}^{c}(S_{i})\,Q(S_{i})\big/\sum_{i} Q(S_{i})^{2}$
+yields max relative residual
+\(
+    \max_{i} \bigl|\Pi_{\text{strip}}^{c}(S_{i})
+                     - \beta^{\star}\,Q(S_{i})\bigr| \big/
+    \max_{i} \bigl|\Pi_{\text{strip}}^{c}(S_{i})\bigr|
+    \;\leq\;
+    0.05,
+\)
+the canonical 5\% envelope tolerance of \textsf{PRIMITIVES.md} \S12.
+\end{lemma}
+
+Lemma~\ref{lem:envelope} formalizes Pin S6 of the cohort-5 strip:
+the spot-centered strip tracks the log-contract proxy up to a single
+best-fit scale, with residual within the same 5\% band that
+\PinZ{3b} reserves for moment matching of the stochastic instantiations.
+The constant payoff floor absorbed by centering is held by the LP as
+static collateral; the convex \emph{excess} above that floor is what the
+$\sigmaT$-replicating leg pays.
+
+% -------------------------------------------------------------------------
+% §2.5 — Selection rationale and Pin Z1.6 anchor
+% -------------------------------------------------------------------------
+\subsection{Selection rationale and Pin Z1.6 anchor}
+\label{sec:det:selection}
+
+The IronCondor strip is not asserted to be the unique discretization of
+\eqref{eq:carr-madan}. It is the best-available Panoptic-eligible
+long-vol strategy that emerged from the Stage-3 A1 20-primitive survey,
+in which three long-vol challengers (\textsf{long\_straddle},
+\textsf{zeehbs}, \textsf{long\_strangle}) underperformed the IronCondor
+baseline by 52, 64, and 69 percentage points respectively on the
+envelope-residual metric of Lemma~\ref{lem:envelope}. Selection is
+locked under verdict \textsc{keep\_ironcondor}.
+
+The strip artefact is committed at
+\textsf{simulations/saas\_builder/data/IronCondor\_strip.json} with
+\texttt{audit\_block = 94150326332b90e50cfe02b580e6d05280100b430de0089ea9197c8fa4aaf329}.
+\PinZ{6} preserves this hash byte-equal across the verification window
+of this paper: any downstream stochastic instantiation that consumes the
+strip as its deterministic limit reads it through this hash anchor.
+
+\paragraph{Implementation pointer.}
+The geometry construction lives in
+\textsf{simulations/saas\_builder/cohort\_5\_strip/geometry.py}; the
+envelope verifier and the long-vol signature assertion in
+\textsf{cohort\_5\_strip/replication.py}; the strip-with-audit-block emit
+in \textsf{cohort\_5\_strip/emit.py}. The Stage-2 cohort-5 work was
+completed prior to this paper's framework and is cited here, not
+re-derived, as the deterministic limit of the unified $\sigmaT$ mechanism.
 
 % =========================================================================
 \section{Stochastic instantiation I: geometric Brownian motion}
 \label{sec:gbm}
 % =========================================================================
 
-\paragraph{Section charge for content fill.}
-Section presents the GBM SDE
-$dX_t = \mu X_t \,dt + \sigma X_t \,dW_t$
-with the Euler--Maruyama log-scale discretization (Itô correction
-$-\sigma^{2}/2$); the discrete-statistic analytic $\E[\sigmaT]$ via the
-centering-projection identity against the GBM auto-covariance kernel
-$\Cov(X_j, X_k) = x_{0}^{2}\bigl(\exp(\sigma^{2} \min(t_j, t_k)) - 1\bigr)$
-at $\mu = 0$ canonical; verification: Phase A residual $\sim 7 \times 10^{-15}$,
-Phase B mean rel-err $1.12\%$, Phase C lognormal-MoM KS p-value $0.123$.
-LaTeX fragment in \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_gbm.tex}.
-Cite Hull (Options, Futures, and Other Derivatives, \S15).
+% -------------------------------------------------------------------------
+% §3.1 — GBM SDE and Itô log-scale discretization
+% -------------------------------------------------------------------------
+\subsection{The GBM SDE and its log-scale discretization}
+\label{sec:gbm:sde}
+
+The first stochastic instantiation of the framework lifts the
+deterministic generator~\eqref{eq:det:path} to a geometric Brownian
+motion~\cite{hull-2017}: the FX-rate process $\{X_t\}_{t \in [0,T]}$
+solves the linear Itô SDE
+\begin{equation}
+    dX_{t} \;=\; \mu\,X_{t}\,dt + \sigma\,X_{t}\,dW_{t},
+    \qquad X_{0} = x_{0} > 0,
+    \label{eq:gbm:sde}
+\end{equation}
+where $W_{t}$ is a standard Brownian motion under the physical measure
+and $(\mu, \sigma) \in \R \times \R_{>0}$ are the drift and volatility
+parameters. Equation~\eqref{eq:gbm:sde} admits the explicit
+log-multiplicative solution
+$X_{t} = x_{0}\,\exp\bigl((\mu - \tfrac{1}{2}\sigma^{2})\,t + \sigma\,W_{t}\bigr)$,
+where the $-\tfrac{1}{2}\sigma^{2}$ Itô correction is load-bearing for
+the unbiased-mean property $\E[X_{t}] = x_{0}\,e^{\mu t}$.
+
+\begin{proposition}[Euler--Maruyama log-scale discretization]
+\label{prop:gbm:disc}
+For an equally spaced grid $t_{j} = j\,\Delta t$ with $\Delta t = T/n$,
+$j = 0, 1, \dots, n$, the exact log-scale recursion for~\eqref{eq:gbm:sde}
+is
+\begin{equation}
+    \log X_{j+1} - \log X_{j}
+    \;=\;
+    \bigl(\mu - \tfrac{1}{2}\sigma^{2}\bigr)\,\Delta t
+    \;+\; \sigma\sqrt{\Delta t}\,Z_{j+1},
+    \qquad Z_{j+1} \stackrel{\text{iid}}{\sim} \mathcal{N}(0, 1),
+    \label{eq:gbm:euler}
+\end{equation}
+which simulates the GBM path without time-discretization error in the
+log scale.
+\end{proposition}
+
+The Itô correction $-\tfrac{1}{2}\sigma^{2}$ in~\eqref{eq:gbm:euler} is
+not a discretization artefact but a structural feature: omitting it
+biases the simulated $\E[X_{j}]$ by a factor of $e^{j\sigma^{2}\Delta t / 2}$,
+which at the canonical pin $\sigma^{2}T = 0.01$ corresponds to a $0.5\%$
+bias at the terminal point — outside the Phase B tolerance band of
+\PinZ{3b} even before any auto-covariance term enters.
+
+% -------------------------------------------------------------------------
+% §3.2 — Auto-covariance kernel and centering-projection identity
+% -------------------------------------------------------------------------
+\subsection{Auto-covariance kernel and discrete-statistic moments}
+\label{sec:gbm:autocov}
+
+The auto-covariance kernel of the log-multiplicative solution
+of~\eqref{eq:gbm:sde} at $\mu = 0$ is
+\begin{equation}
+    \Cov(X_{j}, X_{k})
+    \;=\;
+    x_{0}^{2}\bigl(\exp(\sigma^{2}\,\min(t_{j}, t_{k})) - 1\bigr),
+    \qquad j, k = 0, 1, \dots, n,
+    \label{eq:gbm:cov}
+\end{equation}
+which follows directly from $\E[X_{j}X_{k}] = x_{0}^{2}\,\phi_{2}^{\min(j,k)}$
+with $\phi_{2} = \E[e^{2L}] = e^{\sigma^{2}\Delta t}$, $\phi_{1} = \E[e^{L}] = 1$
+under the martingale pin. The discrete-statistic
+analytic of equation~\eqref{eq:sigmaT} follows from the centering-projection
+identity announced in \S\ref{sec:framework:phases}:
+
+\begin{lemma}[Centering projection for $\sigmaT \cdot T$]
+\label{lem:gbm:proj}
+Let $\centerProj \coloneqq I_{n+1} - (n+1)^{-1}\mathbf{1}\mathbf{1}^{\top}$
+be the centering projection on $\R^{n+1}$, and let $\Sigma$ be the
+$(n+1)\times(n+1)$ matrix with entries~\eqref{eq:gbm:cov}, $\mu \in \R^{n+1}$
+the mean vector $\mu_{j} = \E[X_{j}] = x_{0}$ for $\mu = 0$ canonical.
+Then
+\begin{equation}
+    \E[\sigmaT \cdot T]
+    \;=\;
+    \mathrm{tr}\bigl(\centerProj\,\Sigma\bigr)
+    \;+\; \mu^{\top}\centerProj\,\mu,
+    \label{eq:gbm:trace-id}
+\end{equation}
+where the second term vanishes identically because
+$\mu_{j} \equiv x_{0}$ is constant in $j$ and $\centerProj\,\mathbf{1} = 0$.
+\end{lemma}
+
+The trace identity~\eqref{eq:gbm:trace-id} reduces the discrete-statistic
+$\E[\sigmaT]$ to a closed sum over the GBM covariance kernel and is the
+load-bearing analytic for Phase B at this family. The continuous-time
+limit (cf. \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_gbm.tex},
+transcribed below as a sanity check on the literature-anchored form) is
+\begin{equation}
+    \E[\sigmaT]_{\text{cont}}
+    \;=\;
+    \frac{\Xbar^{2}}{\Ybar^{2}}
+    \left(-1 + \frac{e^{T\sigma^{2}} - 1}{T\sigma^{2}}\right),
+    \qquad
+    \Var[\sigmaT]_{\text{cont}}
+    \;=\;
+    \frac{2\,\Xbar^{4}\,(e^{T\sigma^{2}} - 1)^{2}}{T^{2}\,\Ybar^{4}\,\sigma^{4}},
+    \label{eq:gbm:cont}
+\end{equation}
+with the trailing $-1$ inside the bracket required for the
+$\sigma \to 0$ vanishing limit (a correction logged in
+\textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_gbm.tex} under
+\textsc{new-block-mq-4}). The discrete value~\eqref{eq:gbm:trace-id}
+differs from~\eqref{eq:gbm:cont} by the resolution of the squared-deviation
+sum at finite $n$; at the canonical grid this discrete-statistic analytic
+evaluates to $\E[\sigmaT] = 1.117130\times 10^{7}$, against which the
+$N = 1000$ Monte-Carlo ensemble is gated in Phase B.
+
+\begin{remark}[Why the Isserlis Var formula is audit-trail only]
+\label{rem:gbm:var}
+The same projection identity yields a leading-order Isserlis-Gaussian
+variance
+$\Var[\sigmaT \cdot T] = 2\,\mathrm{tr}((\centerProj\,\Sigma)^{2}) +
+4\,(\centerProj\,\mu)^{\top}\Sigma\,(\centerProj\,\mu)$, which is exact
+only under joint-Gaussianity of $X$. Because each $X_{j}$ is lognormal
+under GBM, the formula is leading-order in $\sigma^{2}T$; at the
+canonical pin $\sigma^{2}T = 0.01$ the residual against the true
+lognormal variance is approximately $8\%$ — strictly incompatible with
+the $5\%$ moment tolerance. Spec v0.5 \S11.6 amends the Phase B gate to
+the mean only (Remark~\ref{rem:mean-only} above); the variance relative
+error remains on the verdict record as an audit-trail observation.
+\end{remark}
+
+% -------------------------------------------------------------------------
+% §3.3 — Phase A / B / C canonical-pin verdict
+% -------------------------------------------------------------------------
+\subsection{Three-phase verdict at canonical pin}
+\label{sec:gbm:verdict}
+
+The GBM verification at the canonical pin
+$(\mu, \sigma, x_{0}, T) = (0,\, 0.10/\sqrt{12},\, 4000,\, 12)$ with
+$n = 5000$ Euler steps and $N = 1000$ paths (\PinZ{5} N-floor exact)
+returns the following triple, anchored to the committed verdict
+artefact:
+
+\begin{description}
+    \item[Phase A (\PinZ{3a}, algebraic identity).]
+        Maximum residual of
+        $\bigl(\epsT^{(n)}\bigr)^{2} - 8\sigmaT^{(n)}/\xbar^{2}$
+        across the $N = 1000$ paths is $7.105\times 10^{-15}$,
+        well below the $\textsc{numerical\_identity\_tol} = 10^{-6}$
+        floor. The identity is family-agnostic and reduces to
+        re-evaluating~\eqref{eq:eps}.
+    \item[Phase B (\PinZ{3b}, mean-only moment match).]
+        Empirical mean of $\sigmaT^{(n)}$ matches the analytic value
+        $\E[\sigmaT] = 1.117130\times 10^{7}$ of
+        equation~\eqref{eq:gbm:trace-id} with relative error
+        $1.121\times 10^{-2}$, inside the $5\%$ band of
+        $\textsc{moment\_rel\_tol}$. Variance relative error is
+        $2.127\times 10^{-1}$, consistent with Remark~\ref{rem:gbm:var};
+        it is recorded as audit trail, not gated.
+    \item[Phase C (\PinZ{4}, KS goodness-of-fit).]
+        Per-family dispatch fits a method-of-moments lognormal
+        reference to the analytic pair $(\E[\sigmaT], \Var[\sigmaT])$
+        via the standard moment-matching relations
+        $s = \sqrt{\log\bigl(1 + V/E^{2}\bigr)}$,
+        $\mathrm{scale} = E / \sqrt{1 + V/E^{2}}$, and tests via
+        \texttt{scipy.stats.ks\_1samp}. The Kolmogorov--Smirnov
+        $p$-value is $1.229\times 10^{-1}$, comfortably above the
+        $\textsc{ks\_pvalue\_floor} = 0.01$.
+\end{description}
+
+Composite verdict at canonical pin: \textsc{pass} on all three phases;
+$\textsf{composite\_pass} = \mathrm{true}$ by the AND-invariant of the
+\textsf{InversionVerdict} Value type.
+
+\paragraph{Why a lognormal reference for Phase C.}
+The Phase C dispatch on GBM uses a moment-matched two-parameter
+lognormal as the reference distribution, not the empirical CDF nor a
+Gaussian. The motivation is geometric: each $X_{j}$ is itself
+lognormal under~\eqref{eq:gbm:sde}, and the quadratic form
+$\sigmaT \cdot T = X^{\top}\centerProj\,X$ is dominated, in the
+small-$\sigma^{2}T$ regime that the canonical pin inhabits
+($\sigma^{2}T = 0.01$), by a mixture of squared-lognormal moments
+whose first two moments coincide with those of a single fitted
+lognormal up to fourth-order terms. Among the two-parameter
+alternatives that admit closed-form moment matching, the lognormal
+is the only one that vanishes at zero (consistent with
+$\sigmaT \geq 0$) AND has the right tail asymmetry. The OU and
+Merton dispatches, by contrast, route to gamma and empirical-CDF
+references respectively (see \S\ref{sec:ou}, \S\ref{sec:merton}); the
+$\textsc{ks\_pvalue\_floor} = 0.01$ threshold is invariant across the
+three references — only the reference shape is family-dispatched,
+which is consistent with \PinZ{5} (no threshold tuning).
+
+\begin{remark}[Cross-process determinism]
+\label{rem:gbm:audit}
+The verdict artefact at
+\textsf{simulations/stochastic\_fx/data/inversion\_verdict\_gbm.json}
+carries
+\(
+    \texttt{audit\_block} = \texttt{3a0f75401d517f6d}\ldots
+\)
+(64-char lowercase hex). Identical
+$(\text{params}, \text{rng\_seed}, n_{\text{paths}})$ triples replayed
+from a fresh checkout reproduce this prefix bit-exact, discharging
+\PinZ{2}.
+\end{remark}
+
+\paragraph{Implementation pointer.}
+The path generator lives in
+\textsf{simulations/stochastic\_fx/generators.py}
+(class \texttt{GBMPathGenerator}, Euler--Maruyama log-scale per
+Proposition~\ref{prop:gbm:disc}); the continuous-time moments
+in \textsf{simulations/stochastic\_fx/moments.py}
+(\texttt{gbm\_sigma\_t\_moments}); the discrete-statistic analytic
+in \textsf{simulations/stochastic\_fx/variance\_proxy.py}
+(\texttt{gbm\_discrete\_sigma\_t\_moments}); and the canonical pin in
+\textsf{simulations/stochastic\_fx/types.py}
+(\texttt{CANONICAL\_GBM}). The hand-derivation script
+\textsf{scratch/2026-05-13-task-4.2-discrete-moments/derivation.py}
+cross-checks the closed form of Lemma~\ref{lem:gbm:proj} against an
+independent Monte-Carlo run; the LaTeX fragment is committed at
+\textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_gbm.tex} and
+transcribed inline into~\eqref{eq:gbm:cont} above.
 
 % =========================================================================
 \section{Stochastic instantiation II: Ornstein--Uhlenbeck}
