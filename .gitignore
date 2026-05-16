@@ -58,3 +58,15 @@ simulations/stochastic_fx/data/
 # Private project memories (strategic / not for public repo)
 memory/project_uhi9_hookathon_june_11.md
 
+# LaTeX build artefacts in docs/papers/ (sources committed, build outputs not)
+docs/papers/*.pdf
+docs/papers/*.aux
+docs/papers/*.log
+docs/papers/*.toc
+docs/papers/*.out
+docs/papers/*.synctex.gz
+docs/papers/*.bbl
+docs/papers/*.blg
+docs/papers/*.fls
+docs/papers/*.fdb_latexmk
+

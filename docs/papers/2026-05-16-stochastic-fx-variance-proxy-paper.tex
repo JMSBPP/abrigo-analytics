@@ -22,9 +22,12 @@
 % --- Document hygiene -----------------------------------------------------
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{microtype}
+% NOTE: microtype omitted (requires scalable lmodern not in this system's
+% texlive-latex-recommended install). Body text uses Computer Modern at the
+% default sizes; visual quality is acceptable for working-paper draft.
 \usepackage[margin=1in]{geometry}
 \usepackage{parskip}
+\usepackage{xcolor}                           % needed for blue!50!black mix
 \usepackage{hyperref}
 \hypersetup{
     colorlinks=true,
@@ -281,7 +284,7 @@ The six pins anchoring this paper are:
 \toprule
 \textbf{Pin} & \textbf{Statement} \\
 \midrule
-\PinZ{1} & SDE parameters pre-pinned ex-ante per family (Definition~\ref{def:canonical-pins} below). \\
+\PinZ{1} & SDE parameters pre-pinned ex-ante per family (\S\ref{sec:gbm}, \S\ref{sec:ou}, \S\ref{sec:merton} below). \\
 \PinZ{2} & Path-ensemble determinism: identical
             $(\text{params}, \text{rng\_seed}, n_{\text{paths}})$
             triples yield bit-exact paths and bit-exact audit\_block. \\
