@@ -2178,3 +2178,416 @@ class TestInversionVerifier:
         # value):
         # NB: simulations.stochastic_fx.N_REF_SEED is the production value.
         assert N_REF_SEED == 20260513
+
+
+# ============================================================================
+# Task 5 — Emit IO Boundary tier (parquet + JSON + tex + MD)
+# ============================================================================
+
+
+class TestEmit:
+    """Task 5: IO Boundary tier emitters with round-trip readback verification.
+
+    Plan v0.6 §10 acceptance:
+
+    - PathEnsembleEmitter: parquet + lineage metadata round-trips byte-for-byte
+      on paths; sigma_t reconstructed via recompute_sigma_t matches to 1e-12.
+    - InversionVerdictEmitter: JSON v1.0 schema + tolerance constants;
+      field-by-field equality on read-back.
+    - TexFragmentEmitter: existence-only (Task 2.1 committed the bytes).
+    - StochasticFxResultsEmitter: human-readable markdown with cross-family
+      summary + per-family R-tagged subsections.
+    - simulations/stochastic_fx/data/ is gitignored (Task 0 verification).
+    """
+
+    # ── Constants for verdict construction (small N for speed) ───────────────
+    _MOCK_AUDIT_BLOCK: str = "a" * 64
+    _MOCK_AUDIT_BLOCK_2: str = "b" * 64
+    _MOCK_AUDIT_BLOCK_3: str = "c" * 64
+
+    # ── PathEnsembleEmitter round-trip ───────────────────────────────────────
+
+    @pytest.mark.parametrize(
+        ("params", "gen_cls", "family_id"),
+        [
+            (CANONICAL_GBM, GBMPathGenerator, "gbm"),
+            (CANONICAL_OU, OUPathGenerator, "ou"),
+            (CANONICAL_MERTON, JumpDiffusionPathGenerator, "merton"),
+        ],
+    )
+    def test_path_ensemble_round_trip_at_canonical_pin(
+        self, tmp_path, params, gen_cls, family_id
+    ) -> None:
+        """Generate at canonical pin → emit → read → assert sigma_t / audit_block / params match.
+
+        sigma_t: np.allclose(rtol=1e-12) — the float64 path bytes are
+        parquet-faithful and recompute_sigma_t reapplies eq. (7) deterministically.
+        audit_block: verbatim hex equality (no float tolerance).
+        canonical_params_json: verbatim string equality.
+        """
+        from simulations.stochastic_fx import PathEnsembleEmitter
+
+        ens = gen_cls(params=params)(rng_seed=42, n_paths=100)
+        emitter = PathEnsembleEmitter(emit_dir=tmp_path)
+
+        out_path = emitter.emit(ens)
+        assert out_path.is_file()
+        assert out_path.name == f"path_ensemble_{family_id}.parquet"
+
+        round_tripped = emitter.read(family_id)
+        assert round_tripped.family_id == ens.family_id
+        assert round_tripped.audit_block == ens.audit_block
+        assert round_tripped.canonical_params_json == ens.canonical_params_json
+        assert round_tripped.rng_seed == ens.rng_seed
+        assert np.array_equal(round_tripped.paths, ens.paths)
+        assert np.allclose(
+            round_tripped.sigma_t, ens.sigma_t, rtol=1e-12, atol=0.0
+        )
+
+    @pytest.mark.parametrize(
+        ("params", "gen_cls"),
+        [
+            (CANONICAL_GBM, GBMPathGenerator),
+            (CANONICAL_OU, OUPathGenerator),
+            (CANONICAL_MERTON, JumpDiffusionPathGenerator),
+        ],
+    )
+    def test_path_ensemble_emit_and_verify_passes(
+        self, tmp_path, params, gen_cls
+    ) -> None:
+        """emit_and_verify is the canonical write+read+equality convenience method.
+
+        Returns the on-disk path. Should NOT raise at canonical pins +
+        seed=42 + n_paths=100.
+        """
+        from simulations.stochastic_fx import PathEnsembleEmitter
+
+        ens = gen_cls(params=params)(rng_seed=42, n_paths=100)
+        emitter = PathEnsembleEmitter(emit_dir=tmp_path)
+        out_path = emitter.emit_and_verify(ens)
+        assert out_path.is_file()
+
+    def test_path_ensemble_emit_and_verify_raises_on_audit_block_corruption(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Corrupt the parquet metadata's audit_block; emit_and_verify must HALT.
+
+        Defence-in-depth check: the audit-block round-trip is the canonical
+        anti-drift guard. We corrupt the on-disk metadata by patching the
+        read method to return a tampered ensemble; the equality check
+        downstream must raise RoundTripDriftError.
+        """
+        from simulations.stochastic_fx import (
+            PathEnsembleEmitter,
+            RoundTripDriftError,
+        )
+
+        ens = GBMPathGenerator(params=CANONICAL_GBM)(rng_seed=42, n_paths=100)
+        emitter = PathEnsembleEmitter(emit_dir=tmp_path)
+
+        # Build a tampered PathEnsemble (different audit_block hex) and
+        # monkeypatch the read method to return it. This simulates on-disk
+        # parquet metadata tampering between write and read.
+        tampered = dataclasses.replace(ens, audit_block="0" * 64)
+
+        def _tampered_read(_family_id: str) -> PathEnsemble:
+            return tampered
+
+        monkeypatch.setattr(emitter, "read", _tampered_read)
+        with pytest.raises(RoundTripDriftError, match="audit_block drift"):
+            emitter.emit_and_verify(ens)
+
+    def test_path_ensemble_read_raises_on_missing_metadata(
+        self, tmp_path
+    ) -> None:
+        """If parquet exists but lineage metadata is stripped, read() raises RoundTripDriftError."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        from simulations.stochastic_fx import (
+            PathEnsembleEmitter,
+            RoundTripDriftError,
+        )
+
+        # Write a parquet WITHOUT lineage metadata at the canonical path.
+        target = tmp_path / "path_ensemble_gbm.parquet"
+        table = pa.Table.from_pydict(
+            {
+                "path_index": np.array([0, 0, 1, 1], dtype=np.int64),
+                "step_index": np.array([0, 1, 0, 1], dtype=np.int64),
+                "x_t": np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64),
+            }
+        )
+        pq.write_table(table, target)
+
+        emitter = PathEnsembleEmitter(emit_dir=tmp_path)
+        with pytest.raises(RoundTripDriftError, match="missing metadata"):
+            emitter.read("gbm")
+
+    def test_path_ensemble_read_raises_on_missing_file(self, tmp_path) -> None:
+        """If parquet doesn't exist, read() raises FileNotFoundError."""
+        from simulations.stochastic_fx import PathEnsembleEmitter
+
+        emitter = PathEnsembleEmitter(emit_dir=tmp_path)
+        with pytest.raises(FileNotFoundError, match="missing parquet"):
+            emitter.read("gbm")
+
+    # ── InversionVerdictEmitter round-trip ───────────────────────────────────
+
+    def _build_mock_verdict(
+        self, family_id: str, audit_block: str = "a" * 64
+    ) -> InversionVerdict:
+        """Construct a passing InversionVerdict (no PathEnsemble required)."""
+        return InversionVerdict(
+            family_id=family_id,
+            phase_a_pass=True,
+            phase_a_max_residual=1.23e-10,
+            phase_b_pass=True,
+            phase_b_mean_rel_err=1.1e-2,
+            phase_b_var_rel_err=0.45,  # > MOMENT_REL_TOL OK (audit-trail only)
+            phase_c_pass=True,
+            phase_c_ks_pvalue=0.234,
+            phase_c_n_paths=1000,
+            composite_pass=True,
+            tex_anchor=f"notes/stochastic_fx_tex/sigma_t_moments_{family_id}.tex",
+            audit_block=audit_block,
+        )
+
+    @pytest.mark.parametrize("family_id", ["gbm", "ou", "merton"])
+    def test_inversion_verdict_round_trip(
+        self, tmp_path, family_id
+    ) -> None:
+        """Build verdict → emit → read → field-by-field equality on all 12 fields."""
+        from simulations.stochastic_fx import InversionVerdictEmitter
+
+        v = self._build_mock_verdict(family_id)
+        emitter = InversionVerdictEmitter(emit_dir=tmp_path)
+
+        out_path = emitter.emit(v)
+        assert out_path.is_file()
+        assert out_path.name == f"inversion_verdict_{family_id}.json"
+
+        round_tripped = emitter.read(family_id)
+        assert round_tripped.family_id == v.family_id
+        assert round_tripped.phase_a_pass == v.phase_a_pass
+        assert round_tripped.phase_a_max_residual == v.phase_a_max_residual
+        assert round_tripped.phase_b_pass == v.phase_b_pass
+        assert round_tripped.phase_b_mean_rel_err == v.phase_b_mean_rel_err
+        assert round_tripped.phase_b_var_rel_err == v.phase_b_var_rel_err
+        assert round_tripped.phase_c_pass == v.phase_c_pass
+        assert round_tripped.phase_c_ks_pvalue == v.phase_c_ks_pvalue
+        assert round_tripped.phase_c_n_paths == v.phase_c_n_paths
+        assert round_tripped.composite_pass == v.composite_pass
+        assert round_tripped.tex_anchor == v.tex_anchor
+        assert round_tripped.audit_block == v.audit_block
+
+    def test_inversion_verdict_emit_and_verify_passes(
+        self, tmp_path
+    ) -> None:
+        """emit_and_verify writes + reads + asserts equality without raising."""
+        from simulations.stochastic_fx import InversionVerdictEmitter
+
+        v = self._build_mock_verdict("gbm")
+        emitter = InversionVerdictEmitter(emit_dir=tmp_path)
+        out_path = emitter.emit_and_verify(v)
+        assert out_path.is_file()
+
+    def test_inversion_verdict_emit_and_verify_raises_on_corruption(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Corrupt the on-disk JSON's audit_block; emit_and_verify must HALT."""
+        from simulations.stochastic_fx import (
+            InversionVerdictEmitter,
+            RoundTripDriftError,
+        )
+
+        v = self._build_mock_verdict("gbm")
+        emitter = InversionVerdictEmitter(emit_dir=tmp_path)
+
+        # Patch read() to return a tampered verdict with a different audit_block.
+        tampered = dataclasses.replace(v, audit_block="b" * 64)
+
+        def _tampered_read(_family_id: str) -> InversionVerdict:
+            return tampered
+
+        monkeypatch.setattr(emitter, "read", _tampered_read)
+        with pytest.raises(RoundTripDriftError, match="audit_block drift"):
+            emitter.emit_and_verify(v)
+
+    def test_inversion_verdict_schema_includes_tolerance_constants(
+        self, tmp_path
+    ) -> None:
+        """JSON sidecar carries the three tolerance constants per FLAG-RC-3.
+
+        Single source of truth: phase_a_tolerance = NUMERICAL_IDENTITY_TOL,
+        phase_b_tolerance = MOMENT_REL_TOL, phase_c_tolerance = KS_PVALUE_FLOOR,
+        schema_version = "v1.0".
+        """
+        import json
+
+        from simulations.stochastic_fx import InversionVerdictEmitter
+
+        v = self._build_mock_verdict("gbm")
+        emitter = InversionVerdictEmitter(emit_dir=tmp_path)
+        out_path = emitter.emit(v)
+        on_disk = json.loads(out_path.read_text(encoding="utf-8"))
+
+        assert on_disk["phase_a_tolerance"] == NUMERICAL_IDENTITY_TOL
+        assert on_disk["phase_b_tolerance"] == MOMENT_REL_TOL
+        assert on_disk["phase_c_tolerance"] == KS_PVALUE_FLOOR
+        assert on_disk["schema_version"] == "v1.0"
+        # emitted_at_utc must be present and a non-empty ISO-format string.
+        assert isinstance(on_disk["emitted_at_utc"], str)
+        assert len(on_disk["emitted_at_utc"]) > 0
+
+    def test_inversion_verdict_read_rejects_wrong_schema_version(
+        self, tmp_path
+    ) -> None:
+        """schema_version != "v1.0" raises RoundTripDriftError (no backwards-compat shim)."""
+        import json
+
+        from simulations.stochastic_fx import (
+            InversionVerdictEmitter,
+            RoundTripDriftError,
+        )
+
+        # Write a JSON with a fictitious schema_version.
+        target = tmp_path / "inversion_verdict_gbm.json"
+        target.write_text(
+            json.dumps({"schema_version": "v0.9"}, indent=2), encoding="utf-8"
+        )
+        emitter = InversionVerdictEmitter(emit_dir=tmp_path)
+        with pytest.raises(RoundTripDriftError, match="schema_version mismatch"):
+            emitter.read("gbm")
+
+    # ── TexFragmentEmitter ───────────────────────────────────────────────────
+
+    @pytest.mark.parametrize("family_id", ["gbm", "ou", "merton"])
+    def test_tex_fragment_emitter_finds_committed_artifact(
+        self, family_id
+    ) -> None:
+        """Task 2.1 committed the .tex fragments; emit returns the on-disk path."""
+        from simulations.stochastic_fx import TexFragmentEmitter
+
+        # Default emit_dir == notes/stochastic_fx_tex/ — Task 2.1's committed
+        # output location.
+        emitter = TexFragmentEmitter()
+        out_path = emitter.emit(family_id)
+        assert out_path.is_file()
+        assert out_path.name == f"sigma_t_moments_{family_id}.tex"
+
+    def test_tex_fragment_emitter_raises_when_absent(self, tmp_path) -> None:
+        """Pointed at an empty directory, emit raises FileNotFoundError."""
+        from simulations.stochastic_fx import TexFragmentEmitter
+
+        emitter = TexFragmentEmitter(emit_dir=tmp_path)
+        with pytest.raises(FileNotFoundError, match="missing tex fragment"):
+            emitter.emit("gbm")
+
+    # ── StochasticFxResultsEmitter ───────────────────────────────────────────
+
+    def test_results_markdown_contains_summary_and_per_family_sections(
+        self, tmp_path
+    ) -> None:
+        """Emit with 3 mock verdicts; confirm structural anchors in the markdown."""
+        from simulations.stochastic_fx import StochasticFxResultsEmitter
+
+        verdicts = (
+            self._build_mock_verdict("gbm", self._MOCK_AUDIT_BLOCK),
+            self._build_mock_verdict("ou", self._MOCK_AUDIT_BLOCK_2),
+            self._build_mock_verdict("merton", self._MOCK_AUDIT_BLOCK_3),
+        )
+        emitter = StochasticFxResultsEmitter(emit_dir=tmp_path)
+        out_path = emitter.emit(verdicts)
+        assert out_path.is_file()
+        assert out_path.name == "STOCHASTIC_FX_RESULTS.md"
+        text = out_path.read_text(encoding="utf-8")
+
+        # Cross-family summary table — 3 R-tag rows.
+        assert "## §1 Cross-family summary" in text
+        for r_tag in ("R1", "R2", "R3"):
+            assert r_tag in text
+        # Per-family R-tagged subsections.
+        assert "## §2 Per-family verdicts" in text
+        for family in ("Geometric Brownian motion", "Ornstein-Uhlenbeck", "Merton jump-diffusion"):
+            assert family in text
+        # Audit-block hex strings rendered (full + prefix in summary).
+        for ab in (
+            self._MOCK_AUDIT_BLOCK,
+            self._MOCK_AUDIT_BLOCK_2,
+            self._MOCK_AUDIT_BLOCK_3,
+        ):
+            assert ab in text  # full audit_block rendered in per-family section
+            assert ab[:16] in text  # prefix rendered in cross-family summary
+        # Citations to spec v0.5 §11.6 + §11.7.
+        assert "§11.6" in text
+        assert "§11.7" in text
+
+    # ── Data-dir gitignore verification ──────────────────────────────────────
+
+    def test_stochastic_fx_data_dir_is_gitignored(self) -> None:
+        """simulations/stochastic_fx/data/ files must NOT be git-tracked.
+
+        Plan v0.6 §10 Task 5 acceptance bullet — Task 0 verification: ANY
+        artefact emitted under simulations/stochastic_fx/data/ is ignored
+        by git. Uses ``git check-ignore`` (exit 0 ⇒ path is ignored).
+        """
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "git",
+                "check-ignore",
+                "simulations/stochastic_fx/data/path_ensemble_gbm.parquet",
+            ],
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"simulations/stochastic_fx/data/ must be gitignored; "
+            f"git check-ignore returned {result.returncode}: "
+            f"stdout={result.stdout!r}, stderr={result.stderr!r}"
+        )
+
+    # ── Tier purity (module-load) ────────────────────────────────────────────
+
+    def test_emit_module_load_does_not_pull_generators(self) -> None:
+        """Importing emit must not load sibling Callable `generators`.
+
+        IO Boundary tier purity per functional-python: emit consumes
+        already-built Value containers; it must not depend at module load
+        on the generator family that PRODUCES them. (Run-time test-helpers
+        that import generators are fine; the import surface is what's
+        tested here.)
+        """
+        import importlib
+        import sys
+        from pathlib import Path as _Path
+
+        # Force a reload of emit to re-evaluate its module-load imports
+        # without picking up cached state from prior test imports.
+        # We can't actually evict generators because the test file at the
+        # top already imported it; instead we assert emit.py's top-level
+        # imports do NOT name `generators`.
+        emit_module = importlib.import_module("simulations.stochastic_fx.emit")
+        emit_source = _Path(emit_module.__file__).read_text(encoding="utf-8")
+        # Top-level (module-load-time) imports MUST NOT name the sibling
+        # Callables `generators` or `moments`. We do a coarse text grep
+        # for `from simulations.stochastic_fx.generators` /
+        # `from simulations.stochastic_fx.moments` at module scope.
+        for forbidden in (
+            "from simulations.stochastic_fx.generators",
+            "from simulations.stochastic_fx.moments",
+            "import simulations.stochastic_fx.generators",
+            "import simulations.stochastic_fx.moments",
+        ):
+            assert forbidden not in emit_source, (
+                f"emit.py must not import {forbidden!r} at module load — "
+                "tier purity (functional-python IO Boundary tier)."
+            )
+        # Sanity: simulations.stochastic_fx.emit IS importable.
+        assert hasattr(emit_module, "PathEnsembleEmitter")
+        # sys.modules sanity — emit and types are loaded; this is the
+        # admitted dependency surface.
+        assert "simulations.stochastic_fx.emit" in sys.modules
+        assert "simulations.stochastic_fx.types" in sys.modules

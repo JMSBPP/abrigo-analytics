@@ -13,8 +13,15 @@ from simulations.stochastic_fx._errors import (
     InversionTestFailedError,
     MCBudgetExceededError,
     MomentMatchFailedError,
+    RoundTripDriftError,
     SDEParameterError,
     StochasticFXError,
+)
+from simulations.stochastic_fx.emit import (
+    InversionVerdictEmitter,
+    PathEnsembleEmitter,
+    StochasticFxResultsEmitter,
+    TexFragmentEmitter,
 )
 from simulations.stochastic_fx.generators import (
     GBMPathGenerator,
@@ -60,6 +67,7 @@ __all__ = [
     "GBMPathGenerator",
     "InversionTestFailedError",
     "InversionVerdict",
+    "InversionVerdictEmitter",
     "InversionVerifier",
     "JumpDiffusionParameters",
     "JumpDiffusionPathGenerator",
@@ -74,8 +82,12 @@ __all__ = [
     "OUParameters",
     "OUPathGenerator",
     "PathEnsemble",
+    "PathEnsembleEmitter",
+    "RoundTripDriftError",
     "SDEParameterError",
     "StochasticFXError",
+    "StochasticFxResultsEmitter",
+    "TexFragmentEmitter",
     "eq_8_inversion",
     "gbm_discrete_sigma_t_moments",
     "gbm_sigma_t_moments",

@@ -30,10 +30,23 @@ class MCBudgetExceededError(StochasticFXError):
     """Raised when ``ensemble.paths.shape[0] != 1000`` at InversionVerifier construction (Pin Z1 N=1000 floor)."""
 
 
+class RoundTripDriftError(StochasticFXError):
+    """Raised when an IO-Boundary-tier emitter's write→read→equality check breaks.
+
+    Task 5 NIT-RC-Task5 disposition (plan v0.6 §14 HALT routing): every
+    emitter in :mod:`simulations.stochastic_fx.emit` is required to be
+    round-trip-faithful at the byte level (parquet metadata) and at the
+    field-by-field level (JSON sidecars). Any drift surfaces here so the
+    foreground harness halts cleanly rather than silently degrading the
+    audit trail. Mirrors :class:`simulations.saas_builder.cohort_4._errors.RoundTripDriftError`.
+    """
+
+
 __all__ = [
     "InversionTestFailedError",
     "MCBudgetExceededError",
     "MomentMatchFailedError",
+    "RoundTripDriftError",
     "SDEParameterError",
     "StochasticFXError",
 ]
