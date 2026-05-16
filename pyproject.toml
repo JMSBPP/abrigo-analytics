@@ -13,6 +13,7 @@ authors = [{ name = "JMSBPP" }]
 dependencies = [
     "duckdb>=1.5",
     "pandas>=2.2",
+    "polars>=1.20",
     "numpy>=2.0",
     "pyarrow>=18",
     "matplotlib>=3.9",
