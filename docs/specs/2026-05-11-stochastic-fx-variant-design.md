@@ -667,8 +667,8 @@ N=1000 revealed per-family Phase B mean-rel-err Type-I rates:
 
 | Family | mean rel-err at seed=42 | fraction seeds with mean rel-err > MOMENT_REL_TOL |
 |---|---|---|
-| GBM | 1.12% | ≈ 0% (low MC noise on σ_T mean) |
-| OU | 0.17% | ≈ 0% (low MC noise on σ_T mean) |
+| GBM | 1.12% | **≈ 8%** (analytic prediction `2·Φ(-5%/SE_mean) ≈ 2·Φ(-1.77)` ≈ 7.7%; Wave-2 MQ-V2-1 disposition: corrects the prior "≈ 0%" pre-empirical placeholder; SE_mean at canonical GBM is ≈ 2.83% via `sqrt(Var[σ_T]) / sqrt(N=1000) / E[σ_T]`) |
+| OU | 0.17% | ≈ 0% (low MC noise on σ_T mean — stationary Gaussian regime; SE_mean << 5%) |
 | **Merton** | 0.70% (lucky) | **≈ 30%** (high σ_T variance from jump kurtosis inflates SE of the mean estimator at N=1000) |
 
 The Merton Type-I rate is intrinsic to the same MC-noise-vs-N-floor
