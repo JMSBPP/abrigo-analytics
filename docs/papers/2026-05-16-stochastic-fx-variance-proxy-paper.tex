@@ -775,39 +775,526 @@ transcribed inline into~\eqref{eq:gbm:cont} above.
 \label{sec:ou}
 % =========================================================================
 
-\paragraph{Section charge for content fill.}
-Section presents the OU SDE
-$dX_t = \theta(\bar\mu - X_t)\,dt + \sigma\, dW_t$
-with the exact Vasicek transition (NOT Euler); stationary auto-covariance
-$\Cov(X_j, X_k) = (\sigma^{2}/(2\theta))\,\exp(-\theta|t_k - t_j|)
-\bigl(1 - \exp(-2\theta \min(t_j, t_k))\bigr)$ at $x_0 = \bar\mu$
-canonical (so the mean term vanishes); verification: Phase A residual
-$\sim 4 \times 10^{-15}$, Phase B mean rel-err $0.17\%$, Phase C
-gamma-MoM KS p-value $0.303$.
-LaTeX fragment in \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_ou.tex}.
-Cite Karatzas \& Shreve (Brownian Motion and Stochastic Calculus, \S5.6).
+% -------------------------------------------------------------------------
+% §4.1 — OU SDE and the EXACT Vasicek conditional-Gaussian transition
+% -------------------------------------------------------------------------
+\subsection{The OU SDE and its exact Vasicek transition}
+\label{sec:ou:sde}
+
+The second stochastic instantiation of the framework replaces the
+log-multiplicative GBM dynamics of~\eqref{eq:gbm:sde} by a mean-reverting
+Ornstein--Uhlenbeck process~\cite{vasicek-1977, karatzas-shreve-1991}: the
+FX-rate process $\{X_{t}\}_{t \in [0, T]}$ solves the linear Gaussian
+Itô SDE
+\begin{equation}
+    dX_{t} \;=\; \theta\,\bigl(\bar\mu - X_{t}\bigr)\,dt
+                 \;+\; \sigma\,dW_{t},
+    \qquad X_{0} = x_{0} > 0,
+    \label{eq:ou:sde}
+\end{equation}
+with mean-reversion speed $\theta > 0$, long-run level
+$\bar\mu > 0$, and diffusion volatility $\sigma > 0$. Unlike~\eqref{eq:gbm:sde}
+the OU drift is additive (not multiplicative) and pulls $X_{t}$ back toward
+$\bar\mu$ at exponential rate $\theta$; the family is the canonical
+mean-reverting Gaussian process and admits closed-form stationary moments.
+
+\begin{proposition}[Exact Vasicek conditional-Gaussian transition]
+\label{prop:ou:disc}
+For an equally spaced grid $t_{j} = j\,\Delta t$ with $\Delta t = T/n$, the
+one-step transition density of~\eqref{eq:ou:sde} is exactly Gaussian: with
+$Z_{j+1} \stackrel{\text{iid}}{\sim} \mathcal{N}(0, 1)$,
+\begin{equation}
+    X_{j+1}
+    \;=\;
+    \bar\mu \;+\; \bigl(X_{j} - \bar\mu\bigr)\,e^{-\theta\,\Delta t}
+    \;+\;
+    \sigma\,\sqrt{\,\frac{1 - e^{-2\theta\,\Delta t}}{2\theta}\,}\,Z_{j+1}.
+    \label{eq:ou:vasicek}
+\end{equation}
+This is NOT an Euler--Maruyama discretization: it is the exact
+conditional-Gaussian transition law of the OU SDE on the grid, with no
+time-discretization error.
+\end{proposition}
+
+Proposition~\ref{prop:ou:disc} is the load-bearing distinction between the
+OU and GBM discretizations of this paper. Euler--Maruyama applied
+to~\eqref{eq:ou:sde} would carry an $O(\Delta t^{1/2})$ strong-convergence
+residual; the closed-form transition~\eqref{eq:ou:vasicek} carries
+\emph{none}. At the canonical pin (Definition~\ref{def:sigmaT};
+$\theta = 1$, $\bar\mu = x_{0} = 4000$, $\sigma = 0.10 \cdot 4000/\sqrt{2}$,
+$T = 12$, $n = 5000$), the stationary variance of $X_{t}$ equals
+$\sigma^{2}/(2\theta) = 4 \times 10^{4}$ and the mean-reversion half-life
+is $\log 2 / \theta \approx 0.69$, so the canonical horizon resolves
+$\approx 17$ relaxation times — the process is squarely in its stationary
+regime.
+
+% -------------------------------------------------------------------------
+% §4.2 — Auto-covariance kernel and centering-projection identity at x_0 = mu_bar
+% -------------------------------------------------------------------------
+\subsection{Auto-covariance kernel and discrete-statistic moments}
+\label{sec:ou:autocov}
+
+Iterating~\eqref{eq:ou:vasicek} from the deterministic initial condition
+$X_{0} = x_{0}$ yields the closed-form auto-covariance kernel
+\begin{equation}
+    \Cov(X_{j}, X_{k})
+    \;=\;
+    \frac{\sigma^{2}}{2\theta}\,
+    e^{-\theta\,|t_{k} - t_{j}|}\,
+    \Bigl(1 - e^{-2\theta\,\min(t_{j}, t_{k})}\Bigr),
+    \qquad j, k = 0, 1, \dots, n,
+    \label{eq:ou:cov}
+\end{equation}
+which is the standard Vasicek kernel of \cite{karatzas-shreve-1991}~\S5.6.
+The mean dynamics are $\E[X_{j}] = \bar\mu + (x_{0} - \bar\mu)\,e^{-\theta t_{j}}$;
+at the canonical pin $x_{0} = \bar\mu$ the second term vanishes and the mean
+becomes constant in $j$.
+
+\begin{lemma}[Centering projection for $\sigmaT \cdot T$, canonical OU pin]
+\label{lem:ou:proj}
+Let $\centerProj \coloneqq I_{n+1} - (n+1)^{-1}\mathbf{1}\mathbf{1}^{\top}$,
+let $\Sigma$ be the $(n+1)\times(n+1)$ matrix with entries~\eqref{eq:ou:cov},
+and let $\mu \in \R^{n+1}$ be the mean vector. Then
+\begin{equation}
+    \E[\sigmaT \cdot T]
+    \;=\;
+    \mathrm{tr}\bigl(\centerProj\,\Sigma\bigr)
+    \;+\; \mu^{\top}\centerProj\,\mu,
+    \label{eq:ou:trace-id}
+\end{equation}
+and at the canonical pin $x_{0} = \bar\mu$ the second term vanishes
+identically because $\mu_{j} \equiv \bar\mu$ is constant in $j$ and
+$\centerProj\,\mathbf{1} = 0$, leaving the closed reduction
+$\E[\sigmaT \cdot T] = \mathrm{tr}(\centerProj\,\Sigma)$.
+\end{lemma}
+
+The centering-projection identity~\eqref{eq:ou:trace-id} is the same
+load-bearing analytic that drives Lemma~\ref{lem:gbm:proj} for GBM; the
+two families differ only in the auto-covariance kernel substituted into
+$\Sigma$. The continuous-time stationary closed forms
+(\textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_ou.tex}) collapse
+to
+\begin{equation}
+    \E[\sigmaT]_{\text{cont, stat}}
+    \;=\;
+    \frac{\sigma^{2}}{2\theta},
+    \qquad
+    \Var[\sigmaT]_{\text{cont, stat}}
+    \;=\;
+    \frac{\sigma^{4}}{2\,T\,\theta^{2}},
+    \label{eq:ou:cont-stat}
+\end{equation}
+which at the canonical pin pins $\E[\sigmaT] = 4 \times 10^{4}$ exactly.
+This is the unique family in this paper where the continuous-time
+stationary $\E[\sigmaT]$ admits a one-line closed form independent of $T$
+— a direct consequence of OU stationarity. The discrete-statistic
+analytic~\eqref{eq:ou:trace-id} differs from~\eqref{eq:ou:cont-stat} only
+by the $(1 - e^{-2\theta\,\min(t_{j}, t_{k})})$ transient factor in
+$\Sigma$, which is negligible on the canonical grid that resolves
+$\approx 17$ relaxation times.
+
+% -------------------------------------------------------------------------
+% §4.3 — Phase A / B / C verdict at canonical pin
+% -------------------------------------------------------------------------
+\subsection{Three-phase verdict at canonical pin}
+\label{sec:ou:verdict}
+
+The OU verification at the canonical pin returns the following triple,
+anchored to the committed verdict artefact:
+
+\begin{description}
+    \item[Phase A (\PinZ{3a}, algebraic identity).]
+        Maximum residual of
+        $\bigl(\epsT^{(n)}\bigr)^{2} - 8\sigmaT^{(n)}/\xbar^{2}$
+        across the $N = 1000$ paths is $3.553\times 10^{-15}$,
+        well below the $\textsc{numerical\_identity\_tol} = 10^{-6}$
+        floor. As at GBM this is a re-evaluation of~\eqref{eq:eps} and is
+        family-agnostic.
+    \item[Phase B (\PinZ{3b}, mean-only moment match).]
+        Empirical mean of $\sigmaT^{(n)}$ matches the discrete-statistic
+        analytic value from~\eqref{eq:ou:trace-id} with relative error
+        $1.681\times 10^{-3}$, comfortably inside the $5\%$ band of
+        $\textsc{moment\_rel\_tol}$. Variance relative error is
+        $2.711\times 10^{-2}$, consistent with the Isserlis Gaussian
+        quadratic form being EXACT under OU (no truncation residual,
+        only MC sampling noise); it is recorded as audit trail, not
+        gated.
+    \item[Phase C (\PinZ{4}, KS goodness-of-fit).]
+        Per-family dispatch fits a method-of-moments gamma reference
+        to the analytic pair $(\E[\sigmaT], \Var[\sigmaT])$ via the
+        moment-matching relations
+        \(
+            a = E^{2}/V,\quad \mathrm{scale} = V/E,
+        \)
+        and tests via \texttt{scipy.stats.ks\_1samp} against the
+        gamma CDF. The Kolmogorov--Smirnov $p$-value is
+        $3.033\times 10^{-1}$, comfortably above the
+        $\textsc{ks\_pvalue\_floor} = 0.01$.
+\end{description}
+
+Composite verdict at canonical pin: \textsc{pass} on all three phases;
+$\textsf{composite\_pass} = \mathrm{true}$ by the AND-invariant of the
+\textsf{InversionVerdict} Value type.
+
+\paragraph{Why a gamma reference for Phase C.}
+The Phase C dispatch on OU uses a moment-matched two-parameter gamma as
+the reference distribution. The motivation is geometric: under~\eqref{eq:ou:sde}
+the joint law of $\{X_{j}\}_{j=0}^{n}$ is multivariate Gaussian, and
+$\sigmaT \cdot T = X^{\top}\centerProj\,X$ is a positive-semidefinite
+quadratic form in jointly Gaussian variables. The exact distribution of
+such a quadratic form is a weighted sum of independent
+$\chi^{2}_{1}$ random variables (the eigen-decomposition of $\centerProj\,\Sigma$);
+the moment-matched gamma is the natural two-parameter family approximating
+this weighted-$\chi^{2}$ object with the same first two moments. Among
+positive-support alternatives, gamma is the conjugate choice for
+Gaussian-quadratic forms — strictly preferable to lognormal (chosen for
+GBM, where the underlying $X_{j}$ themselves are lognormal). Per
+\PinZ{5}, only the reference shape is family-dispatched; the
+$\textsc{ks\_pvalue\_floor} = 0.01$ threshold is invariant across all
+three references.
+
+\begin{remark}[Mean-only Phase B Type-I rate at OU]
+\label{rem:ou:type-i}
+The spec v0.5 \S11.6 disclosure logs an empirical Phase B Type-I rate of
+$\approx 0\%$ for OU at $N = 1000$ (against the seed=42 canonical pin
+that returned $0.168\%$ mean rel-err). This is the lowest Type-I rate
+across the three SDE families: OU's $\sigmaT$ has the smallest effective
+kurtosis ($\kappa_{\text{eff}} \approx 4$ from the Gaussian-quadratic form),
+so the standard-error floor $\sqrt{(\kappa_{\text{eff}} - 1)/(N - 1)}$ of
+Remark~\ref{rem:mean-only} is $\approx 5.5\%$ at $N = 1000$ — well clear
+of the $5\%$ tolerance for the mean-only gate that v0.5 retained. By
+contrast, the Merton family (\S\ref{sec:merton}) inhabits the opposite
+end of the kurtosis surface, with a Type-I rate $\approx 30\%$ that
+\emph{would} have invalidated the mean-only gate had OU been the only
+benchmark.
+\end{remark}
+
+\begin{remark}[Cross-process determinism]
+\label{rem:ou:audit}
+The verdict artefact at
+\textsf{simulations/stochastic\_fx/data/inversion\_verdict\_ou.json}
+carries
+\(
+    \texttt{audit\_block} = \texttt{0589f35b10f1ca7f}\ldots
+\)
+(64-char lowercase hex). Identical
+$(\text{params}, \text{rng\_seed}, n_{\text{paths}})$ triples replayed
+from a fresh checkout reproduce this prefix bit-exact, discharging
+\PinZ{2}.
+\end{remark}
+
+\paragraph{Implementation pointer.}
+The path generator lives in
+\textsf{simulations/stochastic\_fx/generators.py}
+(class \texttt{OUPathGenerator}, exact Vasicek transition per
+Proposition~\ref{prop:ou:disc}); the continuous-time stationary moments
+in \textsf{simulations/stochastic\_fx/moments.py}
+(\texttt{ou\_sigma\_t\_moments}); the discrete-statistic analytic
+in \textsf{simulations/stochastic\_fx/variance\_proxy.py}
+(\texttt{ou\_discrete\_sigma\_t\_moments}, which assembles the
+$\Sigma$-matrix from~\eqref{eq:ou:cov} and applies the centering
+projection of~\eqref{eq:ou:trace-id}); and the canonical pin in
+\textsf{simulations/stochastic\_fx/types.py}
+(\texttt{CANONICAL\_OU}). The LaTeX fragment of~\eqref{eq:ou:cont-stat}
+is committed at
+\textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_ou.tex}.
 
 % =========================================================================
 \section{Stochastic instantiation III: Merton jump-diffusion}
 \label{sec:merton}
 % =========================================================================
 
-\paragraph{Section charge for content fill.}
-Section presents the Merton jump-diffusion SDE
-$dX_t = \mu X_t\,dt + \sigma X_t\,dW_t + X_{t^-}(J - 1)\,dN_t$
-where $N_t$ is a Poisson process of intensity $\lambda$ and $J$ is
-lognormal; Euler--Maruyama log-scale diffusion augmented by compound-Poisson
-log-jumps; conditional-Gaussian aggregation via
-$\text{aggregated\_log\_jump} = N \mu_{J} + \sqrt{N}\, \sigma_{J}\, Z'$;
-discrete-statistic analytic $\E[\sigmaT]$ with non-constant drift
-$\mu_{j} = x_{0}\,\phi_{1}^{j}$ where
-$\log\phi_{1} = \lambda\Delta t\bigl(\exp(\sigma_{J}^{2}/2) - 1\bigr)$;
-verification: Phase A residual $\sim 2 \times 10^{-13}$, Phase B mean
-rel-err $0.70\%$, Phase C empirical-CDF KS-2-samp p-value $0.116$
-(at hardware-constrained $N_{\textsc{ref}} = 5000$; production
-$N_{\textsc{ref}} = 100\,000$).
-LaTeX fragment in \textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_merton.tex}.
-Cite Andersen \& Piterbarg (Interest Rate Modeling Vol.~I, \S2.7).
+% -------------------------------------------------------------------------
+% §5.1 — Merton SDE and its log-scale discretization with conditional-Gaussian
+%       compound-Poisson aggregation
+% -------------------------------------------------------------------------
+\subsection{The Merton SDE and its conditional-Gaussian aggregation}
+\label{sec:merton:sde}
+
+The third and final stochastic instantiation of the framework extends
+the GBM dynamics of~\eqref{eq:gbm:sde} by a compound-Poisson jump
+component~\cite{merton-1976, andersen-piterbarg-2010}: the FX-rate
+process $\{X_{t}\}_{t \in [0, T]}$ solves the jump-diffusion SDE
+\begin{equation}
+    dX_{t}
+    \;=\;
+    \mu\,X_{t}\,dt
+    \;+\; \sigma\,X_{t}\,dW_{t}
+    \;+\; X_{t^{-}}\,(J - 1)\,dN_{t},
+    \qquad X_{0} = x_{0} > 0,
+    \label{eq:merton:sde}
+\end{equation}
+where $N_{t}$ is a Poisson process of intensity $\lambda \geq 0$
+independent of the Brownian motion $W_{t}$, and $\log J \sim
+\mathcal{N}(\mu_{J}, \sigma_{J}^{2})$ is the lognormal jump multiplier
+with $\sigma_{J} > 0$. Setting $\lambda = 0$ collapses~\eqref{eq:merton:sde}
+to the GBM SDE~\eqref{eq:gbm:sde}; non-zero $\lambda$ injects
+heavy-tailed Poisson-mixture-of-lognormals geometry into the marginal
+laws of $\{X_{t}\}$.
+
+\begin{proposition}[Conditional-Gaussian aggregated jump per step]
+\label{prop:merton:disc}
+For an equally spaced grid $t_{j} = j\,\Delta t$, the one-step log-increment
+$\log X_{j+1} - \log X_{j}$ decomposes as a diffusion log-step plus a
+\emph{compound-Poisson aggregated} log-jump:
+\begin{align}
+    \log X_{j+1} - \log X_{j}
+    \;&=\;
+    \underbrace{\bigl(\mu - \tfrac{1}{2}\sigma^{2}\bigr)\,\Delta t
+                + \sigma\sqrt{\Delta t}\,Z_{j+1}}_{\text{diffusion step}}
+    \notag\\
+    \;&\qquad+\;
+    \underbrace{N_{j+1}\,\mu_{J}
+                + \sqrt{N_{j+1}}\,\sigma_{J}\,Z'_{j+1}}_{\text{aggregated jump step}},
+    \label{eq:merton:euler}
+\end{align}
+where $N_{j+1} \sim \mathrm{Poisson}(\lambda\,\Delta t)$ is the per-cell
+jump count and $Z_{j+1}, Z'_{j+1} \stackrel{\text{iid}}{\sim} \mathcal{N}(0, 1)$
+are independent diffusion / conditional-jump standard normals. Conditional
+on the count $N_{j+1} = N$, the sum of $N$ independent jump log-multipliers
+$\sum_{i=1}^{N}\log J_{i}$ is exactly distributed as
+$\mathcal{N}(N\mu_{J}, N\sigma_{J}^{2})$, so~\eqref{eq:merton:euler}
+represents the entire compound-Poisson contribution by a single
+conditional-Gaussian draw.
+\end{proposition}
+
+The aggregation identity in Proposition~\ref{prop:merton:disc} is the
+load-bearing computational economy of the Merton instantiation: the naive
+implementation would sample $N_{j+1}$ individual lognormal multipliers per
+cell, costing $O(\text{total jumps})$ work; the conditional-Gaussian
+aggregation costs $O(n_{\text{paths}} \cdot n_{\text{steps}})$ work
+\emph{independent of $\lambda$}, and is exact in distribution (not an
+approximation).
+
+% -------------------------------------------------------------------------
+% §5.2 — Auto-covariance kernel with jump-MGF building blocks; non-constant drift
+% -------------------------------------------------------------------------
+\subsection{Auto-covariance kernel and non-constant drift}
+\label{sec:merton:autocov}
+
+The Merton path-mean and auto-covariance kernel are most cleanly stated in
+terms of two per-step characteristic-function building blocks
+(Andersen--Piterbarg \cite{andersen-piterbarg-2010}~\S2.7):
+\begin{equation}
+    \log\varphi_{1}
+    \;=\; \mu\,\Delta t
+        + \lambda\,\Delta t\,\bigl(e^{\mu_{J} + \sigma_{J}^{2}/2} - 1\bigr),
+    \qquad
+    \log\varphi_{2}
+    \;=\; 2\mu\,\Delta t + \sigma^{2}\,\Delta t
+        + \lambda\,\Delta t\,\bigl(e^{2\mu_{J} + 2\sigma_{J}^{2}} - 1\bigr),
+    \label{eq:merton:phi}
+\end{equation}
+so that the path mean is $\E[X_{j}] = x_{0}\,\varphi_{1}^{j}$ and the
+second moment is $\E[X_{j} X_{k}] = x_{0}^{2}\,\varphi_{2}^{\min(j,k)}\,
+\varphi_{1}^{|k-j|}$. The auto-covariance kernel follows by subtraction:
+\begin{equation}
+    \Cov(X_{j}, X_{k})
+    \;=\;
+    x_{0}^{2}\,\varphi_{1}^{|k-j|}\,
+    \Bigl(\varphi_{2}^{\min(j, k)} - \varphi_{1}^{2\,\min(j, k)}\Bigr),
+    \qquad j, k = 0, 1, \dots, n.
+    \label{eq:merton:cov}
+\end{equation}
+
+\begin{remark}[Non-constant drift; full $\mu^{\top}\centerProj\,\mu$ expansion required]
+\label{rem:merton:drift}
+Unlike the GBM canonical pin ($\mu = 0 \Rightarrow \varphi_{1} = 1$
+$\Rightarrow \mu_{j} \equiv x_{0}$) and the OU canonical pin
+($x_{0} = \bar\mu \Rightarrow \mu_{j} \equiv \bar\mu$), the Merton
+canonical pin has $\mu = 0, \mu_{J} = 0$, but the jump-MGF factor
+$e^{\sigma_{J}^{2}/2} - 1 \neq 0$ inflates the per-step mean to
+$\log\varphi_{1} = \lambda\,\Delta t\,(e^{\sigma_{J}^{2}/2} - 1) > 0$.
+Hence $\mu_{j} = x_{0}\,\varphi_{1}^{j}$ is geometrically increasing in
+$j$; the second term $\mu^{\top}\centerProj\,\mu$
+in~\eqref{eq:gbm:trace-id} does NOT vanish and must be retained in full.
+The discrete-statistic analytic
+$\E[\sigmaT \cdot T] = \mathrm{tr}(\centerProj\,\Sigma) +
+\mu^{\top}\centerProj\,\mu$ accordingly admits no GBM/OU-style mean-term
+collapse for Merton.
+\end{remark}
+
+The remark above is the structural reason the discrete-statistic analytic
+for Merton requires hand-derivation of \emph{both} trace terms; the
+implementation in
+\textsf{simulations/stochastic\_fx/variance\_proxy.py} assembles
+$\mu$ and $\Sigma$ from~\eqref{eq:merton:phi}--\eqref{eq:merton:cov} and
+applies the full centering-projection identity~\eqref{eq:gbm:trace-id}
+without simplification. The continuous-time closed forms
+(\textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_merton.tex}) sum
+the diffusion-plus-jump contributions in expectation
+\begin{align}
+    \E[\sigmaT]_{\text{cont}}
+    \;&=\;
+    \frac{\Xbar^{2}}{\Ybar^{2}}\,T\,\sigma^{2}
+    \;+\;
+    \frac{\Xbar^{2}}{\Ybar^{2}}\,T\,\lambda\,
+    \bigl(e^{2\mu_{J} + 2\sigma_{J}^{2}}
+          - 2\,e^{\mu_{J} + \sigma_{J}^{2}/2} + 1\bigr),
+    \label{eq:merton:cont-mean}\\
+    \Var[\sigmaT]_{\text{cont}}
+    \;&=\;
+    \frac{2\,\Xbar^{4}}{\Ybar^{4}}\,T\,\sigma^{4}
+    \;+\;
+    \frac{\Xbar^{4}}{\Ybar^{4}}\,T\,\lambda\,M_{4},
+    \label{eq:merton:cont-var}
+\end{align}
+where the compound-Poisson fourth-jump moment $M_{4} = \E[(e^{J} - 1)^{4}]$
+expands via the Gaussian MGF identity $\E[e^{kJ}] = \exp(k\mu_{J} +
+k^{2}\sigma_{J}^{2}/2)$. At the canonical pin
+$(\mu, \sigma, \lambda, \mu_{J}, \sigma_{J}, x_{0}, T) =
+(0,\, 0.05/\sqrt{12},\, 1,\, 0,\, 0.10,\, 4000,\, 12)$,
+equation~\eqref{eq:merton:cont-mean} pins $\E[\sigmaT]_{\text{cont}} =
+1.994\times 10^{6}$, which the discrete-statistic
+analytic~\eqref{eq:gbm:trace-id} reproduces within the
+$N = 1000$ Monte-Carlo noise floor.
+
+% -------------------------------------------------------------------------
+% §5.3 — Phase A / B / C verdict; the Phase C BLOCK that triggered v0.4 → v0.5
+% -------------------------------------------------------------------------
+\subsection{Three-phase verdict and the empirical-CDF dispatch}
+\label{sec:merton:verdict}
+
+The Merton verification at the canonical pin returns the following triple:
+
+\begin{description}
+    \item[Phase A (\PinZ{3a}, algebraic identity).]
+        Maximum residual of
+        $\bigl(\epsT^{(n)}\bigr)^{2} - 8\sigmaT^{(n)}/\xbar^{2}$
+        across the $N = 1000$ paths is $2.274\times 10^{-13}$, well below
+        the $\textsc{numerical\_identity\_tol} = 10^{-6}$ floor. The two
+        orders-of-magnitude inflation over GBM ($7.105\times 10^{-15}$)
+        and OU ($3.553\times 10^{-15}$) reflects the wider numeric range
+        of Merton $\sigmaT$ samples (jump kurtosis pushes terminal-cell
+        sample variance up by $\approx 10^{6}$ over the diffusion-only
+        families) — the identity remains family-agnostic.
+    \item[Phase B (\PinZ{3b}, mean-only moment match).]
+        Empirical mean of $\sigmaT^{(n)}$ matches the discrete-statistic
+        analytic with relative error $7.015\times 10^{-3}$, comparable
+        to GBM ($1.121\times 10^{-2}$) and OU ($1.681\times 10^{-3}$)
+        despite Merton's substantially higher $\kappa_{\text{eff}}$.
+        Variance relative error is $2.727$, consistent with
+        Remark~\ref{rem:merton:var-rel-err}; it is recorded as audit
+        trail, not gated.
+    \item[Phase C (\PinZ{4}, KS goodness-of-fit).]
+        Per-family dispatch fits an \emph{empirical-CDF} reference via
+        a high-$N$ reference run (see Remark~\ref{rem:merton:ecdf}) and
+        tests via \texttt{scipy.stats.ks\_2samp}. The Kolmogorov--Smirnov
+        $p$-value is $1.160\times 10^{-1}$, comfortably above the
+        $\textsc{ks\_pvalue\_floor} = 0.01$.
+\end{description}
+
+Composite verdict at canonical pin: \textsc{pass} on all three phases;
+$\textsf{composite\_pass} = \mathrm{true}$ by the AND-invariant of the
+\textsf{InversionVerdict} Value type.
+
+\begin{remark}[Why variance relative error inflates to $2.727$ at Merton]
+\label{rem:merton:var-rel-err}
+The Isserlis Gaussian-quadratic-form variance formula
+$\Var[\sigmaT \cdot T] = 2\,\mathrm{tr}((\centerProj\,\Sigma)^{2}) +
+4\,(\centerProj\,\mu)^{\top}\Sigma\,(\centerProj\,\mu)$ is exact only
+under joint Gaussianity of $\{X_{j}\}$. Under~\eqref{eq:merton:sde}
+the marginal laws of $X_{j}$ are Poisson-mixtures of lognormals; the
+Gaussian formula recovers only the diffusion-and-second-moment portion
+of $\Var[\sigmaT]$ and structurally under-estimates the fourth-cumulant
+contribution by $\approx 71\%$. The audit-trail relative error of
+$2.727$ is consistent with this structural under-estimate. Spec v0.5
+\S11.6 retains the mean-only Phase B gate (Remark~\ref{rem:mean-only}
+above); the joint shape match across higher moments is preserved at
+Phase C via the empirical-CDF dispatch below.
+\end{remark}
+
+\begin{remark}[The Phase C BLOCK and the v0.4 $\to$ v0.5 amendment]
+\label{rem:merton:ecdf}
+Under spec v0.4 the Phase C dispatch was a moment-matched two-parameter
+lognormal reference (the GBM choice, generalized to all three families).
+Application of that reference to the Merton canonical pin returned a
+KS $p$-value of $3.41\times 10^{-21}$, $19$ orders of magnitude below the
+$0.01$ floor. The empirical shape of Merton $\sigmaT$ at the canonical
+pin has skewness $10.4$ and excess kurtosis $174$; a two-parameter
+lognormal carries skewness $\leq 6.18$ at the moment-matched scale and
+cannot represent Poisson-mixture-of-lognormals geometry by shape, only
+by location-plus-scale.
+
+Per spec v0.5 \S11.7, this Phase C BLOCK routed to \textsc{corrections-$\alpha$}
+and the user disposition (2026-05-13) was a per-family dispatch on the
+reference \emph{shape}, with the threshold left invariant per \PinZ{5}:
+Merton's reference becomes an empirical-CDF drawn from a high-$N$
+auxiliary run of the same \textsf{JumpDiffusionPathGenerator} under
+pinned constants $N_{\textsc{ref}} = 100{,}000$ and
+$N_{\textsc{ref-seed}} = 20260513$, tested via
+\texttt{scipy.stats.ks\_2samp} against the $N = 1000$ tested ensemble.
+The five concrete anti-fishing prohibitions of the disposition are
+preserved: (i)~single threshold across all three families
+($\textsc{ks\_pvalue\_floor} = 0.01$ invariant); (ii)~$N_{\textsc{ref}}$
+PINNED, not implementer-tunable; (iii)~$N_{\textsc{ref-seed}}$ PINNED,
+not implementer-tunable; (iv)~the reference is a DIFFERENT
+sample from the same SDE, NOT \texttt{.fit()}-against-tested-sample
+(NIT-MQ-1 tautology preserved); (v)~the interpretation of \PinZ{4}
+(``per-family KS goodness-of-fit at $p \geq 0.01$'') is unchanged in
+substance. The Phase C $p$-value of $1.160\times 10^{-1}$ reported above
+is from the canonical run at hardware-constrained $N_{\textsc{ref}} =
+5000$ per FLAG-RC-V0.5-1; the production constant $N_{\textsc{ref}} =
+100{,}000$ produces an equivalent KS-$p$ in the $0.12$--$0.14$
+ballpark per the Wave-2 robustness probe.
+\end{remark}
+
+\begin{remark}[Phase B Type-I rate $\approx 30\%$; seed-42 luck disclosure]
+\label{rem:merton:type-i}
+Spec v0.5 \S11.6 logs an empirical Phase B Type-I rate of $\approx 30\%$
+for Merton at $N = 1000$, against the seed=42 canonical pin that
+returned $0.70\%$ mean rel-err. The standard-error floor
+$\sqrt{(\kappa_{\text{eff}} - 1)/(N - 1)}$ of Remark~\ref{rem:mean-only}
+evaluates to $\approx 19\%$ for Merton at $N = 1000$ — well above the
+$5\%$ tolerance for the mean-only Phase B gate. The seed=42 PASS is
+therefore a Type-I-favorable observation, not a structural property of
+the family; the spec disposition is to disclose the rate honestly rather
+than tighten the gate (which would require $N \gtrsim 30{,}000$ to bring
+the standard-error floor below $5\%$, in violation of the \PinZ{5}
+$N$-floor invariant). Combined with the Phase C $\approx 1\%$ Type-I rate
+(Smirnov 1948), the Merton family carries the highest joint Type-I
+budget of the three SDEs in this paper; \PinZ{5} requires routing any
+failure on a re-run of the canonical pin to \textsc{corrections-$\alpha$}
+(re-derive analytic or refine discretization), NEVER to seed re-roll.
+\end{remark}
+
+\begin{remark}[Cross-process determinism]
+\label{rem:merton:audit}
+The verdict artefact at
+\textsf{simulations/stochastic\_fx/data/inversion\_verdict\_merton.json}
+carries
+\(
+    \texttt{audit\_block} = \texttt{12890ce95a36ffea}\ldots
+\)
+(64-char lowercase hex). Identical
+$(\text{params}, \text{rng\_seed}, n_{\text{paths}})$ triples replayed
+from a fresh checkout reproduce this prefix bit-exact, discharging
+\PinZ{2}.
+\end{remark}
+
+\paragraph{Implementation pointer.}
+The path generator lives in
+\textsf{simulations/stochastic\_fx/generators.py}
+(class \texttt{JumpDiffusionPathGenerator}, Euler--Maruyama log-scale
+diffusion with conditional-Gaussian aggregated jump per
+Proposition~\ref{prop:merton:disc}); the RNG-call order
+(diffusion-$Z$ $\to$ Poisson counts $\to$ conditional-jump-$Z'$) is
+load-bearing for \PinZ{2} and reproduced verbatim in the generator's
+class docstring. The continuous-time moments live in
+\textsf{simulations/stochastic\_fx/moments.py}
+(\texttt{merton\_sigma\_t\_moments}); the discrete-statistic analytic
+in \textsf{simulations/stochastic\_fx/variance\_proxy.py}
+(\texttt{merton\_discrete\_sigma\_t\_moments}, with full
+non-constant-$\mu_{j}$ expansion per Remark~\ref{rem:merton:drift});
+the empirical-CDF reference assembly in the same file
+(\texttt{\_merton\_reference\_sigma\_t}); and the canonical pin in
+\textsf{simulations/stochastic\_fx/types.py}
+(\texttt{CANONICAL\_MERTON}). The hand-derivation script
+\textsf{scratch/2026-05-13-task-4.2-discrete-moments/derivation.py}
+cross-checks the closed form against an independent Monte-Carlo run;
+the LaTeX fragment of~\eqref{eq:merton:cont-mean}--\eqref{eq:merton:cont-var}
+is committed at
+\textsf{notes/stochastic\_fx\_tex/sigma\_t\_moments\_merton.tex}.
 
 % =========================================================================
 \section{cadCAD wrapping: bridge to dynamic-system simulation}
