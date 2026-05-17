@@ -366,6 +366,80 @@ def truncpareto_alpha_prior(draw: st.DrawFn):
     )
 
 
+# ─── dev_ai_cost_v2 strategies ───────────────────────────────────────────────
+#
+# Strategies for ``simulations.dev_ai_cost_v2.types`` value containers.
+# Spec ref: docs/specs/2026-05-16-ai-cost-factor-model-design.md v0.2.1 §3.5.
+# Sibling spec: docs/specs/2026-05-16-r6-continuous-stream-simulation-design.md
+# v0.1.3 CORRECTIONS-RR/-TT — ``MessageRecord.uuid`` required non-empty.
+
+
+@st.composite
+def message_records(draw: st.DrawFn):
+    """Draw a ``MessageRecord`` over the Value-tier admissible region.
+
+    All token fields are non-negative (``MessageRecord.__post_init__`` would
+    otherwise reject). ``ts`` is timezone-aware UTC. ``uuid`` is non-empty
+    per R6 v0.1.3 CORRECTIONS-RR/-TT (used as pool-canonicalization sort
+    key tiebreaker).
+
+    CORRECTIONS-Y-2 (v0.2.3): ``cost_usd_notional`` is ``float`` (ccusage
+    parity); bounded at 1000.0 for shrinking tractability.
+    """
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from simulations.dev_ai_cost_v2.types import MessageRecord
+
+    naive = draw(
+        st.datetimes(
+            min_value=_dt(2024, 1, 1),
+            max_value=_dt(2027, 1, 1),
+        )
+    )
+    ts = naive.replace(tzinfo=_tz.utc)
+    model = draw(
+        st.sampled_from(
+            ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-7"]
+        )
+    )
+    input_tok = draw(st.integers(min_value=0, max_value=10**6))
+    output_tok = draw(st.integers(min_value=0, max_value=10**6))
+    cache_create_5m = draw(st.integers(min_value=0, max_value=10**6))
+    cache_create_1h = draw(st.integers(min_value=0, max_value=10**6))
+    cache_read = draw(st.integers(min_value=0, max_value=10**6))
+    cost_usd_notional = draw(
+        st.floats(
+            min_value=0.0,
+            max_value=1000.0,
+            allow_nan=False,
+            allow_infinity=False,
+        )
+    )
+    session_id = draw(st.text(min_size=1, max_size=64))
+    request_id = draw(st.one_of(st.none(), st.text(min_size=1, max_size=64)))
+    is_error = draw(st.booleans())
+    # Y-5e: uuid may emit synth-sha256: prefix or arbitrary string. The
+    # MessageRecord contract still rejects empty strings (R6 dedupe), so
+    # draw a non-empty string here; synthesis is exercised at jsonl_io's
+    # boundary, not at the MessageRecord level.
+    uuid = draw(st.text(min_size=1, max_size=64))
+    return MessageRecord(
+        ts=ts,
+        model=model,
+        input_tok=input_tok,
+        output_tok=output_tok,
+        cache_create_5m=cache_create_5m,
+        cache_create_1h=cache_create_1h,
+        cache_read=cache_read,
+        cost_usd_notional=cost_usd_notional,
+        session_id=session_id,
+        request_id=request_id,
+        is_error=is_error,
+        uuid=uuid,
+    )
+
+
 __all__ = [
     "truncpareto_params",
     "saas_truncpareto_params",
@@ -382,4 +456,5 @@ __all__ = [
     "zcap_pinned",
     "negbin_turns_prior",
     "truncpareto_alpha_prior",
+    "message_records",
 ]
