@@ -28,7 +28,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from simulations.dev_ai_cost_v2._errors import JSONLSchemaError
 from simulations.dev_ai_cost_v2.types import MessageRecord
@@ -71,7 +71,7 @@ class _Row(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-    timestamp: datetime
+    timestamp: AwareDatetime  # was: datetime — rejects naive per CQ I-1 fix
     sessionId: str
     requestId: str | None
     isApiErrorMessage: bool
@@ -112,9 +112,12 @@ class JSONLReader:
               field in the JSONL raises ``JSONLSchemaError``.
             - Required fields (including ``uuid`` per R6 v0.1.3
               CORRECTIONS-RR/-TT) raise ``JSONLSchemaError`` when absent.
-            - ``timestamp`` is interpreted as UTC; both naive (treated as UTC
-              by Pydantic + ``astimezone``) and offset-aware inputs collapse
-              to UTC before window comparison.
+            - ``timestamp`` must be tz-aware. Tz-naive timestamps are
+              rejected at Pydantic validation time via ``AwareDatetime``
+              (raises ``JSONLSchemaError``). This is defense in depth
+              against future Anthropic schema drift if the ``Z`` suffix is
+              ever dropped. Offset-aware inputs are normalized to UTC via
+              ``astimezone`` before window comparison.
             - Window boundary is UTC half-open: rows at
               ``until 00:00:00Z`` are EXCLUDED (CORRECTIONS-V NIT).
             - Blank lines (empty or whitespace-only) are skipped silently.

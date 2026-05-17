@@ -135,6 +135,24 @@ def test_jsonlreader_warns_on_null_request_id(tmp_path: Path) -> None:
     assert out[0].request_id is None
 
 
+def test_jsonlreader_raises_on_naive_timestamp(tmp_path: Path) -> None:
+    """Tz-naive timestamps must be rejected at parse time, not silently shifted.
+
+    Defense in depth against future Anthropic schema drift (if `Z` suffix is
+    ever dropped). Code-quality review I-1 (Task 5).
+    """
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    row["timestamp"] = "2026-05-01T12:00:00"  # tz-naive (no Z)
+    _write_jsonl(proj / "s.jsonl", [row])
+    with pytest.raises(JSONLSchemaError):
+        JSONLReader()(
+            since=date(2026, 5, 1),
+            until=date(2026, 5, 2),
+            projects_root=tmp_path / "projects",
+        )
+
+
 def test_jsonlreader_raises_on_invalid_json(tmp_path: Path) -> None:
     proj = tmp_path / "projects" / "p1"
     proj.mkdir(parents=True, exist_ok=True)
