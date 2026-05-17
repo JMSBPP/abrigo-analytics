@@ -15,6 +15,7 @@ data/processed/
 data/downloads/
 data/probes/
 data/extracted/
+data/panels/
 data/*.duckdb
 data/*.duckdb.wal
 data/*.parquet
