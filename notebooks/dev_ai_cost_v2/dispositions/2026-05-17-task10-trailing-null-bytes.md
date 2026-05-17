@@ -122,5 +122,8 @@ except json.JSONDecodeError:
 - [x] HALT fired (date: 2026-05-17)
 - [x] User pivot selected: **Option A — ccusage-mirror (silent skip + counter)**
 - [x] Disposition committed
-- [ ] Spec amendment landed (v0.2.4 CORRECTIONS-Y-7)
-- [ ] Re-run Task 10
+- [x] Spec amendment landed (v0.2.4 CORRECTIONS-Y-7; commit `b8a1982`)
+- [x] 2-wave amendment review: CR APPROVE_WITH_NITS + RC CONDITIONAL_APPROVE → all MUST/SHOULD fixes folded inline
+- [x] Implementation landed (commits `134cbcb` + `07f907f`); 855/855 tests green
+- [x] Post-hoc impl-review: CR APPROVE_WITH_NITS + RC APPROVE — HALT chain closed
+- [x] Re-run Task 10 — production CLI cleared; 29-row panel emitted; DATA_PROVENANCE committed
