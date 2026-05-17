@@ -383,13 +383,11 @@ def message_records(draw: st.DrawFn):
     per R6 v0.1.3 CORRECTIONS-RR/-TT (used as pool-canonicalization sort
     key tiebreaker).
 
-    Cost is bounded at ``Decimal("1000")`` — a single Anthropic message
-    nowhere approaches this; the bound exists purely to keep Hypothesis
-    shrinking tractable.
+    CORRECTIONS-Y-2 (v0.2.3): ``cost_usd_notional`` is ``float`` (ccusage
+    parity); bounded at 1000.0 for shrinking tractability.
     """
     from datetime import datetime as _dt
     from datetime import timezone as _tz
-    from decimal import Decimal as _Dec
 
     from simulations.dev_ai_cost_v2.types import MessageRecord
 
@@ -411,18 +409,21 @@ def message_records(draw: st.DrawFn):
     cache_create_1h = draw(st.integers(min_value=0, max_value=10**6))
     cache_read = draw(st.integers(min_value=0, max_value=10**6))
     cost_usd_notional = draw(
-        st.decimals(
-            min_value=_Dec("0"),
-            max_value=_Dec("1000"),
+        st.floats(
+            min_value=0.0,
+            max_value=1000.0,
             allow_nan=False,
             allow_infinity=False,
-            places=8,
         )
     )
     session_id = draw(st.text(min_size=1, max_size=64))
     request_id = draw(st.one_of(st.none(), st.text(min_size=1, max_size=64)))
     is_error = draw(st.booleans())
-    uuid = draw(st.text(min_size=1, max_size=64))  # non-empty per R6
+    # Y-5e: uuid may emit synth-sha256: prefix or arbitrary string. The
+    # MessageRecord contract still rejects empty strings (R6 dedupe), so
+    # draw a non-empty string here; synthesis is exercised at jsonl_io's
+    # boundary, not at the MessageRecord level.
+    uuid = draw(st.text(min_size=1, max_size=64))
     return MessageRecord(
         ts=ts,
         model=model,

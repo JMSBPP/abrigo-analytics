@@ -1,14 +1,15 @@
 """Tests for ``simulations.dev_ai_cost_v2.types`` — frozen-dc value containers.
 
-Spec ref: docs/specs/2026-05-16-ai-cost-factor-model-design.md v0.2.1 §3.5.
+Spec ref: docs/specs/2026-05-16-ai-cost-factor-model-design.md v0.2.3 §3.5
++ §0.3 CORRECTIONS-Y-5a/-Y-5b/-Y-2 + Y-6.
 Sibling spec: docs/specs/2026-05-16-r6-continuous-stream-simulation-design.md
 v0.1.3 CORRECTIONS-RR/-TT — adds ``uuid: str`` field on ``MessageRecord`` for
 R6 pool canonicalization (tertiary sort key + dedupe disambiguation).
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import polars as pl
 import pytest
@@ -17,6 +18,7 @@ from hypothesis import given
 from simulations.dev_ai_cost_v2.types import (
     EXPECTED_PANEL_SCHEMA,
     DailyNotionalPanel,
+    JSONLReadResult,
     MessageRecord,
     TokensByCategory,
 )
@@ -34,7 +36,7 @@ def _valid_message_kwargs() -> dict:
         cache_create_5m=0,
         cache_create_1h=0,
         cache_read=0,
-        cost_usd_notional=Decimal("0.0015"),
+        cost_usd_notional=0.0015,  # float per CORRECTIONS-Y-2
         session_id="sess-1",
         request_id=None,
         is_error=False,
@@ -47,7 +49,9 @@ def test_message_record_constructs_with_valid_fields() -> None:
     assert rec.model == "claude-sonnet-4-5"
     assert rec.uuid == "msg-uuid-abc-123"
     assert rec.input_tok == 100
-    assert rec.cost_usd_notional == Decimal("0.0015")
+    assert rec.cost_usd_notional == 0.0015
+    # CORRECTIONS-Y-2: cost_usd_notional is float, not Decimal.
+    assert isinstance(rec.cost_usd_notional, float)
 
 
 def test_message_record_rejects_negative_tokens() -> None:
@@ -81,7 +85,26 @@ def test_message_record_rejects_negative_cache_read() -> None:
 
 
 def test_message_record_rejects_negative_cost() -> None:
-    kwargs = _valid_message_kwargs() | {"cost_usd_notional": Decimal("-0.01")}
+    kwargs = _valid_message_kwargs() | {"cost_usd_notional": -0.01}
+    with pytest.raises(ValueError, match="cost_usd_notional"):
+        MessageRecord(**kwargs)
+
+
+def test_message_record_rejects_nan_cost() -> None:
+    """CORRECTIONS-Y-2: float cost must reject NaN/inf."""
+    kwargs = _valid_message_kwargs() | {"cost_usd_notional": float("nan")}
+    with pytest.raises(ValueError, match="cost_usd_notional"):
+        MessageRecord(**kwargs)
+
+
+def test_message_record_rejects_inf_cost() -> None:
+    kwargs = _valid_message_kwargs() | {"cost_usd_notional": float("inf")}
+    with pytest.raises(ValueError, match="cost_usd_notional"):
+        MessageRecord(**kwargs)
+
+
+def test_message_record_rejects_neg_inf_cost() -> None:
+    kwargs = _valid_message_kwargs() | {"cost_usd_notional": float("-inf")}
     with pytest.raises(ValueError, match="cost_usd_notional"):
         MessageRecord(**kwargs)
 
@@ -151,74 +174,219 @@ def test_tokens_by_category_rejects_negative_cache_read() -> None:
 
 
 def _valid_panel_df() -> pl.DataFrame:
-    """Build a minimal one-row DataFrame matching EXPECTED_PANEL_SCHEMA."""
+    """Build a minimal one-row DataFrame matching EXPECTED_PANEL_SCHEMA.
+
+    CORRECTIONS-Y-2 / Y-6: monetary cols are Float64; ``ephemeral_pi_share``
+    is a Float64 scalar broadcast across the panel.
+    """
     return pl.DataFrame(
         {
             "date_utc": [datetime(2026, 5, 1).date()],
-            "notional_cost_usd": [Decimal("1.50")],
-            "notional_cost_cop": [Decimal("6300.00")],
-            "trm_cop_per_usd": [Decimal("4200.00")],
+            "notional_cost_usd": [1.50],
+            "notional_cost_cop": [6300.00],
+            "trm_cop_per_usd": [4200.00],
             "input_tok": [1000],
             "output_tok": [500],
             "cache_create_5m": [0],
             "cache_create_1h": [0],
             "cache_read": [0],
             "n_messages": [5],
+            "ephemeral_pi_share": [0.0],
         },
         schema={
             "date_utc": pl.Date,
-            "notional_cost_usd": pl.Decimal(precision=18, scale=8),
-            "notional_cost_cop": pl.Decimal(precision=18, scale=8),
-            "trm_cop_per_usd": pl.Decimal(precision=18, scale=8),
+            "notional_cost_usd": pl.Float64,
+            "notional_cost_cop": pl.Float64,
+            "trm_cop_per_usd": pl.Float64,
             "input_tok": pl.Int64,
             "output_tok": pl.Int64,
             "cache_create_5m": pl.Int64,
             "cache_create_1h": pl.Int64,
             "cache_read": pl.Int64,
             "n_messages": pl.Int64,
+            "ephemeral_pi_share": pl.Float64,
         },
     )
 
 
-def test_daily_notional_panel_constructs() -> None:
-    p = DailyNotionalPanel(
-        df=_valid_panel_df(), dropped_rows_count=0, dropped_error_count=0
+def _panel_kwargs(**overrides) -> dict:
+    """Default kwargs for a DailyNotionalPanel including v0.2.3 counters."""
+    base = dict(
+        df=_valid_panel_df(),
+        dropped_rows_count=0,
+        dropped_error_count=0,
+        dropped_non_assistant_count=0,
+        warn_missing_keys_count=0,
+        dropped_unknown_model_count=0,
+        multiple_substring_match_warning=0,
+        ephemeral_pi_share=0.0,
     )
+    base.update(overrides)
+    return base
+
+
+def test_daily_notional_panel_constructs() -> None:
+    p = DailyNotionalPanel(**_panel_kwargs())
     assert p.df.height == 1
     assert p.dropped_rows_count == 0
+    assert p.dropped_non_assistant_count == 0
+    assert p.warn_missing_keys_count == 0
+    assert p.dropped_unknown_model_count == 0
+    assert p.multiple_substring_match_warning == 0
+    assert p.ephemeral_pi_share == 0.0
 
 
 def test_daily_notional_panel_rejects_missing_column() -> None:
     df = _valid_panel_df().drop("trm_cop_per_usd")
     with pytest.raises(ValueError, match="missing"):
-        DailyNotionalPanel(df=df, dropped_rows_count=0, dropped_error_count=0)
+        DailyNotionalPanel(**_panel_kwargs(df=df))
 
 
 def test_daily_notional_panel_rejects_extra_column() -> None:
     df = _valid_panel_df().with_columns(pl.lit(1).alias("rogue_col"))
     with pytest.raises(ValueError, match="extra"):
-        DailyNotionalPanel(df=df, dropped_rows_count=0, dropped_error_count=0)
+        DailyNotionalPanel(**_panel_kwargs(df=df))
 
 
 def test_daily_notional_panel_rejects_wrong_dtype() -> None:
     df = _valid_panel_df().with_columns(pl.col("input_tok").cast(pl.Float64))
     with pytest.raises(ValueError, match="input_tok"):
-        DailyNotionalPanel(df=df, dropped_rows_count=0, dropped_error_count=0)
+        DailyNotionalPanel(**_panel_kwargs(df=df))
 
 
 def test_daily_notional_panel_rejects_negative_dropped_counts() -> None:
     with pytest.raises(ValueError, match="dropped"):
-        DailyNotionalPanel(df=_valid_panel_df(), dropped_rows_count=-1, dropped_error_count=0)
+        DailyNotionalPanel(**_panel_kwargs(dropped_rows_count=-1))
 
 
 def test_daily_notional_panel_rejects_negative_error_counts() -> None:
     with pytest.raises(ValueError, match="dropped"):
-        DailyNotionalPanel(df=_valid_panel_df(), dropped_rows_count=0, dropped_error_count=-1)
+        DailyNotionalPanel(**_panel_kwargs(dropped_error_count=-1))
 
 
-def test_expected_panel_schema_has_ten_columns() -> None:
-    """Pin schema width — additions require explicit spec change."""
-    assert len(EXPECTED_PANEL_SCHEMA) == 10
+def test_daily_notional_panel_rejects_negative_non_assistant_count() -> None:
+    """Y-5a: counter ownership — dropped_non_assistant_count must be ≥ 0."""
+    with pytest.raises(ValueError, match="non_assistant"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_non_assistant_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_warn_missing_keys() -> None:
+    with pytest.raises(ValueError, match="warn_missing_keys"):
+        DailyNotionalPanel(**_panel_kwargs(warn_missing_keys_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_dropped_unknown_model() -> None:
+    with pytest.raises(ValueError, match="dropped_unknown_model"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_unknown_model_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_multiple_substring() -> None:
+    with pytest.raises(ValueError, match="multiple_substring"):
+        DailyNotionalPanel(**_panel_kwargs(multiple_substring_match_warning=-1))
+
+
+def test_daily_notional_panel_ephemeral_pi_share_bounds() -> None:
+    """Y-6: π̂ is a share in [0, 1]; out-of-range values are rejected."""
+    with pytest.raises(ValueError, match="ephemeral_pi_share"):
+        DailyNotionalPanel(**_panel_kwargs(ephemeral_pi_share=1.5))
+    with pytest.raises(ValueError, match="ephemeral_pi_share"):
+        DailyNotionalPanel(**_panel_kwargs(ephemeral_pi_share=-0.1))
+
+
+def test_expected_panel_schema_has_eleven_columns() -> None:
+    """Pin schema width — v0.2.3 adds ``ephemeral_pi_share`` (Y-6)."""
+    assert len(EXPECTED_PANEL_SCHEMA) == 11
+    assert "ephemeral_pi_share" in EXPECTED_PANEL_SCHEMA
+
+
+def test_expected_panel_schema_monetary_cols_are_float64() -> None:
+    """CORRECTIONS-Y-2: cost cols are Float64, not Decimal."""
+    assert EXPECTED_PANEL_SCHEMA["notional_cost_usd"] == pl.Float64
+    assert EXPECTED_PANEL_SCHEMA["notional_cost_cop"] == pl.Float64
+    assert EXPECTED_PANEL_SCHEMA["trm_cop_per_usd"] == pl.Float64
+    assert EXPECTED_PANEL_SCHEMA["ephemeral_pi_share"] == pl.Float64
+
+
+# ─── JSONLReadResult (Y-5b: types-tier placement) ────────────────────────────
+
+
+def test_jsonl_read_result_importable_from_types() -> None:
+    """CR-Z-2 pin: JSONLReadResult lives in types/, NOT in jsonl_io.
+
+    Tier discipline: jsonl_io is utils-tier; types are imported by both
+    modules and utils, so the result container must live in types.
+    """
+    from simulations.dev_ai_cost_v2 import types as _types
+    assert hasattr(_types, "JSONLReadResult")
+
+
+def test_jsonl_read_result_not_exported_from_jsonl_io() -> None:
+    """CR-Z-2 pin: JSONLReadResult must not be defined in jsonl_io module."""
+    from simulations.dev_ai_cost_v2 import jsonl_io as _jsonl_io
+    # The symbol may be re-exported as a name (re-import is fine) but its
+    # canonical __module__ must be the types module.
+    assert JSONLReadResult.__module__ == "simulations.dev_ai_cost_v2.types"
+    # And it is not in __all__ of jsonl_io
+    if hasattr(_jsonl_io, "__all__"):
+        assert "JSONLReadResult" not in _jsonl_io.__all__
+
+
+def test_jsonl_read_result_constructs() -> None:
+    rec = MessageRecord(**_valid_message_kwargs())
+    r = JSONLReadResult(records=(rec,), dropped_non_assistant_count=3)
+    assert len(r.records) == 1
+    assert r.dropped_non_assistant_count == 3
+
+
+def test_jsonl_read_result_records_is_tuple_immutable() -> None:
+    """Y-5b: records is a tuple (immutable, hashable)."""
+    rec = MessageRecord(**_valid_message_kwargs())
+    r = JSONLReadResult(records=(rec,), dropped_non_assistant_count=0)
+    assert isinstance(r.records, tuple)
+
+
+def test_jsonl_read_result_rejects_negative_count() -> None:
+    with pytest.raises(ValueError, match="dropped_non_assistant"):
+        JSONLReadResult(records=(), dropped_non_assistant_count=-1)
+
+
+def test_jsonl_read_result_empty_records_valid() -> None:
+    r = JSONLReadResult(records=(), dropped_non_assistant_count=0)
+    assert r.records == ()
+    assert r.dropped_non_assistant_count == 0
+
+
+# ─── CR-Z-1 counter ownership pin ────────────────────────────────────────────
+
+
+def test_cr_z_1_pricingtable_owns_warn_missing_keys_count() -> None:
+    """CR-Z-1: WARN_missing_keys_count lives on PricingTable, NOT on JSONLReader.
+
+    Tier discipline: counter ownership cannot be shared across tiers.
+    """
+    from simulations.dev_ai_cost_v2.anthropic_pricing import PricingTable
+    from simulations.dev_ai_cost_v2.jsonl_io import JSONLReader
+
+    # PricingTable instance carries the counter as a field.
+    fields = {f.name for f in PricingTable.__dataclass_fields__.values()}
+    assert "WARN_missing_keys_count" in fields
+    assert "dropped_unknown_model_count" in fields
+    assert "multiple_substring_match_warning" in fields
+
+    # JSONLReader does NOT carry WARN_missing_keys_count.
+    reader = JSONLReader()
+    assert not hasattr(reader, "WARN_missing_keys_count")
+
+
+def test_cr_z_1_jsonlreadresult_owns_dropped_non_assistant_count() -> None:
+    """CR-Z-1: dropped_non_assistant_count lives on JSONLReadResult, NOT on PricingTable."""
+    from simulations.dev_ai_cost_v2.anthropic_pricing import PricingTable
+
+    fields = {f.name for f in JSONLReadResult.__dataclass_fields__.values()}
+    assert "dropped_non_assistant_count" in fields
+
+    pt_fields = {f.name for f in PricingTable.__dataclass_fields__.values()}
+    assert "dropped_non_assistant_count" not in pt_fields
 
 
 # ─── Hypothesis property test ─────────────────────────────────────────────────
@@ -236,6 +404,7 @@ def test_message_record_post_init_invariants(rec: MessageRecord) -> None:
     assert rec.cache_create_1h >= 0
     assert rec.cache_read >= 0
     assert rec.cost_usd_notional >= 0
+    assert math.isfinite(rec.cost_usd_notional)
     assert rec.uuid != ""
     assert rec.ts.tzinfo is not None
     assert rec.ts.utcoffset() == timezone.utc.utcoffset(rec.ts)
