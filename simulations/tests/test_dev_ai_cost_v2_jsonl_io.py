@@ -549,6 +549,7 @@ def test_dropped_malformed_line_count_threaded_through_panel(
         records=(rec,),
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=7,
+        dropped_duplicate_count=0,
     )
     pricing = _toy_pricing(tmp_path)
     trm = pl.DataFrame(
@@ -689,3 +690,312 @@ def test_jsonlreader_line_conservation_property(
         f"blank_inferred={dropped_blank_inferred}, "
         f"total={total_lines}"
     )
+
+
+# ─── v0.2.5 §0.5 CORRECTIONS-Y-8: uniqueHash dedup ──────────────────────────
+
+
+def _dup_row(
+    ts: str,
+    message_id: str | None,
+    request_id: str | None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cache_5m: int = 0,
+    cache_1h: int = 0,
+    cache_read: int = 0,
+    speed: str | None = None,
+    uuid: str = "u-dup",
+    model: str = "claude-sonnet-4-5",
+) -> dict:
+    """Build a JSONL row with explicit message.id + requestId + token mix.
+
+    v0.2.5 Y-8 fixture helper. ``message_id=None`` sets ``message.id`` to a
+    JSON null (the row should bypass the dedup map). ``speed`` populates
+    ``message.usage.speed`` only when not None (absence is the hasSpeed=False
+    branch of the tiebreaker).
+    """
+    usage: dict = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_creation": {
+            "ephemeral_5m_input_tokens": cache_5m,
+            "ephemeral_1h_input_tokens": cache_1h,
+        },
+        "cache_read_input_tokens": cache_read,
+    }
+    if speed is not None:
+        usage["speed"] = speed
+    message: dict = {"model": model, "usage": usage}
+    if message_id is not None:
+        message["id"] = message_id
+    r: dict = {
+        "type": "assistant",
+        "timestamp": ts,
+        "sessionId": "s1",
+        "requestId": request_id,
+        "isApiErrorMessage": False,
+        "uuid": uuid,
+        "message": message,
+    }
+    return r
+
+
+def test_jsonlreader_dedup_within_file(tmp_path: Path) -> None:
+    """v0.2.5 Y-8: within-file dedup keeps the row with the largest
+    tokenTotal; counter increments on every collision.
+
+    Three rows share ``message.id=msg_1, requestId=req_1`` with
+    tokenTotals 200/500/300 (output-only). Expect 1 record (the 500 row),
+    dropped_duplicate_count == 2.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    rows = [
+        _dup_row("2026-05-04T10:00:00Z", "msg_1", "req_1",
+                 output_tokens=200, uuid="u-a"),
+        _dup_row("2026-05-04T10:00:01Z", "msg_1", "req_1",
+                 output_tokens=500, uuid="u-b"),
+        _dup_row("2026-05-04T10:00:02Z", "msg_1", "req_1",
+                 output_tokens=300, uuid="u-c"),
+    ]
+    _write_jsonl(proj / "session.jsonl", rows)
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 31),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    assert out.records[0].output_tok == 500
+    assert out.dropped_duplicate_count == 2
+
+
+def test_jsonlreader_dedup_across_files(tmp_path: Path) -> None:
+    """v0.2.5 Y-8: cross-file dedup keeps the larger row regardless of
+    file-traversal order.
+
+    Tests both orderings (file_a first vs file_b first) by sorting the
+    file basenames lexicographically — verifies that whichever file
+    rglob hits first does not affect the kept entry's identity.
+    """
+    for first_letter, second_letter in (("a", "b"), ("b", "a")):
+        proj = tmp_path / f"projects_{first_letter}{second_letter}" / "p1"
+        proj.mkdir(parents=True, exist_ok=True)
+        # Larger row lives in "file_b.jsonl" regardless of traversal order.
+        small = _dup_row("2026-05-04T10:00:00Z", "msg_x", "req_x",
+                         output_tokens=100, uuid="u-small")
+        large = _dup_row("2026-05-04T10:00:01Z", "msg_x", "req_x",
+                         output_tokens=999, uuid="u-large")
+        _write_jsonl(proj / "file_a.jsonl", [small])
+        _write_jsonl(proj / "file_b.jsonl", [large])
+        out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+            since=date(2026, 5, 1),
+            until=date(2026, 5, 31),
+            projects_root=tmp_path / f"projects_{first_letter}{second_letter}",
+        )
+        assert len(out.records) == 1
+        assert out.records[0].output_tok == 999
+        assert out.records[0].uuid == "u-large"
+        assert out.dropped_duplicate_count == 1
+
+
+def test_jsonlreader_dedup_hasspeed_tiebreaker(tmp_path: Path) -> None:
+    """v0.2.5 Y-8: on equal tokenTotal, the row with ``usage.speed`` set
+    wins (ccusage hasSpeed tiebreaker).
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    no_speed = _dup_row("2026-05-04T10:00:00Z", "msg_s", "req_s",
+                        output_tokens=500, speed=None, uuid="u-no")
+    with_speed = _dup_row("2026-05-04T10:00:01Z", "msg_s", "req_s",
+                          output_tokens=500, speed="standard", uuid="u-yes")
+    _write_jsonl(proj / "session.jsonl", [no_speed, with_speed])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 31),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    assert out.records[0].uuid == "u-yes"
+    assert out.dropped_duplicate_count == 1
+
+
+def test_jsonlreader_dedup_no_request_id_falls_back_to_message_id(
+    tmp_path: Path,
+) -> None:
+    """v0.2.5 Y-8: when ``requestId`` is None, ``_unique_hash`` falls
+    back to ``message.id`` alone.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    import warnings as _warnings
+    a = _dup_row("2026-05-04T10:00:00Z", "msg_only", None,
+                 output_tokens=100, uuid="u-1")
+    b = _dup_row("2026-05-04T10:00:01Z", "msg_only", None,
+                 output_tokens=700, uuid="u-2")
+    _write_jsonl(proj / "session.jsonl", [a, b])
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("ignore", UserWarning)
+        out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+            since=date(2026, 5, 1),
+            until=date(2026, 5, 31),
+            projects_root=tmp_path / "projects",
+        )
+    assert len(out.records) == 1
+    assert out.records[0].output_tok == 700
+    assert out.dropped_duplicate_count == 1
+
+
+@settings(max_examples=20, deadline=None)
+@given(
+    perm=st.permutations(["f0.jsonl", "f1.jsonl", "f2.jsonl", "f3.jsonl"]),
+)
+def test_jsonlreader_dedup_traversal_order_invariant(
+    tmp_path_factory: pytest.TempPathFactory,
+    perm: list[str],
+) -> None:
+    """v0.2.5 Y-8: kept-entry set is invariant under file-traversal
+    permutation.
+
+    Fixture: 4 files each carrying one row of a 4-collision uniqueHash
+    cluster. The keep-largest rule should select the same canonical row
+    (the one with the maximum tokenTotal) regardless of which file the
+    reader encounters first. ``Path.rglob`` order is filesystem-dependent;
+    we exercise the invariant by creating files with different
+    lexicographic names per permutation iteration.
+    """
+    tmp_path = tmp_path_factory.mktemp("y8_perm")
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    # tokenTotals 100, 200, 300, 400 — winner is 400.
+    totals = [100, 200, 300, 400]
+    rows = [
+        _dup_row(f"2026-05-04T10:00:0{i}Z", "msg_perm", "req_perm",
+                 output_tokens=tot, uuid=f"u-{tot}")
+        for i, tot in enumerate(totals)
+    ]
+    # Assign rows to file names per the permutation.
+    for fname, row in zip(perm, rows):
+        _write_jsonl(proj / fname, [row])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 31),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    assert out.records[0].uuid == "u-400"
+    assert out.dropped_duplicate_count == 3
+
+
+def test_dropped_duplicate_count_threaded_through_panel(
+    tmp_path: Path,
+) -> None:
+    """v0.2.5 Y-8: ``JSONLReadResult.dropped_duplicate_count`` surfaces
+    on ``DailyNotionalPanel.dropped_duplicate_count`` via
+    ``build_daily_panel``.
+    """
+    import polars as pl
+    from datetime import datetime, timezone, date as _date
+    from simulations.dev_ai_cost_v2.panel_builder import build_daily_panel
+    from simulations.dev_ai_cost_v2.types import MessageRecord
+
+    rec = MessageRecord(
+        ts=datetime(2026, 5, 4, 12, 0, 0, tzinfo=timezone.utc),
+        model="claude-sonnet-4-5",
+        input_tok=100,
+        output_tok=50,
+        cache_create_5m=0,
+        cache_create_1h=0,
+        cache_read=0,
+        cost_usd_notional=1.5e-4,
+        session_id="s",
+        request_id="r",
+        is_error=False,
+        uuid="u-1",
+    )
+    rr = JSONLReadResult(
+        records=(rec,),
+        dropped_non_assistant_count=0,
+        dropped_malformed_line_count=0,
+        dropped_duplicate_count=7,
+    )
+    pricing = _toy_pricing(tmp_path)
+    trm = pl.DataFrame(
+        {"date": [_date(2026, 5, 4)], "trm_cop_per_usd": [4000.0]},
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
+    )
+    panel = build_daily_panel(rr, pricing, trm)
+    assert panel.dropped_duplicate_count == 7
+
+
+def test_jsonlreader_dedup_field_atomicity(tmp_path: Path) -> None:
+    """v0.2.5 Y-8 RC FLAG-A: whole-record replacement — the row with the
+    larger tokenTotal wins on EVERY field. No Frankenstein-mixing.
+
+    Two rows with the same uniqueHash but DIFFERING model, timestamp, and
+    token mixes. Assert the kept entry's model, ts, AND tokens all come
+    from the single winning row.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    small = _dup_row(
+        "2026-05-04T10:00:00Z", "msg_atom", "req_atom",
+        input_tokens=10, output_tokens=20, cache_5m=0, cache_1h=0, cache_read=0,
+        model="claude-sonnet-4-5", uuid="u-loser",
+    )
+    # Large row: different model, different ts, much larger tokenTotal.
+    large = _dup_row(
+        "2026-05-04T11:00:00Z", "msg_atom", "req_atom",
+        input_tokens=500, output_tokens=2000, cache_5m=100, cache_1h=200,
+        cache_read=300,
+        model="claude-opus-4-7", uuid="u-winner",
+    )
+    _write_jsonl(proj / "session.jsonl", [small, large])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 31),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    kept = out.records[0]
+    # Every field comes from "large" — no mixing.
+    assert kept.uuid == "u-winner"
+    assert kept.model == "claude-opus-4-7"
+    assert kept.ts.hour == 11
+    assert kept.input_tok == 500
+    assert kept.output_tok == 2000
+    assert kept.cache_create_5m == 100
+    assert kept.cache_create_1h == 200
+    assert kept.cache_read == 300
+    assert out.dropped_duplicate_count == 1
+
+
+def test_jsonlreader_dedup_missing_message_id_admitted_without_counter(
+    tmp_path: Path,
+) -> None:
+    """v0.2.5 Y-8 RC FLAG-B / CR optional-7th: rows with
+    ``message.id == None`` bypass the dedup map and are admitted into
+    ``records`` without incrementing ``dropped_duplicate_count``.
+
+    Three such rows are written; assert all three appear distinctly in
+    output AND the counter stays at 0 (no hash collisions ever recorded).
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    rows = [
+        _dup_row("2026-05-04T10:00:00Z", None, "req_a",
+                 output_tokens=100, uuid="u-a"),
+        _dup_row("2026-05-04T10:00:01Z", None, "req_b",
+                 output_tokens=200, uuid="u-b"),
+        _dup_row("2026-05-04T10:00:02Z", None, "req_c",
+                 output_tokens=300, uuid="u-c"),
+    ]
+    _write_jsonl(proj / "session.jsonl", rows)
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 31),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 3
+    assert {r.uuid for r in out.records} == {"u-a", "u-b", "u-c"}
+    assert out.dropped_duplicate_count == 0

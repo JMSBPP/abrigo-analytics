@@ -102,16 +102,20 @@ def _result(
     records: list[MessageRecord],
     dropped_non_assistant: int = 0,
     dropped_malformed: int = 0,
+    dropped_duplicate: int = 0,
 ) -> JSONLReadResult:
     """Wrap records in JSONLReadResult (Y-5b — panel_builder now consumes this).
 
     v0.2.4 Y-7: ``dropped_malformed`` defaults to 0 for back-compatible test
     fixtures; explicit value used by Y-7 counter-threading test.
+    v0.2.5 Y-8: ``dropped_duplicate`` defaults to 0 for back-compatible
+    fixtures; explicit value used by Y-8 counter-threading test.
     """
     return JSONLReadResult(
         records=tuple(records),
         dropped_non_assistant_count=dropped_non_assistant,
         dropped_malformed_line_count=dropped_malformed,
+        dropped_duplicate_count=dropped_duplicate,
     )
 
 
@@ -300,6 +304,7 @@ def test_counter_threading_jsonlreader_side(tmp_path: Path) -> None:
         records=tuple(records),
         dropped_non_assistant_count=7,
         dropped_malformed_line_count=0,
+        dropped_duplicate_count=0,
     )
     panel = build_daily_panel(rr, pricing, _toy_trm())
     assert panel.dropped_non_assistant_count == 7
@@ -382,6 +387,7 @@ def test_build_daily_panel_consumes_jsonl_read_result(tmp_path: Path) -> None:
         records=tuple(records),
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
+        dropped_duplicate_count=0,
     )
     # Must work cleanly.
     panel = build_daily_panel(rr, pricing, _toy_trm())

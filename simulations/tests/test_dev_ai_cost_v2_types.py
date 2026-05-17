@@ -210,7 +210,7 @@ def _valid_panel_df() -> pl.DataFrame:
 
 
 def _panel_kwargs(**overrides) -> dict:
-    """Default kwargs for a DailyNotionalPanel including v0.2.3 counters."""
+    """Default kwargs for a DailyNotionalPanel including v0.2.3/2.4/2.5 counters."""
     base = dict(
         df=_valid_panel_df(),
         dropped_rows_count=0,
@@ -221,6 +221,7 @@ def _panel_kwargs(**overrides) -> dict:
         dropped_unknown_model_count=0,
         multiple_substring_match_warning=0,
         ephemeral_pi_share=0.0,
+        dropped_duplicate_count=0,
     )
     base.update(overrides)
     return base
@@ -276,6 +277,12 @@ def test_daily_notional_panel_rejects_negative_malformed_line_count() -> None:
     """v0.2.4 Y-7: dropped_malformed_line_count must be ≥ 0."""
     with pytest.raises(ValueError, match="dropped_malformed_line"):
         DailyNotionalPanel(**_panel_kwargs(dropped_malformed_line_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_duplicate_count() -> None:
+    """v0.2.5 Y-8: dropped_duplicate_count must be ≥ 0."""
+    with pytest.raises(ValueError, match="dropped_duplicate_count"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_duplicate_count=-1))
 
 
 def test_daily_notional_panel_rejects_negative_warn_missing_keys() -> None:
@@ -345,10 +352,12 @@ def test_jsonl_read_result_constructs() -> None:
         records=(rec,),
         dropped_non_assistant_count=3,
         dropped_malformed_line_count=0,
+        dropped_duplicate_count=0,
     )
     assert len(r.records) == 1
     assert r.dropped_non_assistant_count == 3
     assert r.dropped_malformed_line_count == 0
+    assert r.dropped_duplicate_count == 0
 
 
 def test_jsonl_read_result_records_is_tuple_immutable() -> None:
@@ -358,6 +367,7 @@ def test_jsonl_read_result_records_is_tuple_immutable() -> None:
         records=(rec,),
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
+        dropped_duplicate_count=0,
     )
     assert isinstance(r.records, tuple)
 
@@ -368,6 +378,7 @@ def test_jsonl_read_result_rejects_negative_count() -> None:
             records=(),
             dropped_non_assistant_count=-1,
             dropped_malformed_line_count=0,
+            dropped_duplicate_count=0,
         )
 
 
@@ -378,6 +389,18 @@ def test_jsonl_read_result_rejects_negative_malformed_count() -> None:
             records=(),
             dropped_non_assistant_count=0,
             dropped_malformed_line_count=-1,
+            dropped_duplicate_count=0,
+        )
+
+
+def test_jsonl_read_result_rejects_negative_duplicate_count() -> None:
+    """v0.2.5 Y-8: dropped_duplicate_count must be >= 0."""
+    with pytest.raises(ValueError, match="dropped_duplicate_count"):
+        JSONLReadResult(
+            records=(),
+            dropped_non_assistant_count=0,
+            dropped_malformed_line_count=0,
+            dropped_duplicate_count=-1,
         )
 
 
@@ -386,10 +409,12 @@ def test_jsonl_read_result_empty_records_valid() -> None:
         records=(),
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
+        dropped_duplicate_count=0,
     )
     assert r.records == ()
     assert r.dropped_non_assistant_count == 0
     assert r.dropped_malformed_line_count == 0
+    assert r.dropped_duplicate_count == 0
 
 
 # ─── CR-Z-1 counter ownership pin ────────────────────────────────────────────
