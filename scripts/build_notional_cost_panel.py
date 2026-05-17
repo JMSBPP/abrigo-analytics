@@ -1,11 +1,15 @@
 """Tier-3 CLI: build data/panels/notional_cost_panel.parquet.
 
 Single orchestration point that imports across utils + modules tiers
-(spec v0.2.1 §3.3, §3.5). This is the only module in the dev_ai_cost_v2
+(spec v0.2.3 §3.3, §3.5). This is the only module in the dev_ai_cost_v2
 pipeline permitted to wire IO Boundary (jsonl_io) together with Callable
 tier (anthropic_pricing, panel_builder); per spec §3.3 the CLI is the
 intentional cross-tier integration point and is NOT a tier-import-rule
 violation.
+
+v0.2.3 (Y-5f migration): the CLI consumes ``JSONLReadResult`` (not bare
+Sequence[MessageRecord]) and threads the 5 audit counters into the
+operator print line + DATA_PROVENANCE emission per Y-5a.
 
 Reads:
     --projects-root  Anthropic Claude Code JSONL transcript root.
@@ -25,7 +29,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import date
 from pathlib import Path
 
@@ -83,29 +86,23 @@ def main() -> int:
     """Orchestrate the panel build end-to-end.
 
     Contract:
-        * Creates ``args.out.parent`` if missing (CORRECTIONS-W: the
-          ``data/panels/`` directory does not exist on a fresh clone).
+        * Creates ``args.out.parent`` if missing (CORRECTIONS-W).
         * Loads the LiteLLM pricing table at the spec-pinned SHA via
-          ``PricingTable.from_litellm_sha(LITELLM_SHA_PINNED, ...)``.
-          Passing the pinned SHA as the first positional argument (NOT
-          ``skip_sha_check=True``) enforces reproducibility — any drift
-          in the cached JSON raises ``PricingSchemaError`` and exits
-          non-zero.
-        * Reads the daily TRM parquet via ``pl.read_parquet``; a missing
-          file raises ``FileNotFoundError``.
-        * Materializes JSONL records via ``JSONLReader`` (the only IO
-          Boundary call in this orchestration).
+          ``PricingTable.from_litellm_sha(LITELLM_SHA_PINNED, ...)``
+          (signature unchanged per v0.2.3 RC closure note).
+        * Reads the daily TRM parquet via ``pl.read_parquet``.
+        * Materializes JSONL ``read_result`` via ``JSONLReader`` (the only
+          IO Boundary call). The reader returns a ``JSONLReadResult``
+          carrying ``dropped_non_assistant_count`` (Y-5a, Y-5b).
         * Joins records × pricing × TRM via ``build_daily_panel``;
           forward-fill is FORBIDDEN by the panel builder's contract.
         * Writes the resulting parquet and prints a one-line summary
-          including ``dropped_rows_count`` and ``dropped_error_count``
-          for operator reconciliation.
+          including all 5 v0.2.3 counters + the Y-6 π̂ scalar for
+          operator reconciliation.
 
     Returns:
-        ``0`` on success. Any exception (schema drift, SHA mismatch,
-        missing file, reconciliation failure inside ``build_daily_panel``)
-        propagates uncaught so the operator sees the full traceback and
-        the process exits non-zero via the ``__main__`` ``SystemExit``.
+        ``0`` on success. Any exception propagates uncaught so the
+        operator sees the full traceback.
     """
     args = _parse_args()
 
@@ -116,15 +113,23 @@ def main() -> int:
         LITELLM_SHA_PINNED, cached_json_path=args.litellm_cache
     )
     trm = pl.read_parquet(args.trm_path)
-    reader = JSONLReader()
-    records = reader(args.since, args.until, projects_root=args.projects_root)
-    panel = build_daily_panel(records, pricing, trm)
+    reader = JSONLReader(pricing=pricing)
+    read_result = reader(args.since, args.until, projects_root=args.projects_root)
+    panel = build_daily_panel(read_result, pricing, trm)
 
     panel.df.write_parquet(args.out)
+    # Operator-visible audit line: original 2 counters (dropped_rows,
+    # dropped_error) + the 4 v0.2.3 counters (non_assistant, warn_missing,
+    # unknown_model, substr_tie) + Y-6 π̂ scalar = 7 fields.
     print(
         f"[OK] wrote {args.out} ({panel.df.height} rows; "
         f"dropped_rows={panel.dropped_rows_count}, "
-        f"dropped_error={panel.dropped_error_count})"
+        f"dropped_error={panel.dropped_error_count}, "
+        f"dropped_non_assistant={panel.dropped_non_assistant_count}, "
+        f"warn_missing_keys={panel.warn_missing_keys_count}, "
+        f"dropped_unknown_model={panel.dropped_unknown_model_count}, "
+        f"substr_tiebreaker={panel.multiple_substring_match_warning}, "
+        f"ephemeral_pi_share={panel.ephemeral_pi_share:.6f})"
     )
     return 0
 
