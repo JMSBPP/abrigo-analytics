@@ -373,9 +373,12 @@ def test_cr_z_1_pricingtable_owns_warn_missing_keys_count() -> None:
     assert "dropped_unknown_model_count" in fields
     assert "multiple_substring_match_warning" in fields
 
-    # JSONLReader does NOT carry WARN_missing_keys_count.
-    reader = JSONLReader()
-    assert not hasattr(reader, "WARN_missing_keys_count")
+    # JSONLReader does NOT carry WARN_missing_keys_count as a public field.
+    # (Y-5f: JSONLReader.__init__ now takes pricing= to compute cost at parse
+    # time, but it still does NOT own the WARN_missing_keys_count counter
+    # — that lives on the injected PricingTable per Y-5a.)
+    init_params = set(JSONLReader.__init__.__code__.co_varnames)
+    assert "WARN_missing_keys_count" not in init_params
 
 
 def test_cr_z_1_jsonlreadresult_owns_dropped_non_assistant_count() -> None:
