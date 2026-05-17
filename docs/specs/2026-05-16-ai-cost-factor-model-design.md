@@ -1,8 +1,8 @@
 ---
 spec_id: ai-cost-factor-model
-spec_version: 0.2.4
+spec_version: 0.2.5
 created: 2026-05-16
-status: DRAFT — v0.2.4 real-data HALT patch (§0.4 CORRECTIONS-Y-7) closing the line-level malformed-skip gap that production Task 10 surfaced (trailing-null-byte filesystem corruption). Awaiting two-wave review on the diff.
+status: DRAFT — v0.2.5 reliability-convergence patch (§0.5 CORRECTIONS-Y-8) closing the ~2.1× ccusage cost overcount via OSS-mirror uniqueHash dedup. Empirical validation in `scratch/2026-05-17-v0_2_5-dedup-discovery/findings.md` shows cost converges from 2.11× to 0.977× of ccusage post-dedup. Awaiting two-wave review.
 v0_1_0_status: REJECTED 2026-05-16 by all three reviewers — see §12 revision history
 v0_2_0_status: NEEDS_WORK (Wave 1 RC) + NEEDS_WORK (Wave 2 Model QA) + ACCEPT_WITH_FLAGS (Wave 2 Code Reviewer) — all prior BLOCKs closed; 5 new BLOCKs surfaced from deferred evidence + methodology pins
 parent_iteration_pin: dev-AI-cost iteration (parent CLAUDE.md "Abrigo Operating Framework"; prior FAIL pinned)
@@ -641,6 +641,154 @@ block → 2-wave review → impl + tests → re-run Task 10 → post-hoc
 impl-review). No iteration parameters change (R5 / R4-S3 framework intact;
 N_MIN floor intact; MDES intact). Methodology is unchanged.
 
+## 0.5 v0.2.4 → v0.2.5 CORRECTIONS (reliability-convergence patch)
+
+v0.2.4 closed the line-level robustness gap and Task 10 produced its first
+production panel. Direct comparison of that panel to `npx ccusage daily`
+on the operator's `~/.claude/projects/` corpus surfaced a **~2.11× cost
+overcount** (ours $5,903.87 vs ccusage $2,789.64 on 27 overlapping days).
+That gap is far outside the v0.2.2 CORRECTIONS-Y-2 / Y-4 ccusage-parity
+target of 0.1%. Empirical investigation (saved at
+`scratch/2026-05-17-v0_2_5-dedup-discovery/findings.md`) identified the
+single dominant root cause and validated the fix; v0.2.5 is a contract-only
+patch closing it.
+
+**CORRECTIONS-Y-8 (uniqueHash dedup — Task 10 reliability HALT).**
+
+Direct inspection of ccusage's compiled source (`data-loader-LJFbLyZj.js`,
+function `Wr` for the key, `Sr` + `$` for the keep-larger rule, `ui` for
+per-file dedup and `pi` for cross-file dedup) shows that **every Anthropic
+message id is logged multiple times** by Claude Code (streaming chunks +
+iteration entries within a single tool-use loop), and ccusage's dedup
+discipline keeps **only one row per `${message.id}:${requestId}` —
+specifically the row with the largest sum of all four token fields**
+(`input + output + cache_creation + cache_read`). Our v0.2.4 `JSONLReader`
+counts every row, so on the operator's corpus we overcount by ~2×.
+
+Empirical validation on the operator's real `~/.claude/projects/` corpus:
+
+- Per-file uniqueness ratio on a single representative session: 1,079
+  assistant rows → 551 unique hashes (1.96× duplication WITHIN a single
+  file); subagents 5,387 rows → 3,085 unique hashes (1.75×); union
+  6,466 → 3,636 (1.78×). Cross-file UUID overlap (Anthropic-emitted
+  `uuid`) is 0; the duplication is keyed on `message.id:requestId`, not on
+  `uuid`.
+- Corpus-wide with dedup: cost $5,037.52 vs ccusage $5,155.80 →
+  **ratio 0.977** (was 2.11). Output / cache_create / cache_read all
+  converge to within ~2.3% of ccusage as well.
+- One residual anomaly (Y-8 does NOT close): input_tokens is 0.10× of
+  ccusage post-dedup, an order-of-magnitude shortfall. Hypothesis (filed
+  to v0.2.6 backlog Y-9): ccusage may aggregate `usage.iterations[i].input_tokens`
+  across the inner array; our parser reads only top-level
+  `usage.input_tokens`. The R5 / R4-S3 framework's cost magnitudes are
+  dominated by output + cache tokens (input is ~0.02% of total cost in
+  the empirical data), so this residual does NOT block the v0.2.5
+  cost-reliability convergence. Surfaced for follow-up.
+
+**Spec change (contract-only):**
+
+- `JSONLReader.__call__` adds an in-memory dedup map keyed on
+  `_unique_hash(message.id, requestId)` → index of currently-kept entry.
+  `_unique_hash` = `f"{message.id}:{requestId}"` when `requestId` is
+  present; else `message.id`; else `None` (row skipped from dedup but
+  still admitted into output for fault-tolerance — a missing message.id
+  is rare in real data and our v0.2.3 Y-1 already requires assistant
+  rows to be parseable). **Mutability scope (CR NIT-1)**: the dedup map
+  is a local variable inside `__call__`, *not* instance state on
+  `JSONLReader`; the reader remains stateless per IO Boundary tier
+  discipline — each call produces an independent dedup map that goes out
+  of scope when the call returns.
+- Keep-largest rule per ccusage `Sr` + `$`:
+  `tokenTotal = input + output + (cache_creation_input_tokens ?? 0) + (cache_read_input_tokens ?? 0)`.
+  When a duplicate hash appears with **strictly larger** `tokenTotal`,
+  replace the kept entry; when equal `tokenTotal` and the new entry has
+  `usage.speed != None` while the kept does not, replace (ccusage
+  `hasSpeed` tiebreaker); otherwise skip.
+- New counter `dropped_duplicate_count: int` on `JSONLReadResult`
+  (types-tier, Y-5b precedent). **Increment rule (CR NIT-3 — pinned for
+  the impl patch's field docstring)**: the counter increments on EVERY
+  collision of a `_unique_hash` that has been seen before, whether the
+  new row supersedes the kept entry (replacement) or is dropped (the
+  kept entry was larger or tied without `hasSpeed`). Equivalently:
+  `dropped_duplicate_count == raw_assistant_rows_admitted - len(records)`.
+  Threaded through `panel_builder.build_daily_panel` →
+  `DailyNotionalPanel.dropped_duplicate_count` → CLI emission and
+  DATA_PROVENANCE per Y-5a discipline. The 7 existing counters
+  (`dropped_rows_count`, `dropped_error_count`,
+  `dropped_non_assistant_count`, `dropped_malformed_line_count`,
+  `WARN_missing_keys_count`, `dropped_unknown_model_count`,
+  `multiple_substring_match_warning`) become 8; π̂ unchanged.
+
+**OSS-mirror provenance.** The OSS algorithm study at
+`scratch/2026-05-16-ai-cost-impl-review/oss_algorithm_study.md` correctly
+identified ccusage's permissive parsing (v0.2.2 Y-1) but did NOT identify
+the cross-file dedup discipline (it was not load-bearing for the
+operator's earlier small-corpus tests, but is the dominant correctness
+issue at production scale). Y-8 is the closure for that gap. ccusage
+source citations: `Wr` (uniqueHash function), `Sr` (tokenTotal), `$`
+(keep-larger), `ui` (per-file dedup), `pi` (cross-file dedup +
+aggregation), all in `node_modules/ccusage/dist/data-loader-LJFbLyZj.js`
+at ccusage version 19.0.3.
+
+**Test surface added** (Task 10.6 — minor migration):
+
+- `test_jsonlreader_dedup_within_file` — single file with 3 rows sharing
+  `message.id=msg_1, requestId=req_1` but differing `tokenTotal`
+  (200/500/300). Assert 1 record kept; the one with `tokenTotal=500`.
+  `dropped_duplicate_count == 2`.
+- `test_jsonlreader_dedup_across_files` — two files each with the same
+  uniqueHash; row in file B has larger tokenTotal. Assert single kept
+  entry == row from file B (regardless of file-traversal order).
+  `dropped_duplicate_count == 1`.
+- `test_jsonlreader_dedup_hasspeed_tiebreaker` — two rows with same hash
+  and same tokenTotal; one has `usage.speed="standard"`, the other has
+  no `speed` field. Assert kept entry is the one with `speed`.
+- `test_jsonlreader_dedup_no_request_id_falls_back_to_message_id` —
+  rows with `requestId=None` dedup by `message.id` alone.
+- `test_jsonlreader_dedup_traversal_order_invariant` (Hypothesis) —
+  generate a multi-file fixture with arbitrary uniqueHash collisions;
+  permute the file-traversal order; assert the kept-entry set is
+  identical across permutations (the "best entry per uniqueHash"
+  invariant).
+- `test_dropped_duplicate_count_threaded_through_panel` — counter
+  surfaces on `DailyNotionalPanel.dropped_duplicate_count`.
+- `test_jsonlreader_dedup_field_atomicity` (RC FLAG-A) — two rows with
+  the same uniqueHash but DIFFERING `model`, `timestamp`, and token
+  fields; the row with the larger `tokenTotal` wins on EVERY field
+  (no Frankenstein-mixing across rows). Mirrors ccusage `i[p] = h`
+  whole-record replacement semantics.
+- `test_jsonlreader_dedup_missing_message_id_admitted_without_counter`
+  (RC FLAG-B / CR optional-7th) — rows with `message.id == None` are
+  admitted into the output without dedup AND do NOT increment
+  `dropped_duplicate_count` (the counter only ticks on actual hash
+  collisions; `None`-hash rows bypass the dedup map entirely).
+
+**Anti-fishing invariant carried.** This is a spec-vs-data contradiction
+patched per the HALT chain (production data parity check → empirical
+root-cause investigation → user pivot → CORRECTIONS block → 2-wave review
+→ impl + tests → re-run Task 10 → post-hoc impl-review). No iteration
+parameters change (R5 / R4-S3 framework intact; N_MIN floor intact; MDES
+intact). Methodology unchanged; reliability discipline strengthened.
+
+**Backlog (Y-9, v0.2.6 candidate).** The residual ~2.3% gap on
+output/cc/cr (uniform across categories) and the 0.10× input_tokens
+anomaly need separate investigation. Working hypotheses: (a) ccusage may
+sum `usage.iterations[i].input_tokens` across the inner iteration array;
+(b) the 136 `dropped_unknown_model` rows may be priced by ccusage via a
+fallback that we drop; (c) `hasSpeed` tiebreaker behavior on equal
+tokenTotals may select differently in edge cases. None are load-bearing
+for v0.2.5's primary cost-convergence goal; filed for follow-up after Y-8
+lands and is verified.
+
+**Parity-target status (CR NIT-4).** v0.2.5 Y-8 closes the dominant root
+cause and brings cost from 211% over to 2.3% over ccusage — but the
+v0.2.2 CORRECTIONS-Y-2 / Y-4 ccusage-parity-0.1% criterion is **NOT yet
+satisfied**. Y-9 must close the residual before §2.1 R5 verdict-table
+eligibility (the R5 stationary-bootstrap output must be backed by data
+that matches ccusage to within 0.1% on cost, per the spec contract). Task
+10 produces a working panel for downstream EDA / power-measurement at
+v0.2.5; verdict-eligible R5/R4-S3 outputs require Y-9 closure.
+
 ## 1. Purpose and framework placement
 
 ### 1.1 Goal
@@ -998,17 +1146,17 @@ matches what was used for the prior dev-AI iteration's monthly fetcher;
 preserve fetcher style and provenance metadata. Output: tidy parquet with
 schema `(date: Date, trm_cop_per_usd: Decimal)`.
 
-### 3.5 Component contracts (v0.2.4 — CORRECTIONS-Y-1/-2/-3 + Y-5a/b/c/d/e/f + Y-6 + Y-7 applied)
+### 3.5 Component contracts (v0.2.5 — CORRECTIONS-Y-1/-2/-3 + Y-5a/b/c/d/e/f + Y-6 + Y-7 + Y-8 applied)
 
 | Unit | Tier | Signature |
 |---|---|---|
-| `dev_ai_cost_v2.jsonl_io.JSONLReader` | utils (IO Boundary) | `__call__(since, until, projects_root) -> JSONLReadResult` (see JSONLReadResult row below for tier placement per Y-5b). **Type-discriminates** by `type == "assistant"` before applying Pydantic schema (CORRECTIONS-Y-1); non-assistant rows skipped and counted in `JSONLReadResult.dropped_non_assistant_count` (Y-5a). Pydantic `extra="allow"`; only `timestamp + message.usage.input_tokens + message.usage.output_tokens` required. Raises `JSONLSchemaError` on missing required field. **Line-level malformed-skip (Y-7)**: per-line `json.loads` wrapped in `try/except json.JSONDecodeError` → silently skip + increment `JSONLReadResult.dropped_malformed_line_count`; covers trailing-null-byte filesystem corruption + truncated partial-writes. UUID synthesis fallback per Y-5e: when JSONL `uuid` is absent, `_construct_message_record` synthesizes `"synth-sha256:" + sha256(file_basename + ":" + line_no_zfill_8).hexdigest()[:16]`. |
-| `dev_ai_cost_v2.types.JSONLReadResult` | **types** (Y-5b) | frozen-dc: `records: Sequence[MessageRecord]` (materialized list per CR FLAG A; half-open UTC `[00:00:00, 24:00:00)`), `dropped_non_assistant_count: int` (Y-5a), `dropped_malformed_line_count: int` (Y-7). Does NOT carry rate-coverage counters — those belong to `PricingTable` (Y-5a). |
+| `dev_ai_cost_v2.jsonl_io.JSONLReader` | utils (IO Boundary) | `__call__(since, until, projects_root) -> JSONLReadResult` (see JSONLReadResult row below for tier placement per Y-5b). **Type-discriminates** by `type == "assistant"` before applying Pydantic schema (CORRECTIONS-Y-1); non-assistant rows skipped and counted in `JSONLReadResult.dropped_non_assistant_count` (Y-5a). Pydantic `extra="allow"`; only `timestamp + message.usage.input_tokens + message.usage.output_tokens` required. Raises `JSONLSchemaError` on missing required field. **Line-level malformed-skip (Y-7)**: per-line `json.loads` wrapped in `try/except json.JSONDecodeError` → silently skip + increment `JSONLReadResult.dropped_malformed_line_count`; covers trailing-null-byte filesystem corruption + truncated partial-writes. **UniqueHash dedup (Y-8)**: per-message dedup keyed on `_unique_hash = f"{message.id}:{requestId}"` (or `message.id` alone if requestId absent); keep-larger rule on `tokenTotal = input + output + cache_creation + cache_read` with `hasSpeed` tiebreaker on equal tokenTotals. Duplicate rows (including supersedences) increment `JSONLReadResult.dropped_duplicate_count`. UUID synthesis fallback per Y-5e: when JSONL `uuid` is absent, `_construct_message_record` synthesizes `"synth-sha256:" + sha256(file_basename + ":" + line_no_zfill_8).hexdigest()[:16]`. |
+| `dev_ai_cost_v2.types.JSONLReadResult` | **types** (Y-5b) | frozen-dc: `records: Sequence[MessageRecord]` (materialized list per CR FLAG A; half-open UTC `[00:00:00, 24:00:00)`; deduplicated per Y-8), `dropped_non_assistant_count: int` (Y-5a), `dropped_malformed_line_count: int` (Y-7), `dropped_duplicate_count: int` (Y-8). Does NOT carry rate-coverage counters — those belong to `PricingTable` (Y-5a). |
 | `dev_ai_cost_v2.types.MessageRecord` | types | frozen-dc: `ts: datetime (UTC), model: str, input_tok: int, output_tok: int, cache_create_5m: int, cache_create_1h: int, cache_read: int, cost_usd_notional: float, session_id: str, request_id: str \| None, is_error: bool, uuid: str` (R6 v0.1.3 CORRECTIONS-RR/-TT). `cost_usd_notional: float` per CORRECTIONS-Y-2. `request_id = None` for legacy pre-2.0 Claude Code; `JSONLReader` emits warning per None. `uuid` is either Anthropic-emitted or `"synth-sha256:..."` per Y-5e (R6 canonicalization gates on the `synth-` prefix and splits-or-warns to preserve hash stability). |
 | `dev_ai_cost_v2.types.TokensByCategory` | types | frozen-dc: `input: int, output: int, cache_create_5m: int, cache_create_1h: int, cache_read: int`. **IMMUTABLE Value-tier type** (Y-5c): `__init__` does NOT mutate inputs; cache 5m+1h aggregation for cost happens INSIDE `PricingTable.__call__` body, NOT here. Split is preserved intact for diagnostic-only consumers. |
 | `dev_ai_cost_v2.anthropic_pricing.PricingTable` | modules | frozen-dc with the following **counters owned per Y-5a**: `WARN_missing_keys_count: int` (per-model rate-key absences); `dropped_unknown_model_count: int` (model-lookup ladder exhausted); `multiple_substring_match_warning: int` (Y-5d tiebreaker invoked). Constructor `from_litellm_sha(sha) -> PricingTable` — load-time validation RELAXED per Y-3: all rate fields `Optional[float] = None`; missing keys WARNED, not raised. `__call__(model, ts, toks) -> float`: ccusage `calculateTieredCost` semantics; `tiered(N, base, null) = N · base`; 200k-input-tier for `claude-*`; **aggregates `toks.cache_create_5m + toks.cache_create_1h → cache_creation_input_tokens_total` inside this body** (Y-5c) and multiplies by single `cache_creation_input_token_cost`. Model-lookup ladder per Y-5d: exact → `anthropic/<model>` → longest-substring (**tiebreaker = alphabetically-smallest** when multiple equal-length candidates exist; counter `multiple_substring_match_warning` incremented). Missing rate → that category contributes 0. All arithmetic `float`; ccusage-parity within 0.1%. |
-| `dev_ai_cost_v2.panel_builder.build_daily_panel` | modules | pure: `(read_result: JSONLReadResult, pricing: PricingTable, trm_panel: pl.DataFrame) -> DailyNotionalPanel`. Drops `is_error=True` from cost aggregation (count → `dropped_error_count`). Inner join on weekday subset; weekends dropped (count → `dropped_rows_count`). Threads ALL counters into panel + DATA_PROVENANCE: `dropped_rows_count`, `dropped_error_count`, `dropped_non_assistant_count` + `dropped_malformed_line_count` (from `JSONLReadResult` per Y-5a/Y-7), `WARN_missing_keys_count`, `dropped_unknown_model_count`, `multiple_substring_match_warning` (from `PricingTable` per Y-5a). Also computes `ephemeral_pi_share` (Y-6) and surfaces on the panel + DATA_PROVENANCE. |
-| `dev_ai_cost_v2.types.DailyNotionalPanel` | types | frozen-dc wrapping `pl.DataFrame` with declared schema (`notional_cost_usd: pl.Float64`, `notional_cost_cop: pl.Float64`, `trm_cop_per_usd: pl.Float64`; others Int64). Carries the 7 counters above + `ephemeral_pi_share: float` per Y-6 (= `Σ cache_create_1h / Σ (cache_create_5m + cache_create_1h)`; if denominator = 0, set to 0.0). Wrapper frozen, inner df not. |
+| `dev_ai_cost_v2.panel_builder.build_daily_panel` | modules | pure: `(read_result: JSONLReadResult, pricing: PricingTable, trm_panel: pl.DataFrame) -> DailyNotionalPanel`. Drops `is_error=True` from cost aggregation (count → `dropped_error_count`). Inner join on weekday subset; weekends dropped (count → `dropped_rows_count`). Threads ALL counters into panel + DATA_PROVENANCE: `dropped_rows_count`, `dropped_error_count`, `dropped_non_assistant_count` + `dropped_malformed_line_count` + `dropped_duplicate_count` (from `JSONLReadResult` per Y-5a/Y-7/Y-8), `WARN_missing_keys_count`, `dropped_unknown_model_count`, `multiple_substring_match_warning` (from `PricingTable` per Y-5a). Also computes `ephemeral_pi_share` (Y-6) and surfaces on the panel + DATA_PROVENANCE. |
+| `dev_ai_cost_v2.types.DailyNotionalPanel` | types | frozen-dc wrapping `pl.DataFrame` with declared schema (`notional_cost_usd: pl.Float64`, `notional_cost_cop: pl.Float64`, `trm_cop_per_usd: pl.Float64`; others Int64). Carries the 8 counters above + `ephemeral_pi_share: float` per Y-6 (= `Σ cache_create_1h / Σ (cache_create_5m + cache_create_1h)`; if denominator = 0, set to 0.0). Wrapper frozen, inner df not. |
 
 Tier-import rule (per CLAUDE.md): types/ imports neither modules/ nor
 utils/; modules/ imports types/ but not utils/. Only `jsonl_io.py` performs
@@ -1264,3 +1412,4 @@ remaining questions for closure-only re-review:
 | 0.2.3 | 2026-05-17 | Contract-only patch resolving all 6 CR-Z BLOCKs in §0.3 CORRECTIONS-Y-5 (a–f sub-pins) + Y-6 π̂ ephemeral diagnostic. §3.5 contracts table updated: `JSONLReadResult` now a types-tier frozen-dc with `dropped_non_assistant_count` only; `PricingTable` owns `WARN_missing_keys_count`, `dropped_unknown_model_count`, `multiple_substring_match_warning`; cache 5m+1h aggregation pinned to `PricingTable.__call__` body (not TokensByCategory); longest-substring tiebreaker = alphabetical min; uuid synthesis = `synth-sha256:` prefix on basename-based hash for rename-stability; Task 9.5 migration enumerated. |
 | 0.2.3 closure-only re-review | 2026-05-17 | Wave 2 Model QA CLOSE_ALL (π̂ folded properly; CR-Z pins have no econometric implications). Wave 2 Code Reviewer CLOSE_ALL — **plan-amendment-cycle APPROVED**. Wave 1 RC PARTIAL_CLOSE on 2 trivial doc fixes (§2.1 verdict-logic table row still said exact-Decimal — corrected to ccusage-parity-0.1%-on-cost + exact-Decimal-on-tokens; Y-5f migration table missing `scripts/build_notional_cost_panel.py` — added) → both landed inline making all three channels CLOSE_ALL. Reports at `scratch/2026-05-16-ai-cost-spec-review/{wave1_reality_checker,wave2_model_qa,wave2_code_reviewer}_v0_2_3.md`. Task 9.5 implementation migration landed in 6 atomic commits (`31a4d5d..d6da500`); 109/109 dev_ai_cost_v2 tests green, 793/793 cross-suite green. Two-stage impl review: RC APPROVE (7/7 pins PASS), CR APPROVE_WITH_NITS (zero BLOCKs, 9 NITs). |
 | 0.2.4 | 2026-05-17 | Real-data HALT patch (§0.4 CORRECTIONS-Y-7). First production run of `scripts/build_notional_cost_panel.py` raised `JSONLSchemaError` on filesystem partial-write corruption (trailing null-byte block in `agent-af5e1160f7be358ba.jsonl`). User-selected Option A (ccusage-mirror): line-level malformed-skip + `JSONLReadResult.dropped_malformed_line_count` counter threaded through panel + CLI. Closes the line-level half of OSS-mirror permissive parsing that v0.2.3 Y-1 only addressed at the Pydantic-schema level. Disposition: `notebooks/dev_ai_cost_v2/dispositions/2026-05-17-task10-trailing-null-bytes.md`. |
+| 0.2.5 | 2026-05-17 | Reliability-convergence patch (§0.5 CORRECTIONS-Y-8). First Task-10 panel run on real corpus showed ~2.11× cost overcount vs `npx ccusage daily`. Empirical investigation (`scratch/2026-05-17-v0_2_5-dedup-discovery/findings.md`) identified missing OSS-mirror uniqueHash dedup as the dominant root cause (single-session 1.78× duplication factor on `${message.id}:${requestId}`). Post-dedup cost converges to 0.977× of ccusage (within 2.3%); residual gaps filed as Y-9 backlog. Spec change: in-memory dedup map in `JSONLReader.__call__` with keep-larger-tokenTotal + hasSpeed-tiebreaker (mirrors ccusage `Sr` + `$`); new `dropped_duplicate_count` counter on `JSONLReadResult` (8 panel counters total). |
