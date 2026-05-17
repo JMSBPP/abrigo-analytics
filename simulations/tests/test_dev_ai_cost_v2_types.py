@@ -216,6 +216,7 @@ def _panel_kwargs(**overrides) -> dict:
         dropped_rows_count=0,
         dropped_error_count=0,
         dropped_non_assistant_count=0,
+        dropped_malformed_line_count=0,
         warn_missing_keys_count=0,
         dropped_unknown_model_count=0,
         multiple_substring_match_warning=0,
@@ -230,6 +231,7 @@ def test_daily_notional_panel_constructs() -> None:
     assert p.df.height == 1
     assert p.dropped_rows_count == 0
     assert p.dropped_non_assistant_count == 0
+    assert p.dropped_malformed_line_count == 0
     assert p.warn_missing_keys_count == 0
     assert p.dropped_unknown_model_count == 0
     assert p.multiple_substring_match_warning == 0
@@ -268,6 +270,12 @@ def test_daily_notional_panel_rejects_negative_non_assistant_count() -> None:
     """Y-5a: counter ownership — dropped_non_assistant_count must be ≥ 0."""
     with pytest.raises(ValueError, match="non_assistant"):
         DailyNotionalPanel(**_panel_kwargs(dropped_non_assistant_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_malformed_line_count() -> None:
+    """v0.2.4 Y-7: dropped_malformed_line_count must be ≥ 0."""
+    with pytest.raises(ValueError, match="dropped_malformed_line"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_malformed_line_count=-1))
 
 
 def test_daily_notional_panel_rejects_negative_warn_missing_keys() -> None:
@@ -333,27 +341,55 @@ def test_jsonl_read_result_not_exported_from_jsonl_io() -> None:
 
 def test_jsonl_read_result_constructs() -> None:
     rec = MessageRecord(**_valid_message_kwargs())
-    r = JSONLReadResult(records=(rec,), dropped_non_assistant_count=3)
+    r = JSONLReadResult(
+        records=(rec,),
+        dropped_non_assistant_count=3,
+        dropped_malformed_line_count=0,
+    )
     assert len(r.records) == 1
     assert r.dropped_non_assistant_count == 3
+    assert r.dropped_malformed_line_count == 0
 
 
 def test_jsonl_read_result_records_is_tuple_immutable() -> None:
     """Y-5b: records is a tuple (immutable, hashable)."""
     rec = MessageRecord(**_valid_message_kwargs())
-    r = JSONLReadResult(records=(rec,), dropped_non_assistant_count=0)
+    r = JSONLReadResult(
+        records=(rec,),
+        dropped_non_assistant_count=0,
+        dropped_malformed_line_count=0,
+    )
     assert isinstance(r.records, tuple)
 
 
 def test_jsonl_read_result_rejects_negative_count() -> None:
     with pytest.raises(ValueError, match="dropped_non_assistant"):
-        JSONLReadResult(records=(), dropped_non_assistant_count=-1)
+        JSONLReadResult(
+            records=(),
+            dropped_non_assistant_count=-1,
+            dropped_malformed_line_count=0,
+        )
+
+
+def test_jsonl_read_result_rejects_negative_malformed_count() -> None:
+    """v0.2.4 Y-7: dropped_malformed_line_count must be >= 0."""
+    with pytest.raises(ValueError, match="dropped_malformed_line"):
+        JSONLReadResult(
+            records=(),
+            dropped_non_assistant_count=0,
+            dropped_malformed_line_count=-1,
+        )
 
 
 def test_jsonl_read_result_empty_records_valid() -> None:
-    r = JSONLReadResult(records=(), dropped_non_assistant_count=0)
+    r = JSONLReadResult(
+        records=(),
+        dropped_non_assistant_count=0,
+        dropped_malformed_line_count=0,
+    )
     assert r.records == ()
     assert r.dropped_non_assistant_count == 0
+    assert r.dropped_malformed_line_count == 0
 
 
 # ─── CR-Z-1 counter ownership pin ────────────────────────────────────────────

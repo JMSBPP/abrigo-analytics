@@ -363,16 +363,21 @@ def test_jsonlreader_raises_on_naive_timestamp(tmp_path: Path) -> None:
         )
 
 
-def test_jsonlreader_raises_on_invalid_json(tmp_path: Path) -> None:
+def test_jsonlreader_skips_invalid_json_does_not_raise(tmp_path: Path) -> None:
+    """v0.2.4 Y-7: malformed JSON (JSONDecodeError) is silently skipped
+    and counted in ``dropped_malformed_line_count``. Supersedes the v0.2.3
+    behavior which raised ``JSONLSchemaError`` on any decode failure.
+    """
     proj = tmp_path / "projects" / "p1"
     proj.mkdir(parents=True, exist_ok=True)
     (proj / "s.jsonl").write_text('{"not": "closed"\n')
-    with pytest.raises(JSONLSchemaError):
-        JSONLReader(pricing=_toy_pricing(tmp_path))(
-            since=date(2026, 5, 1),
-            until=date(2026, 5, 2),
-            projects_root=tmp_path / "projects",
-        )
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 0
+    assert out.dropped_malformed_line_count == 1
 
 
 def test_jsonlreader_raises_on_missing_projects_root(tmp_path: Path) -> None:
@@ -446,3 +451,241 @@ def test_jsonlreader_double_iteration_property(
     second = list(out.records)
     assert first == second
     assert len(first) == n_rows
+
+
+# ─── v0.2.4 §0.4 CORRECTIONS-Y-7: line-level malformed-skip ─────────────────
+
+
+def test_jsonlreader_skips_trailing_null_bytes(tmp_path: Path) -> None:
+    """v0.2.4 Y-7: filesystem partial-write corruption (trailing null-byte
+    block) is silently skipped; valid records before the corruption parse
+    cleanly.
+
+    Mirrors the production failure: agent-af5e1160f7be358ba.jsonl:586 had
+    a trailing block of ``b"\\x00" * N`` after the last newline, which the
+    pre-v0.2.4 reader treated as a JSONLSchemaError. v0.2.4 Y-7 contract:
+    silently skip + increment ``dropped_malformed_line_count``.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    valid_rows = [
+        _valid_row(ts="2026-05-01T10:00:00Z", uuid="u1"),
+        _valid_row(ts="2026-05-01T11:00:00Z", uuid="u2"),
+        _valid_row(ts="2026-05-01T12:00:00Z", uuid="u3"),
+    ]
+    body = b"".join(
+        (json.dumps(r) + "\n").encode("utf-8") for r in valid_rows
+    )
+    # 3000 null bytes after the last valid line — same as a partial-write
+    # corruption block. ``str.strip()`` does not strip null bytes, so the
+    # null-byte block reaches the json.loads attempt and JSONDecodeError-s.
+    body += b"\x00" * 3000
+    (proj / "session.jsonl").write_bytes(body)
+
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 3
+    assert {r.uuid for r in out.records} == {"u1", "u2", "u3"}
+    assert out.dropped_malformed_line_count == 1
+
+
+def test_jsonlreader_skips_truncated_json(tmp_path: Path) -> None:
+    """v0.2.4 Y-7: a truncated (mid-line) partial-write is silently skipped;
+    the valid prefix records parse cleanly.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    valid_row = _valid_row(ts="2026-05-01T10:00:00Z", uuid="u1")
+    truncated_line = (
+        '{"type":"assistant","timestamp":"2026-05-01T11:00:00Z",'
+        '"message":{"model":"claude-sonnet-4-5","usage":{"input_tokens'
+    )
+    (proj / "session.jsonl").write_text(
+        json.dumps(valid_row) + "\n" + truncated_line + "\n"
+    )
+
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    assert out.records[0].uuid == "u1"
+    assert out.dropped_malformed_line_count == 1
+
+
+def test_dropped_malformed_line_count_threaded_through_panel(
+    tmp_path: Path,
+) -> None:
+    """v0.2.4 Y-7: ``JSONLReadResult.dropped_malformed_line_count`` is
+    surfaced on ``DailyNotionalPanel.dropped_malformed_line_count`` by
+    ``build_daily_panel``. Panel-builder is the JSONLReader→Panel counter
+    threading point per Y-5a/Y-7.
+    """
+    import polars as pl
+    from datetime import datetime, timezone, date as _date
+    from simulations.dev_ai_cost_v2.panel_builder import build_daily_panel
+    from simulations.dev_ai_cost_v2.types import MessageRecord
+
+    # 2026-05-04 is a Monday (weekday=0) so it survives the weekend filter.
+    rec = MessageRecord(
+        ts=datetime(2026, 5, 4, 12, 0, 0, tzinfo=timezone.utc),
+        model="claude-sonnet-4-5",
+        input_tok=100,
+        output_tok=50,
+        cache_create_5m=0,
+        cache_create_1h=0,
+        cache_read=0,
+        cost_usd_notional=1.5e-4,
+        session_id="s",
+        request_id="r",
+        is_error=False,
+        uuid="u-1",
+    )
+    rr = JSONLReadResult(
+        records=(rec,),
+        dropped_non_assistant_count=0,
+        dropped_malformed_line_count=7,
+    )
+    pricing = _toy_pricing(tmp_path)
+    trm = pl.DataFrame(
+        {"date": [_date(2026, 5, 4)], "trm_cop_per_usd": [4000.0]},
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
+    )
+    panel = build_daily_panel(rr, pricing, trm)
+    assert panel.dropped_malformed_line_count == 7
+
+
+def test_jsonlreader_blank_lines_do_not_increment_malformed_counter(
+    tmp_path: Path,
+) -> None:
+    """v0.2.4 Y-7 RC FLAG-4a non-over-correction commitment: blank and
+    whitespace-only lines are absorbed by the pre-existing
+    ``if not stripped: continue`` guard BEFORE the JSON-decode attempt, so
+    they leave ``dropped_malformed_line_count == 0``.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    row = _valid_row(ts="2026-05-01T10:00:00Z", uuid="u1")
+    (proj / "session.jsonl").write_text(
+        json.dumps(row) + "\n"
+        "\n"            # blank
+        "   \n"         # whitespace-only
+        "\t\n"          # tab-only
+        + json.dumps(_valid_row(ts="2026-05-01T11:00:00Z", uuid="u2")) + "\n"
+    )
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 2
+    assert out.dropped_malformed_line_count == 0
+
+
+def test_jsonlreader_valid_json_invalid_schema_still_raises(
+    tmp_path: Path,
+) -> None:
+    """v0.2.4 Y-7 RC FLAG-4b non-over-correction commitment: the
+    JSONDecodeError catch did NOT widen to swallow Pydantic schema errors.
+    A line that decodes to valid JSON but is missing a required field
+    still raises JSONLSchemaError.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    # Valid JSON, valid type discriminator, but ``message.usage`` is missing
+    # the required ``input_tokens``/``output_tokens`` keys.
+    bad_row = {
+        "type": "assistant",
+        "timestamp": "2026-05-01T10:00:00Z",
+        "message": {},
+    }
+    (proj / "session.jsonl").write_text(json.dumps(bad_row) + "\n")
+    with pytest.raises(JSONLSchemaError):
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
+            since=date(2026, 5, 1),
+            until=date(2026, 5, 2),
+            projects_root=tmp_path / "projects",
+        )
+
+
+@settings(max_examples=40, deadline=None)
+@given(
+    line_blobs=st.lists(
+        st.binary(min_size=0, max_size=200),
+        min_size=0,
+        max_size=20,
+    ),
+)
+def test_jsonlreader_line_conservation_property(
+    tmp_path_factory: pytest.TempPathFactory,
+    line_blobs: list[bytes],
+) -> None:
+    """v0.2.4 Y-7 / CR-7-N2 Hypothesis: line-accounting invariant.
+
+    For any random byte-string input split into newline-separated lines
+    the reader's output satisfies::
+
+        dropped_malformed_line_count + len(records) + dropped_non_assistant_count
+            + dropped_blank_inferred == total_input_lines
+
+    where ``dropped_blank_inferred`` is computed from the fixture
+    (lines whose ``.strip()`` is empty after utf-8 decode, or that cannot
+    be decoded as utf-8). The reader never loses or double-counts a line.
+
+    Per spec §0.4: ``dropped_blank`` is not exposed on JSONLReadResult in
+    v0.2.4 (scope-minimal); the conservation test uses a fixture-derived
+    blank count rather than adding a new field.
+    """
+    tmp_path = tmp_path_factory.mktemp("y7_inv")
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    # Construct one .jsonl file from the random blobs (one blob per line).
+    # We strip embedded newlines from each blob so that ``len(line_blobs)``
+    # equals the file's line count.
+    sanitized: list[bytes] = [blob.replace(b"\n", b"") for blob in line_blobs]
+    body: bytes = b"\n".join(sanitized)
+    if line_blobs:
+        body += b"\n"  # trailing newline to keep line-count == len(line_blobs)
+    (proj / "session.jsonl").write_bytes(body)
+
+    # Compute the fixture-derived blank count: a line is "blank" if its
+    # utf-8 decode + str.strip() is empty. If the blob is not utf-8 we
+    # treat it as non-blank (the reader's open(...,"r") with default
+    # encoding will raise UnicodeDecodeError; this fixture confines blobs
+    # to be safe by virtue of utf-8-clean strip-empty checks below).
+    dropped_blank_inferred: int = 0
+    for blob in sanitized:
+        try:
+            decoded = blob.decode("utf-8")
+        except UnicodeDecodeError:
+            # The reader will raise on the file open / iteration. Skip
+            # the invariant check for this fixture by short-circuiting.
+            return
+        if decoded.strip() == "":
+            dropped_blank_inferred += 1
+
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(1970, 1, 1),
+        until=date(9999, 12, 31),
+        projects_root=tmp_path / "projects",
+    )
+
+    total_lines: int = len(line_blobs)
+    accounted: int = (
+        out.dropped_malformed_line_count
+        + len(out.records)
+        + out.dropped_non_assistant_count
+        + dropped_blank_inferred
+    )
+    assert accounted == total_lines, (
+        f"line-conservation invariant violated: "
+        f"malformed={out.dropped_malformed_line_count}, "
+        f"records={len(out.records)}, "
+        f"non_assistant={out.dropped_non_assistant_count}, "
+        f"blank_inferred={dropped_blank_inferred}, "
+        f"total={total_lines}"
+    )

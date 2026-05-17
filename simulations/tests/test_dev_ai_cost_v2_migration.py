@@ -57,9 +57,13 @@ def test_jsonl_read_result_canonical_module() -> None:
 
 
 def test_jsonl_read_result_fields_exact() -> None:
-    """v0.2.3 Y-5b: exactly two fields."""
+    """v0.2.4 Y-7: JSONLReadResult carries records + 2 JSONLReader counters."""
     fields = {f.name for f in JSONLReadResult.__dataclass_fields__.values()}
-    assert fields == {"records", "dropped_non_assistant_count"}
+    assert fields == {
+        "records",
+        "dropped_non_assistant_count",
+        "dropped_malformed_line_count",
+    }
 
 
 def test_message_record_cost_is_float_type() -> None:
@@ -123,20 +127,24 @@ def test_build_daily_panel_first_arg_is_jsonl_read_result() -> None:
 
 
 def test_daily_notional_panel_v0_2_3_fields() -> None:
-    """v0.2.3 Y-5a + Y-6: DailyNotionalPanel carries 6 counters + π̂."""
+    """v0.2.4 Y-7: DailyNotionalPanel carries 7 counters + π̂.
+
+    Y-5a baseline = 6 counters; Y-7 adds ``dropped_malformed_line_count``.
+    """
     fields = {f.name for f in DailyNotionalPanel.__dataclass_fields__.values()}
     required = {
         "df",
         "dropped_rows_count",
         "dropped_error_count",
         "dropped_non_assistant_count",
+        "dropped_malformed_line_count",
         "warn_missing_keys_count",
         "dropped_unknown_model_count",
         "multiple_substring_match_warning",
         "ephemeral_pi_share",
     }
     missing = required - fields
-    assert not missing, f"DailyNotionalPanel missing v0.2.3 fields: {missing}"
+    assert not missing, f"DailyNotionalPanel missing v0.2.4 fields: {missing}"
 
 
 def test_expected_panel_schema_v0_2_3() -> None:
