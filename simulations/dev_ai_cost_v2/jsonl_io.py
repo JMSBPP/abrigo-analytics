@@ -18,6 +18,13 @@ Rename-stable across paths; line-bound; basename-bound.
 Tier rule: this is the ONLY module in the ``dev_ai_cost_v2`` sub-package
 permitted to perform IO. Modules and types tiers must remain pure.
 
+v0.2.4 amendment (§0.4 CORRECTIONS-Y-7):
+  - Per-line ``json.loads`` is wrapped in ``try/except json.JSONDecodeError``;
+    on JSON-decode failure the line is silently skipped and
+    ``dropped_malformed_line_count`` is incremented. The counter is
+    surfaced through ``JSONLReadResult`` (types tier). Pydantic schema
+    errors on valid JSON still raise ``JSONLSchemaError``.
+
 v0.2.3 closure (Y-5f, CR-Z-2):
   - ``JSONLReader.__call__`` returns ``JSONLReadResult`` (types tier),
     NOT a bare ``Sequence[MessageRecord]``. The result container carries
@@ -243,19 +250,22 @@ class JSONLReader:
 
         Raises:
             JSONLSchemaError: on Pydantic validation failure (missing
-                required field, wrong dtype) OR on malformed JSON
-                (``json.JSONDecodeError`` wrapped). The error message
-                includes the offending ``{path}:{line_no}``.
+                required field, wrong dtype) on a VALID JSON line. The
+                error message includes the offending ``{path}:{line_no}``.
             FileNotFoundError: if ``projects_root`` does not exist.
             ValueError: propagated from ``MessageRecord.__post_init__`` if
                 a schema-valid row violates a downstream invariant.
 
         Errors silenced:
-            None at the JSONL layer. Pydantic surfaces every schema
-            mismatch; ``json.JSONDecodeError`` is wrapped in
-            ``JSONLSchemaError``. Blank-line skipping is the documented
-            JSONL convention. Non-assistant rows are explicitly counted,
-            not silenced.
+            v0.2.4 Y-7: ``json.JSONDecodeError`` on per-line decode is
+            silently skipped and counted in
+            ``JSONLReadResult.dropped_malformed_line_count``. This mirrors
+            the ccusage OSS algorithm and handles filesystem partial-write
+            corruption (trailing null-byte blocks, truncated JSON). The
+            catch is narrowly scoped to ``JSONDecodeError``; Pydantic
+            schema errors on valid JSON still raise ``JSONLSchemaError``.
+            Blank-line skipping is the documented JSONL convention.
+            Non-assistant rows are explicitly counted, not silenced.
 
         Warnings emitted:
             ``UserWarning`` (``stacklevel=2``) when ``requestId is None``
@@ -269,18 +279,23 @@ class JSONLReader:
 
         records: list[MessageRecord] = []
         dropped_non_assistant: int = 0
+        dropped_malformed_line: int = 0
         for jsonl_path in projects_root.rglob("*.jsonl"):
             with jsonl_path.open("r") as f:
                 for line_no, line in enumerate(f, start=1):
                     stripped = line.strip()
                     if not stripped:
                         continue
+                    # v0.2.4 Y-7: line-level malformed-skip. Mirror ccusage's
+                    # OSS algorithm: silently skip JSONDecodeError + bump the
+                    # dedicated counter. Pydantic schema errors on VALID
+                    # JSON still raise JSONLSchemaError below — the catch
+                    # is narrowly scoped to JSONDecodeError, never widened.
                     try:
                         raw = json.loads(stripped)
-                    except json.JSONDecodeError as e:
-                        raise JSONLSchemaError(
-                            f"{jsonl_path}:{line_no} invalid JSON: {e}"
-                        ) from e
+                    except json.JSONDecodeError:
+                        dropped_malformed_line += 1
+                        continue
 
                     # Y-1 type-discriminator: skip non-assistant rows BEFORE
                     # Pydantic validation. Absent ``type`` → treat as
@@ -317,6 +332,7 @@ class JSONLReader:
         return JSONLReadResult(
             records=tuple(records),
             dropped_non_assistant_count=dropped_non_assistant,
+            dropped_malformed_line_count=dropped_malformed_line,
         )
 
 

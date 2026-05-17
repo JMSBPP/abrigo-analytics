@@ -120,12 +120,16 @@ def main() -> int:
     panel.df.write_parquet(args.out)
     # Operator-visible audit line: original 2 counters (dropped_rows,
     # dropped_error) + the 4 v0.2.3 counters (non_assistant, warn_missing,
-    # unknown_model, substr_tie) + Y-6 π̂ scalar = 7 fields.
+    # unknown_model, substr_tie) + v0.2.4 Y-7 counter (dropped_malformed)
+    # + Y-6 π̂ scalar = 8 fields. JSONLReader-sourced counters
+    # (non_assistant, malformed) grouped first; PricingTable-sourced
+    # next; π̂ last.
     print(
         f"[OK] wrote {args.out} ({panel.df.height} rows; "
         f"dropped_rows={panel.dropped_rows_count}, "
         f"dropped_error={panel.dropped_error_count}, "
         f"dropped_non_assistant={panel.dropped_non_assistant_count}, "
+        f"dropped_malformed={panel.dropped_malformed_line_count}, "
         f"warn_missing_keys={panel.warn_missing_keys_count}, "
         f"dropped_unknown_model={panel.dropped_unknown_model_count}, "
         f"substr_tiebreaker={panel.multiple_substring_match_warning}, "

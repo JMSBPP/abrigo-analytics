@@ -4,8 +4,8 @@ Tier-import rule: ``types/`` imports neither ``modules/`` nor ``utils/`` from
 the dev_ai_cost_v2 sub-package. Polars is a value-tier-admissible dependency
 (it is a pure data-container library, not an IO boundary).
 
-Spec ref: ``docs/specs/2026-05-16-ai-cost-factor-model-design.md`` v0.2.3 §3.5
-+ §0.3 CORRECTIONS-Y-5a/-Y-5b/-Y-2 + Y-6.
+Spec ref: ``docs/specs/2026-05-16-ai-cost-factor-model-design.md`` v0.2.4 §3.5
++ §0.3 CORRECTIONS-Y-5a/-Y-5b/-Y-2 + Y-6 + §0.4 CORRECTIONS-Y-7.
 
 Sibling spec ref: ``docs/specs/2026-05-16-r6-continuous-stream-simulation-design.md``
 v0.1.3 CORRECTIONS-RR/-TT adds the ``uuid: str`` field on ``MessageRecord``
@@ -208,25 +208,39 @@ class JSONLReadResult:
         dropped_non_assistant_count: number of JSONL rows skipped because
             ``type != "assistant"`` (Y-5a counter ownership pin —
             JSONLReader-side counter, not PricingTable-side).
+        dropped_malformed_line_count: v0.2.4 Y-7 — number of JSONL lines
+            silently skipped because ``json.loads`` raised
+            ``json.JSONDecodeError`` (filesystem partial-write corruption,
+            trailing null-byte blocks, truncated JSON). The skip is
+            scope-limited to JSON-syntax failures; Pydantic schema errors
+            on valid JSON still raise ``JSONLSchemaError``.
 
     Counter ownership (Y-5a): this container carries ONLY the
-    JSONLReader-side ``dropped_non_assistant_count``. The PricingTable-side
-    counters (``WARN_missing_keys_count``, ``dropped_unknown_model_count``,
+    JSONLReader-side counters (``dropped_non_assistant_count``,
+    ``dropped_malformed_line_count``). The PricingTable-side counters
+    (``WARN_missing_keys_count``, ``dropped_unknown_model_count``,
     ``multiple_substring_match_warning``) live on ``PricingTable`` and are
     surfaced into ``DailyNotionalPanel`` by the panel-builder.
 
     Raises:
-        ValueError: if ``dropped_non_assistant_count`` is negative.
+        ValueError: if ``dropped_non_assistant_count`` or
+            ``dropped_malformed_line_count`` is negative.
     """
 
     records: tuple[MessageRecord, ...]
     dropped_non_assistant_count: int
+    dropped_malformed_line_count: int
 
     def __post_init__(self) -> None:
         if self.dropped_non_assistant_count < 0:
             raise ValueError(
                 f"JSONLReadResult.dropped_non_assistant_count must be >= 0; "
                 f"got {self.dropped_non_assistant_count}"
+            )
+        if self.dropped_malformed_line_count < 0:
+            raise ValueError(
+                f"JSONLReadResult.dropped_malformed_line_count must be >= 0; "
+                f"got {self.dropped_malformed_line_count}"
             )
 
 
@@ -254,6 +268,9 @@ class DailyNotionalPanel:
         aggregation (v0.2.1).
       - ``dropped_non_assistant_count``: JSONL rows skipped because
         ``type != "assistant"`` (Y-5a, sourced from ``JSONLReadResult``).
+      - ``dropped_malformed_line_count``: v0.2.4 Y-7 — JSONL lines silently
+        skipped on ``json.JSONDecodeError`` (sourced from
+        ``JSONLReadResult``).
       - ``warn_missing_keys_count``: LiteLLM rate-key absences (Y-5a,
         sourced from ``PricingTable``).
       - ``dropped_unknown_model_count``: model-lookup-ladder-exhausted
@@ -274,6 +291,7 @@ class DailyNotionalPanel:
             during panel construction (``≥ 0``). Operator visibility
             requirement per spec v0.2.1 §3.4.
         dropped_non_assistant_count: JSONLReader-side counter (Y-5a).
+        dropped_malformed_line_count: JSONLReader-side counter (v0.2.4 Y-7).
         warn_missing_keys_count: PricingTable-side counter (Y-5a).
         dropped_unknown_model_count: PricingTable-side counter (Y-5a).
         multiple_substring_match_warning: PricingTable-side counter (Y-5d).
@@ -290,6 +308,7 @@ class DailyNotionalPanel:
     dropped_rows_count: int
     dropped_error_count: int
     dropped_non_assistant_count: int
+    dropped_malformed_line_count: int
     warn_missing_keys_count: int
     dropped_unknown_model_count: int
     multiple_substring_match_warning: int
@@ -314,6 +333,7 @@ class DailyNotionalPanel:
             "dropped_rows_count",
             "dropped_error_count",
             "dropped_non_assistant_count",
+            "dropped_malformed_line_count",
             "warn_missing_keys_count",
             "dropped_unknown_model_count",
             "multiple_substring_match_warning",
