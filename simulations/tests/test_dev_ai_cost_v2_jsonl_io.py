@@ -1,12 +1,13 @@
 """Tests for ``simulations.dev_ai_cost_v2.jsonl_io.JSONLReader``.
 
 Spec refs:
-- ``docs/specs/2026-05-16-ai-cost-factor-model-design.md`` v0.2.1 §3.1, §3.5,
-  CORRECTIONS-N (extra="forbid" + missing-required schema gate),
-  CORRECTIONS-V (UTC half-open + materialized Sequence not Iterator,
-  CR FLAG A).
+- ``docs/specs/2026-05-16-ai-cost-factor-model-design.md`` v0.2.3 §3.5,
+  §0.3 CORRECTIONS-Y-1 (type-discriminator), Y-5b (JSONLReadResult tier),
+  Y-5e (uuid synthesis), Y-5f (permissive Pydantic + cost via injected
+  PricingTable).
 - ``docs/specs/2026-05-16-r6-continuous-stream-simulation-design.md`` v0.1.3
-  CORRECTIONS-RR/-TT (uuid field required for R6 pool canonicalization).
+  CORRECTIONS-RR/-TT (uuid required at MessageRecord level — synthesized
+  here when absent at wire level).
 """
 from __future__ import annotations
 
@@ -19,8 +20,25 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from simulations.dev_ai_cost_v2._errors import JSONLSchemaError
-from simulations.dev_ai_cost_v2.jsonl_io import JSONLReader
-from simulations.dev_ai_cost_v2.types import MessageRecord
+from simulations.dev_ai_cost_v2.anthropic_pricing import (
+    LITELLM_SHA_PINNED,
+    PricingTable,
+    _REQUIRED_KEYS,
+)
+from simulations.dev_ai_cost_v2.jsonl_io import JSONLReader, _synth_uuid
+from simulations.dev_ai_cost_v2.types import JSONLReadResult, MessageRecord
+
+
+# ─── Fixtures ────────────────────────────────────────────────────────────────
+
+
+def _toy_pricing(tmp_path: Path) -> PricingTable:
+    fake = {"claude-sonnet-4-5": {k: 1e-06 for k in _REQUIRED_KEYS}}
+    p = tmp_path / "lite.json"
+    p.write_text(json.dumps(fake))
+    return PricingTable.from_litellm_sha(
+        LITELLM_SHA_PINNED, p, skip_sha_check=True
+    )
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -30,13 +48,17 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
             f.write(json.dumps(r) + "\n")
 
 
-def _valid_row(ts: str = "2026-05-01T12:00:00Z", uuid: str = "msg-uuid-001") -> dict:
-    return {
+def _valid_row(
+    ts: str = "2026-05-01T12:00:00Z",
+    uuid: str | None = "msg-uuid-001",
+    type_: str = "assistant",
+) -> dict:
+    r = {
         "timestamp": ts,
         "sessionId": "s1",
         "requestId": "r1",
         "isApiErrorMessage": False,
-        "uuid": uuid,  # R6 v0.1.3 CORRECTIONS-RR/-TT
+        "type": type_,
         "message": {
             "model": "claude-sonnet-4-5",
             "usage": {
@@ -49,28 +71,30 @@ def _valid_row(ts: str = "2026-05-01T12:00:00Z", uuid: str = "msg-uuid-001") -> 
                 "cache_read_input_tokens": 0,
             },
         },
-        "costUSD": "0.0015",
     }
+    if uuid is not None:
+        r["uuid"] = uuid
+    return r
 
 
-def test_jsonlreader_emits_sequence_not_iterator(tmp_path: Path) -> None:
+# ─── Core: returns JSONLReadResult (Y-5b / CR-Z-2) ──────────────────────────
+
+
+def test_jsonlreader_returns_jsonl_read_result(tmp_path: Path) -> None:
+    """Y-5b: __call__ returns JSONLReadResult, not bare Sequence."""
     proj = tmp_path / "projects" / "p1"
     _write_jsonl(proj / "session.jsonl", [_valid_row()])
-    reader = JSONLReader()
+    reader = JSONLReader(pricing=_toy_pricing(tmp_path))
     out = reader(
         since=date(2026, 5, 1),
         until=date(2026, 5, 2),
         projects_root=tmp_path / "projects",
     )
-    # Sequence, not Iterator (CR FLAG A / CORRECTIONS-V).
-    assert isinstance(out, list)
-    assert len(out) == 1
-    assert isinstance(out[0], MessageRecord)
-    assert out[0].uuid == "msg-uuid-001"  # R6 amendment
-    # Double-iteration property: second pass must equal first.
-    first = list(out)
-    second = list(out)
-    assert first == second
+    assert isinstance(out, JSONLReadResult)
+    assert isinstance(out.records, tuple)
+    assert len(out.records) == 1
+    assert isinstance(out.records[0], MessageRecord)
+    assert out.records[0].uuid == "msg-uuid-001"
 
 
 def test_jsonlreader_utc_boundary_half_open(tmp_path: Path) -> None:
@@ -83,70 +107,256 @@ def test_jsonlreader_utc_boundary_half_open(tmp_path: Path) -> None:
             _valid_row("2026-05-02T00:00:00Z", uuid="u3"),  # EXCLUDED — half-open upper
         ],
     )
-    out = JSONLReader()(
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
         since=date(2026, 5, 1),
         until=date(2026, 5, 2),
         projects_root=tmp_path / "projects",
     )
-    assert len(out) == 2
-    uuids = {r.uuid for r in out}
+    assert len(out.records) == 2
+    uuids = {r.uuid for r in out.records}
     assert uuids == {"u1", "u2"}
 
 
-def test_jsonlreader_raises_on_extra_field(tmp_path: Path) -> None:
+# ─── Y-1: type-discriminator filter ──────────────────────────────────────────
+
+
+def test_jsonlreader_skips_non_assistant_rows(tmp_path: Path) -> None:
+    """Y-1: rows with type != 'assistant' are skipped before validation;
+    skip count surfaces in JSONLReadResult.dropped_non_assistant_count.
+    """
     proj = tmp_path / "projects" / "p1"
-    bad = _valid_row()
-    bad["unknown_extra_field"] = "drift"
-    _write_jsonl(proj / "s.jsonl", [bad])
+    rows = [
+        _valid_row(uuid="u1", type_="assistant"),
+        _valid_row(uuid="u2", type_="user"),
+        _valid_row(uuid="u3", type_="system"),
+        _valid_row(uuid="u4", type_="summary"),
+        _valid_row(uuid="u5", type_="assistant"),
+    ]
+    _write_jsonl(proj / "s.jsonl", rows)
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 2
+    assert {r.uuid for r in out.records} == {"u1", "u5"}
+    assert out.dropped_non_assistant_count == 3
+
+
+def test_jsonlreader_skips_rows_with_no_type_field(tmp_path: Path) -> None:
+    """Y-1: absent ``type`` field is treated as non-assistant and skipped."""
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    del row["type"]
+    _write_jsonl(proj / "s.jsonl", [row])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 0
+    assert out.dropped_non_assistant_count == 1
+
+
+# ─── Y-5f: permissive Pydantic (extra='allow') ──────────────────────────────
+
+
+def test_jsonlreader_allows_extra_fields(tmp_path: Path) -> None:
+    """Y-5f: extra fields are silently accepted (no JSONLSchemaError)."""
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    row["unknown_extra_field"] = "drift"
+    row["another_new_field"] = {"nested": [1, 2, 3]}
+    _write_jsonl(proj / "s.jsonl", [row])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+
+
+def test_jsonlreader_costUSD_field_removed(tmp_path: Path) -> None:
+    """Y-5f: costUSD is removed from _Row; cost computed at parse time
+    via injected PricingTable. The presence/absence of costUSD on the wire
+    is now ignored (extra=allow).
+    """
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    row["costUSD"] = "0.99"  # legacy wire field — should be ignored
+    _write_jsonl(proj / "s.jsonl", [row])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    # Pricing was 1e-06 across all rates; cost = 100*1e-06 + 50*1e-06 = 1.5e-4.
+    assert out.records[0].cost_usd_notional == pytest.approx(1.5e-4)
+    # NOT 0.99 (the wire costUSD is ignored).
+
+
+# ─── Y-5e: uuid synthesis ────────────────────────────────────────────────────
+
+
+def test_jsonlreader_synthesizes_uuid_when_absent(tmp_path: Path) -> None:
+    """Y-5e: when row uuid is None/absent, synth uuid is filled in."""
+    proj = tmp_path / "projects" / "p1"
+    _write_jsonl(proj / "session.jsonl", [_valid_row(uuid=None)])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    rec = out.records[0]
+    assert rec.uuid.startswith("synth-sha256:")
+    # The synth hash is bound to basename ("session") + line ("00000001").
+    expected = _synth_uuid(proj / "session.jsonl", 1)
+    assert rec.uuid == expected
+
+
+def test_jsonlreader_preserves_real_uuid_when_present(tmp_path: Path) -> None:
+    proj = tmp_path / "projects" / "p1"
+    _write_jsonl(proj / "session.jsonl", [_valid_row(uuid="real-uuid-xyz")])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert out.records[0].uuid == "real-uuid-xyz"
+
+
+# ─── CR-Z-5: uuid synthesis stability under rename ──────────────────────────
+
+
+def test_cr_z_5_synth_uuid_path_independent_basename_bound() -> None:
+    """CR-Z-5: synth uuid is rename-stable across paths (basename-bound).
+
+    Moving the JSONL file to a different directory must NOT change the
+    synth uuid (basename and line stay the same). Changing line number
+    MUST change the synth uuid. Changing basename MUST change the synth uuid.
+    """
+    # Path A (line 42).
+    uuid_path_a = _synth_uuid(Path("/path/A/session.jsonl"), 42)
+    # Path B with same basename, same line — must be identical.
+    uuid_path_b = _synth_uuid(Path("/different/path/B/session.jsonl"), 42)
+    assert uuid_path_a == uuid_path_b
+
+    # Different line — must differ.
+    uuid_diff_line = _synth_uuid(Path("/path/A/session.jsonl"), 43)
+    assert uuid_diff_line != uuid_path_a
+
+    # Different basename — must differ.
+    uuid_diff_basename = _synth_uuid(Path("/path/A/other.jsonl"), 42)
+    assert uuid_diff_basename != uuid_path_a
+
+    # All synth uuids carry the prefix.
+    assert uuid_path_a.startswith("synth-sha256:")
+    assert uuid_diff_line.startswith("synth-sha256:")
+    assert uuid_diff_basename.startswith("synth-sha256:")
+
+
+# ─── Y-5f: required-field violations still raise ────────────────────────────
+
+
+def test_jsonlreader_raises_on_missing_timestamp(tmp_path: Path) -> None:
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    del row["timestamp"]
+    _write_jsonl(proj / "s.jsonl", [row])
     with pytest.raises(JSONLSchemaError):
-        JSONLReader()(
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
             since=date(2026, 5, 1),
             until=date(2026, 5, 2),
             projects_root=tmp_path / "projects",
         )
 
 
-def test_jsonlreader_raises_on_missing_uuid(tmp_path: Path) -> None:
-    """R6 v0.1.3 CORRECTIONS-RR/-TT — uuid is a required field."""
+def test_jsonlreader_raises_on_missing_input_tokens(tmp_path: Path) -> None:
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    del row["message"]["usage"]["input_tokens"]
+    _write_jsonl(proj / "s.jsonl", [row])
+    with pytest.raises(JSONLSchemaError):
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
+            since=date(2026, 5, 1),
+            until=date(2026, 5, 2),
+            projects_root=tmp_path / "projects",
+        )
+
+
+def test_jsonlreader_raises_on_missing_output_tokens(tmp_path: Path) -> None:
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    del row["message"]["usage"]["output_tokens"]
+    _write_jsonl(proj / "s.jsonl", [row])
+    with pytest.raises(JSONLSchemaError):
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
+            since=date(2026, 5, 1),
+            until=date(2026, 5, 2),
+            projects_root=tmp_path / "projects",
+        )
+
+
+def test_jsonlreader_allows_missing_uuid_via_synthesis(tmp_path: Path) -> None:
+    """Y-5e: uuid is no longer required at the wire level — synthesized."""
     proj = tmp_path / "projects" / "p1"
     row = _valid_row()
     del row["uuid"]
     _write_jsonl(proj / "s.jsonl", [row])
-    with pytest.raises(JSONLSchemaError):
-        JSONLReader()(
-            since=date(2026, 5, 1),
-            until=date(2026, 5, 2),
-            projects_root=tmp_path / "projects",
-        )
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    assert out.records[0].uuid.startswith("synth-sha256:")
 
 
-def test_jsonlreader_warns_on_null_request_id(tmp_path: Path) -> None:
+def test_jsonlreader_allows_missing_requestId_via_default(tmp_path: Path) -> None:
+    """Y-5f: requestId is Optional with default=None."""
     proj = tmp_path / "projects" / "p1"
     row = _valid_row()
-    row["requestId"] = None
+    del row["requestId"]
     _write_jsonl(proj / "s.jsonl", [row])
     with pytest.warns(UserWarning, match="request_id"):
-        out = JSONLReader()(
+        out = JSONLReader(pricing=_toy_pricing(tmp_path))(
             since=date(2026, 5, 1),
             until=date(2026, 5, 2),
             projects_root=tmp_path / "projects",
         )
-    assert len(out) == 1
-    assert out[0].request_id is None
+    assert out.records[0].request_id is None
+
+
+def test_jsonlreader_allows_missing_isApiErrorMessage_via_default(
+    tmp_path: Path,
+) -> None:
+    """Y-1: absent isApiErrorMessage treated as False."""
+    proj = tmp_path / "projects" / "p1"
+    row = _valid_row()
+    del row["isApiErrorMessage"]
+    _write_jsonl(proj / "s.jsonl", [row])
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert out.records[0].is_error is False
+
+
+# ─── Tz-naive timestamp rejection (defense in depth) ────────────────────────
 
 
 def test_jsonlreader_raises_on_naive_timestamp(tmp_path: Path) -> None:
-    """Tz-naive timestamps must be rejected at parse time, not silently shifted.
-
-    Defense in depth against future Anthropic schema drift (if `Z` suffix is
-    ever dropped). Code-quality review I-1 (Task 5).
+    """Tz-naive timestamps must be rejected at parse time. DO NOT regress
+    on Task 5 fix 283673d (AwareDatetime).
     """
     proj = tmp_path / "projects" / "p1"
     row = _valid_row()
     row["timestamp"] = "2026-05-01T12:00:00"  # tz-naive (no Z)
     _write_jsonl(proj / "s.jsonl", [row])
     with pytest.raises(JSONLSchemaError):
-        JSONLReader()(
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
             since=date(2026, 5, 1),
             until=date(2026, 5, 2),
             projects_root=tmp_path / "projects",
@@ -158,7 +368,7 @@ def test_jsonlreader_raises_on_invalid_json(tmp_path: Path) -> None:
     proj.mkdir(parents=True, exist_ok=True)
     (proj / "s.jsonl").write_text('{"not": "closed"\n')
     with pytest.raises(JSONLSchemaError):
-        JSONLReader()(
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
             since=date(2026, 5, 1),
             until=date(2026, 5, 2),
             projects_root=tmp_path / "projects",
@@ -167,7 +377,7 @@ def test_jsonlreader_raises_on_invalid_json(tmp_path: Path) -> None:
 
 def test_jsonlreader_raises_on_missing_projects_root(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        JSONLReader()(
+        JSONLReader(pricing=_toy_pricing(tmp_path))(
             since=date(2026, 5, 1),
             until=date(2026, 5, 2),
             projects_root=tmp_path / "does_not_exist",
@@ -175,17 +385,16 @@ def test_jsonlreader_raises_on_missing_projects_root(tmp_path: Path) -> None:
 
 
 def test_jsonlreader_recurses_subprojects(tmp_path: Path) -> None:
-    """rglob walks nested project directories — verifies multi-project case."""
     root = tmp_path / "projects"
     _write_jsonl(root / "p1" / "s1.jsonl", [_valid_row(uuid="a")])
     _write_jsonl(root / "p2" / "nested" / "s2.jsonl", [_valid_row(uuid="b")])
-    out = JSONLReader()(
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
         since=date(2026, 5, 1),
         until=date(2026, 5, 2),
         projects_root=root,
     )
-    assert len(out) == 2
-    assert {r.uuid for r in out} == {"a", "b"}
+    assert len(out.records) == 2
+    assert {r.uuid for r in out.records} == {"a", "b"}
 
 
 def test_jsonlreader_skips_blank_lines(tmp_path: Path) -> None:
@@ -196,15 +405,15 @@ def test_jsonlreader_skips_blank_lines(tmp_path: Path) -> None:
         f.write("\n")
         f.write("   \n")
         f.write(json.dumps(_valid_row(uuid="u2")) + "\n")
-    out = JSONLReader()(
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
         since=date(2026, 5, 1),
         until=date(2026, 5, 2),
         projects_root=tmp_path / "projects",
     )
-    assert len(out) == 2
+    assert len(out.records) == 2
 
 
-# ─── Hypothesis property: double-iteration equality (CR FLAG A) ──────────────
+# ─── Hypothesis property: re-iteration via tuple-records ────────────────────
 
 
 @settings(max_examples=25, deadline=None)
@@ -217,27 +426,23 @@ def test_jsonlreader_double_iteration_property(
     n_rows: int,
     uuid_seed: int,
 ) -> None:
-    """Returned Sequence must yield identical contents on repeated iteration.
-
-    Closes CORRECTIONS-V FLAG A: ``Sequence`` not ``Iterator``.
+    """Returned JSONLReadResult.records is a tuple — multi-iteration yields
+    identical sequences. Replaces the v0.2.1 Sequence-flag-A test.
     """
     tmp_path = tmp_path_factory.mktemp("hyp")
     proj = tmp_path / "projects" / "p1"
-    rows = [
-        _valid_row(uuid=f"u-{uuid_seed}-{i}")
-        for i in range(n_rows)
-    ]
+    rows = [_valid_row(uuid=f"u-{uuid_seed}-{i}") for i in range(n_rows)]
     if rows:
         _write_jsonl(proj / "s.jsonl", rows)
     else:
         proj.mkdir(parents=True, exist_ok=True)
         (proj / "empty.jsonl").write_text("")
-    out = JSONLReader()(
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
         since=date(2026, 5, 1),
         until=date(2026, 5, 2),
         projects_root=tmp_path / "projects",
     )
-    first = list(out)
-    second = list(out)
+    first = list(out.records)
+    second = list(out.records)
     assert first == second
     assert len(first) == n_rows
