@@ -1,45 +1,34 @@
 """Tests for ``simulations.dev_ai_cost_v2.panel_builder.build_daily_panel``.
 
-Spec ref: ``docs/specs/2026-05-16-ai-cost-factor-model-design.md`` v0.2.1
+Spec ref: ``docs/specs/2026-05-16-ai-cost-factor-model-design.md`` v0.2.3
 §3.3 (daily aggregation), §3.5 (panel contract), §0.1 CORRECTIONS-V
-(``is_error`` dropped, UTC half-open), CORRECTIONS-M (forward-fill forbidden).
+(``is_error`` dropped, UTC half-open), CORRECTIONS-M (forward-fill
+forbidden), §0.3 CORRECTIONS-Y-2/-Y-5a/-Y-5b/-Y-6.
 
 Sibling spec ref: ``docs/specs/2026-05-16-r6-continuous-stream-simulation-design.md``
-v0.1.3 CORRECTIONS-RR/-TT — ``MessageRecord.uuid`` required. The ``_rec``
-helper assigns a unique ``u-{day}-{hour}-{suffix}`` uuid per record so the
-type-tier validator (``MessageRecord.__post_init__``) accepts every fixture.
+v0.1.3 CORRECTIONS-RR/-TT — ``MessageRecord.uuid`` required.
 
-Test inventory:
-1. ``test_reconciliation_exact_decimal`` — sum of per-message
-   ``cost_usd_notional`` over non-error rows equals panel
-   ``notional_cost_usd`` EXACTLY under ``Decimal``.
-2. ``test_is_error_rows_dropped_from_cost_counted_separately`` —
-   ``is_error=True`` rows do not contribute to ``n_messages`` and are
-   surfaced via ``dropped_error_count`` (CORRECTIONS-V).
-3. ``test_forward_fill_forbidden_property`` — no output day lacks source
-   rows on EITHER side (records OR TRM) (§6 / CORRECTIONS-M).
-4. ``test_weekends_dropped`` — Sat/Sun records and TRM rows are dropped
-   on both sides; weekend records contribute to ``dropped_rows_count``.
-5. ``test_double_iteration_equivalence`` — re-iterating ``records``
-   produces an identical panel (CR FLAG A closure).
-6. ``test_polars_weekday_calendar_pin`` — pins the polars ``dt.weekday()``
-   convention (Mon=1..Sun=7) against known calendar dates so a future
-   polars-version bump that flipped the ordinal would fail loud.
-7. ``test_python_weekday_calendar_pin`` — pins the python
-   ``datetime.weekday()`` convention (Mon=0..Sun=6) symmetrically.
-8. ``test_no_records_only_days_in_output`` — Hypothesis property: every
-   output ``date_utc`` appears in BOTH the records side AND the TRM side
-   (forward-fill forbidden, strengthened from Test 3).
-9. ``test_empty_records_yields_empty_panel`` — edge case: no records →
-   empty panel with valid schema (no KeyError, no schema drift).
-10. ``test_trm_only_days_not_in_output`` — explicit cousin to Test 3:
-    TRM-only days (no message records that day) must not appear.
+Test inventory (v0.2.3):
+1. Reconciliation under Float64: sum of per-message ``cost_usd_notional``
+   over non-error rows equals panel ``notional_cost_usd`` within float
+   tolerance (Y-2 ccusage parity).
+2. is_error rows dropped from cost, counted via ``dropped_error_count``.
+3. Forward-fill forbidden (records-side gaps).
+4. Weekends dropped on both sides.
+5. Double-iteration equivalence over tuple-records (Y-5b).
+6. Polars vs. Python weekday calendar pin.
+7. Hypothesis property: no records-only days in output.
+8. Empty records → empty panel.
+9. TRM-only days not in output.
+10. Y-5a counter threading: JSONLReader-side counter + PricingTable
+    counters surface on the panel.
+11. Y-6 π̂ computation and broadcast.
+12. JSONLReadResult is the input type (not Sequence[MessageRecord]).
 """
 from __future__ import annotations
 
 import json
 from datetime import date, datetime, timezone
-from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
@@ -53,7 +42,11 @@ from simulations.dev_ai_cost_v2.anthropic_pricing import (
     _REQUIRED_KEYS,
 )
 from simulations.dev_ai_cost_v2.panel_builder import build_daily_panel
-from simulations.dev_ai_cost_v2.types import MessageRecord
+from simulations.dev_ai_cost_v2.types import (
+    DailyNotionalPanel,
+    JSONLReadResult,
+    MessageRecord,
+)
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -69,18 +62,13 @@ def _toy_pricing(tmp_path: Path) -> PricingTable:
 
 
 def _toy_trm() -> pl.DataFrame:
-    """5 weekdays 2026-05-04..2026-05-08 (Mon-Fri)."""
+    """5 weekdays 2026-05-04..2026-05-08 (Mon-Fri). Float64 trm column (Y-2)."""
     return pl.DataFrame(
         {
             "date": [date(2026, 5, d) for d in (4, 5, 6, 7, 8)],
-            "trm_cop_per_usd": [
-                Decimal("4100"),
-                Decimal("4105"),
-                Decimal("4090"),
-                Decimal("4110"),
-                Decimal("4120"),
-            ],
-        }
+            "trm_cop_per_usd": [4100.0, 4105.0, 4090.0, 4110.0, 4120.0],
+        },
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
     )
 
 
@@ -90,24 +78,19 @@ def _rec(
     *,
     is_error: bool = False,
     uuid_suffix: str = "",
+    cache_create_5m: int = 0,
+    cache_create_1h: int = 0,
 ) -> MessageRecord:
-    """Build a ``MessageRecord`` fixture with a unique non-empty uuid.
-
-    The ``uuid_suffix`` parameter exists to disambiguate multiple records
-    on the same (day, hour) in the same test — the upstream
-    ``MessageRecord.__post_init__`` only requires non-empty uuids (R6
-    v0.1.3 CORRECTIONS-RR/-TT), but distinct uuids per record keep the
-    fixtures honest with respect to the R6 pool canonicalization invariant.
-    """
+    """Build a ``MessageRecord`` fixture with a unique non-empty uuid (Y-2 float cost)."""
     return MessageRecord(
         ts=datetime(2026, 5, day, hour, tzinfo=timezone.utc),
         model="claude-sonnet-4-5",
         input_tok=1000,
         output_tok=500,
-        cache_create_5m=0,
-        cache_create_1h=0,
+        cache_create_5m=cache_create_5m,
+        cache_create_1h=cache_create_1h,
         cache_read=0,
-        cost_usd_notional=Decimal("0.0015"),
+        cost_usd_notional=0.0015,  # float per Y-2
         session_id="s",
         request_id="r",
         is_error=is_error,
@@ -115,26 +98,31 @@ def _rec(
     )
 
 
-# ─── Test 1: reconciliation under exact Decimal ──────────────────────────────
+def _result(records: list[MessageRecord], dropped_non_assistant: int = 0) -> JSONLReadResult:
+    """Wrap records in JSONLReadResult (Y-5b — panel_builder now consumes this)."""
+    return JSONLReadResult(
+        records=tuple(records),
+        dropped_non_assistant_count=dropped_non_assistant,
+    )
 
 
-def test_reconciliation_exact_decimal(tmp_path: Path) -> None:
+# ─── Test 1: reconciliation under Float64 (Y-2 ccusage parity) ──────────────
+
+
+def test_reconciliation_float_ccusage_parity(tmp_path: Path) -> None:
     pricing = _toy_pricing(tmp_path)
     records = [
         _rec(4, uuid_suffix="a"),
         _rec(5, uuid_suffix="a"),
         _rec(5, uuid_suffix="b"),
     ]
-    panel = build_daily_panel(records, pricing, _toy_trm())
-    raw_total = sum(
-        (r.cost_usd_notional for r in records if not r.is_error),
-        Decimal("0"),
-    )
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
+    raw_total = sum(r.cost_usd_notional for r in records if not r.is_error)
     panel_total = panel.df["notional_cost_usd"].sum()
-    # polars Decimal sum returns ``Decimal`` directly — equality is exact.
-    assert panel_total == raw_total
-    # Belt-and-suspenders: round-trip through str (preserves Decimal scale).
-    assert Decimal(str(panel_total)) == raw_total
+    # Float-arithmetic ccusage parity within 0.1% (relative).
+    assert abs(panel_total - raw_total) / raw_total < 1e-3
+    # And the dtype is Float64.
+    assert panel.df.schema["notional_cost_usd"] == pl.Float64
 
 
 # ─── Test 2: is_error dropped from cost, counted separately ──────────────────
@@ -149,24 +137,21 @@ def test_is_error_rows_dropped_from_cost_counted_separately(
         _rec(4, is_error=True, uuid_suffix="err"),
         _rec(5, uuid_suffix="ok"),
     ]
-    panel = build_daily_panel(records, pricing, _toy_trm())
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
     assert panel.dropped_error_count == 1
-    # 2026-05-04 should reflect only 1 message (the error is excluded).
     may4 = panel.df.filter(pl.col("date_utc") == date(2026, 5, 4))
     assert may4["n_messages"].item() == 1
-    # The error row's cost must NOT appear in the panel cost column.
-    assert may4["notional_cost_usd"].item() == Decimal("0.0015")
+    # Float comparison (ccusage parity).
+    assert may4["notional_cost_usd"].item() == pytest.approx(0.0015, rel=1e-9)
 
 
-# ─── Test 3: forward-fill forbidden (records side gaps) ──────────────────────
+# ─── Test 3: forward-fill forbidden (records-side gaps) ─────────────────────
 
 
 def test_forward_fill_forbidden_property(tmp_path: Path) -> None:
-    """No output day should lack source rows on EITHER side (records OR TRM)."""
     pricing = _toy_pricing(tmp_path)
-    # Records on May 5 only; TRM has May 4..8. May 4, 6, 7, 8 must NOT appear.
     records = [_rec(5, uuid_suffix="solo")]
-    panel = build_daily_panel(records, pricing, _toy_trm())
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
     out_dates = set(panel.df["date_utc"].to_list())
     assert out_dates == {date(2026, 5, 5)}
 
@@ -176,91 +161,66 @@ def test_forward_fill_forbidden_property(tmp_path: Path) -> None:
 
 def test_weekends_dropped(tmp_path: Path) -> None:
     pricing = _toy_pricing(tmp_path)
-    # 2026-05-02 = Saturday, 2026-05-03 = Sunday, 2026-05-04 = Monday.
     records = [
         _rec(2, uuid_suffix="sat"),
         _rec(3, uuid_suffix="sun"),
         _rec(4, uuid_suffix="mon"),
     ]
-    # Extend TRM to include weekends (will be filtered).
     trm = pl.DataFrame(
         {
             "date": [date(2026, 5, d) for d in (2, 3, 4)],
-            "trm_cop_per_usd": [
-                Decimal("4100"),
-                Decimal("4100"),
-                Decimal("4100"),
-            ],
-        }
+            "trm_cop_per_usd": [4100.0, 4100.0, 4100.0],
+        },
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
     )
-    panel = build_daily_panel(records, pricing, trm)
+    panel = build_daily_panel(_result(records), pricing, trm)
     assert set(panel.df["date_utc"].to_list()) == {date(2026, 5, 4)}
-    # 2 weekend records (records side) + 2 weekend TRM rows = ≥ 4 dropped.
-    assert panel.dropped_rows_count >= 2  # at minimum, the 2 weekend records.
+    assert panel.dropped_rows_count >= 2
 
 
-# ─── Test 5: double iteration equivalence (Sequence contract) ────────────────
+# ─── Test 5: double-iteration equivalence over tuple records ────────────────
 
 
 def test_double_iteration_equivalence(tmp_path: Path) -> None:
-    """records is a Sequence — building twice must yield identical panels."""
     pricing = _toy_pricing(tmp_path)
     records: list[MessageRecord] = [
         _rec(4, uuid_suffix="a"),
         _rec(5, uuid_suffix="b"),
     ]
-    p1 = build_daily_panel(records, pricing, _toy_trm())
-    p2 = build_daily_panel(records, pricing, _toy_trm())
+    p1 = build_daily_panel(_result(records), pricing, _toy_trm())
+    p2 = build_daily_panel(_result(records), pricing, _toy_trm())
     assert p1.df.equals(p2.df)
     assert p1.dropped_rows_count == p2.dropped_rows_count
     assert p1.dropped_error_count == p2.dropped_error_count
+    assert p1.ephemeral_pi_share == p2.ephemeral_pi_share
 
 
-# ─── Test 6: polars weekday calendar pin ─────────────────────────────────────
+# ─── Test 6: weekday calendar pins ──────────────────────────────────────────
 
 
 def test_polars_weekday_calendar_pin() -> None:
-    """polars ``dt.weekday()`` is Mon=1..Sun=7 on the active polars pin.
-
-    The panel_builder's TRM-side filter uses ``<= 5`` (keep Mon-Fri); if a
-    polars version bump flipped the ordinal to Mon=0..Sun=6, this test
-    would fail loud and the filter would need to be updated to ``< 5``
-    (matching the python-side convention).
-    """
-    # 2026-05-04 = Monday, 2026-05-08 = Friday,
-    # 2026-05-02 = Saturday, 2026-05-03 = Sunday.
-    s = pl.Series([date(2026, 5, 4), date(2026, 5, 8), date(2026, 5, 2), date(2026, 5, 3)])
+    s = pl.Series(
+        [date(2026, 5, 4), date(2026, 5, 8), date(2026, 5, 2), date(2026, 5, 3)]
+    )
     assert s.dt.weekday().to_list() == [1, 5, 6, 7]
 
 
-# ─── Test 7: python weekday calendar pin ─────────────────────────────────────
-
-
 def test_python_weekday_calendar_pin() -> None:
-    """python ``datetime.weekday()`` is Mon=0..Sun=6.
-
-    The panel_builder's records-side filter uses ``< 5`` (keep Mon-Fri).
-    Pinning this prevents accidentally treating polars and python ordinals
-    as interchangeable.
-    """
     assert datetime(2026, 5, 4).weekday() == 0  # Mon
     assert datetime(2026, 5, 8).weekday() == 4  # Fri
     assert datetime(2026, 5, 2).weekday() == 5  # Sat
     assert datetime(2026, 5, 3).weekday() == 6  # Sun
 
 
-# ─── Test 8: Hypothesis property — no records-only days in output ────────────
+# ─── Test 7: Hypothesis property — no records-only days ─────────────────────
 
 
 @given(
-    # Pick a non-empty subset of weekdays {Mon..Fri} = days {4,5,6,7,8} to
-    # contain records.
     record_days=st.lists(
         st.sampled_from([4, 5, 6, 7, 8]),
         min_size=1,
         max_size=10,
     ),
-    # Pick a non-empty subset of those same weekdays for the TRM panel.
     trm_days=st.lists(
         st.sampled_from([4, 5, 6, 7, 8]),
         min_size=1,
@@ -274,67 +234,139 @@ def test_no_records_only_days_in_output(
     trm_days: list[int],
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Every output ``date_utc`` must appear on BOTH the records and TRM sides.
-
-    Strengthens Test 3: across many random (records-days, trm-days) splits,
-    no day appears in the output unless it has a source row on BOTH sides.
-    This pins the forward-fill-forbidden contract symmetrically.
-    """
     tmp_path = tmp_path_factory.mktemp("toy_pricing")
     pricing = _toy_pricing(tmp_path)
-
     records = [
         _rec(d, uuid_suffix=f"i{i}") for i, d in enumerate(record_days)
     ]
     trm = pl.DataFrame(
         {
             "date": [date(2026, 5, d) for d in sorted(set(trm_days))],
-            "trm_cop_per_usd": [
-                Decimal("4100") for _ in range(len(set(trm_days)))
-            ],
-        }
+            "trm_cop_per_usd": [4100.0 for _ in range(len(set(trm_days)))],
+        },
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
     )
-    panel = build_daily_panel(records, pricing, trm)
-
+    panel = build_daily_panel(_result(records), pricing, trm)
     out_dates = set(panel.df["date_utc"].to_list())
     record_date_set = {date(2026, 5, d) for d in record_days}
     trm_date_set = {date(2026, 5, d) for d in trm_days}
-
-    # Forward-fill-forbidden invariant: output ⊆ (records ∩ trm).
-    assert out_dates <= (record_date_set & trm_date_set), (
-        f"Forward-fill detected: out_dates={out_dates}, "
-        f"records={record_date_set}, trm={trm_date_set}"
-    )
-    # And exactly equal to the intersection (no spurious drops on weekdays).
+    assert out_dates <= (record_date_set & trm_date_set)
     assert out_dates == (record_date_set & trm_date_set)
 
 
-# ─── Test 9: empty records edge case ─────────────────────────────────────────
+# ─── Test 8: empty records edge case ─────────────────────────────────────────
 
 
 def test_empty_records_yields_empty_panel(tmp_path: Path) -> None:
-    """Zero records must not raise — empty panel with valid schema."""
     pricing = _toy_pricing(tmp_path)
-    panel = build_daily_panel([], pricing, _toy_trm())
+    panel = build_daily_panel(_result([]), pricing, _toy_trm())
     assert panel.df.height == 0
     assert panel.dropped_error_count == 0
-    # All TRM weekday rows go unjoined; weekend TRM rows = 0 (5 weekdays in fixture).
-    # dropped_rows_count is the sum of: weekend records (0) + weekend trm (0) +
-    # left-join misses (0 — daily is empty, so join loss is 0).
     assert panel.dropped_rows_count == 0
-    # Schema validity is enforced by DailyNotionalPanel.__post_init__; reaching
-    # this point at all means the schema matched EXPECTED_PANEL_SCHEMA.
+    # Y-6: zero records → π̂ = 0.0.
+    assert panel.ephemeral_pi_share == 0.0
 
 
-# ─── Test 10: TRM-only days not in output ────────────────────────────────────
+# ─── Test 9: TRM-only days not in output ────────────────────────────────────
 
 
 def test_trm_only_days_not_in_output(tmp_path: Path) -> None:
-    """TRM has 5 weekdays; records only on May 4. Days 5..8 must not appear."""
     pricing = _toy_pricing(tmp_path)
     records = [_rec(4, uuid_suffix="only")]
-    panel = build_daily_panel(records, pricing, _toy_trm())
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
     out_dates = set(panel.df["date_utc"].to_list())
     assert out_dates == {date(2026, 5, 4)}
-    assert date(2026, 5, 5) not in out_dates
-    assert date(2026, 5, 8) not in out_dates
+
+
+# ─── Test 10: Y-5a counter threading ────────────────────────────────────────
+
+
+def test_counter_threading_jsonlreader_side(tmp_path: Path) -> None:
+    """Y-5a: dropped_non_assistant_count from JSONLReadResult must surface
+    on DailyNotionalPanel.
+    """
+    pricing = _toy_pricing(tmp_path)
+    records = [_rec(4, uuid_suffix="a")]
+    rr = JSONLReadResult(records=tuple(records), dropped_non_assistant_count=7)
+    panel = build_daily_panel(rr, pricing, _toy_trm())
+    assert panel.dropped_non_assistant_count == 7
+
+
+def test_counter_threading_pricingtable_side(tmp_path: Path) -> None:
+    """Y-5a: WARN_missing_keys_count + dropped_unknown_model_count +
+    multiple_substring_match_warning from PricingTable must surface on
+    DailyNotionalPanel.
+    """
+    # Use a pricing table with a missing required key to bump
+    # WARN_missing_keys_count.
+    fake = {
+        "claude-sonnet-4-5": {
+            "input_cost_per_token": 1e-06,
+            "output_cost_per_token": 1e-06,
+            "cache_creation_input_token_cost": 1e-06,
+            # MISSING: cache_creation_input_token_cost_above_1hr
+            "cache_read_input_token_cost": 1e-06,
+        }
+    }
+    p = tmp_path / "lite.json"
+    p.write_text(json.dumps(fake))
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        pricing = PricingTable.from_litellm_sha(
+            LITELLM_SHA_PINNED, p, skip_sha_check=True
+        )
+    assert pricing.WARN_missing_keys_count == 1
+
+    records = [_rec(4, uuid_suffix="a")]
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
+    assert panel.warn_missing_keys_count == 1
+    assert panel.dropped_unknown_model_count == 0
+    assert panel.multiple_substring_match_warning == 0
+
+
+# ─── Test 11: Y-6 ephemeral π̂ ──────────────────────────────────────────────
+
+
+def test_y6_ephemeral_pi_share_computed(tmp_path: Path) -> None:
+    """Y-6: π̂ = Σ cache_create_1h / Σ (5m + 1h) across all records."""
+    pricing = _toy_pricing(tmp_path)
+    # Across all 3 records: Σ 1h = 30, Σ 5m = 70 → denom = 100, π̂ = 0.3.
+    records = [
+        _rec(4, uuid_suffix="a", cache_create_5m=30, cache_create_1h=10),
+        _rec(5, uuid_suffix="b", cache_create_5m=20, cache_create_1h=10),
+        _rec(6, uuid_suffix="c", cache_create_5m=20, cache_create_1h=10),
+    ]
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
+    assert panel.ephemeral_pi_share == pytest.approx(0.3, rel=1e-12)
+    # And the column is broadcast as a constant scalar across all rows.
+    pi_col = panel.df["ephemeral_pi_share"].to_list()
+    assert all(v == pytest.approx(0.3, rel=1e-12) for v in pi_col)
+
+
+def test_y6_ephemeral_pi_share_zero_denominator(tmp_path: Path) -> None:
+    """Y-6: when Σ (5m + 1h) == 0, π̂ defaults to 0.0."""
+    pricing = _toy_pricing(tmp_path)
+    records = [
+        _rec(4, uuid_suffix="a", cache_create_5m=0, cache_create_1h=0),
+    ]
+    panel = build_daily_panel(_result(records), pricing, _toy_trm())
+    assert panel.ephemeral_pi_share == 0.0
+
+
+# ─── Test 12: input type contract (JSONLReadResult, not Sequence) ───────────
+
+
+def test_build_daily_panel_consumes_jsonl_read_result(tmp_path: Path) -> None:
+    """Y-5b/CR-Z-2: signature first arg is JSONLReadResult.
+
+    Smoke test: passing a plain ``list[MessageRecord]`` is a type error;
+    here we verify the JSONLReadResult container is what flows.
+    """
+    pricing = _toy_pricing(tmp_path)
+    records = [_rec(4, uuid_suffix="a")]
+    rr = JSONLReadResult(records=tuple(records), dropped_non_assistant_count=0)
+    # Must work cleanly.
+    panel = build_daily_panel(rr, pricing, _toy_trm())
+    assert isinstance(panel, DailyNotionalPanel)
+    assert panel.df.height == 1
