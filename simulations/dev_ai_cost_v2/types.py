@@ -214,22 +214,36 @@ class JSONLReadResult:
             trailing null-byte blocks, truncated JSON). The skip is
             scope-limited to JSON-syntax failures; Pydantic schema errors
             on valid JSON still raise ``JSONLSchemaError``.
+        dropped_duplicate_count: v0.2.5 Y-8 — number of JSONL rows
+            collapsed by the OSS-mirror uniqueHash dedup discipline
+            (``${message.id}:${requestId}`` → keep-largest-tokenTotal,
+            with ``hasSpeed`` tiebreaker on equal totals). Increments on
+            EVERY collision of a previously-seen ``_unique_hash``,
+            whether the new row supersedes the kept entry (replacement)
+            or is discarded. Equivalently:
+            ``dropped_duplicate_count == raw_assistant_rows_admitted -
+            len(records)``. Rows whose ``message.id`` is None bypass the
+            dedup map entirely and do NOT increment this counter (per
+            spec §0.5 CR optional-7th / RC FLAG-B).
 
     Counter ownership (Y-5a): this container carries ONLY the
     JSONLReader-side counters (``dropped_non_assistant_count``,
-    ``dropped_malformed_line_count``). The PricingTable-side counters
-    (``WARN_missing_keys_count``, ``dropped_unknown_model_count``,
-    ``multiple_substring_match_warning``) live on ``PricingTable`` and are
-    surfaced into ``DailyNotionalPanel`` by the panel-builder.
+    ``dropped_malformed_line_count``, ``dropped_duplicate_count``). The
+    PricingTable-side counters (``WARN_missing_keys_count``,
+    ``dropped_unknown_model_count``, ``multiple_substring_match_warning``)
+    live on ``PricingTable`` and are surfaced into ``DailyNotionalPanel``
+    by the panel-builder.
 
     Raises:
-        ValueError: if ``dropped_non_assistant_count`` or
-            ``dropped_malformed_line_count`` is negative.
+        ValueError: if ``dropped_non_assistant_count``,
+            ``dropped_malformed_line_count``, or
+            ``dropped_duplicate_count`` is negative.
     """
 
     records: tuple[MessageRecord, ...]
     dropped_non_assistant_count: int
     dropped_malformed_line_count: int
+    dropped_duplicate_count: int
 
     def __post_init__(self) -> None:
         if self.dropped_non_assistant_count < 0:
@@ -241,6 +255,11 @@ class JSONLReadResult:
             raise ValueError(
                 f"JSONLReadResult.dropped_malformed_line_count must be >= 0; "
                 f"got {self.dropped_malformed_line_count}"
+            )
+        if self.dropped_duplicate_count < 0:
+            raise ValueError(
+                f"JSONLReadResult.dropped_duplicate_count must be >= 0; "
+                f"got {self.dropped_duplicate_count}"
             )
 
 
@@ -271,6 +290,9 @@ class DailyNotionalPanel:
       - ``dropped_malformed_line_count``: v0.2.4 Y-7 — JSONL lines silently
         skipped on ``json.JSONDecodeError`` (sourced from
         ``JSONLReadResult``).
+      - ``dropped_duplicate_count``: v0.2.5 Y-8 — JSONL rows collapsed by
+        the OSS-mirror uniqueHash dedup discipline (sourced from
+        ``JSONLReadResult``).
       - ``warn_missing_keys_count``: LiteLLM rate-key absences (Y-5a,
         sourced from ``PricingTable``).
       - ``dropped_unknown_model_count``: model-lookup-ladder-exhausted
@@ -292,6 +314,7 @@ class DailyNotionalPanel:
             requirement per spec v0.2.1 §3.4.
         dropped_non_assistant_count: JSONLReader-side counter (Y-5a).
         dropped_malformed_line_count: JSONLReader-side counter (v0.2.4 Y-7).
+        dropped_duplicate_count: JSONLReader-side counter (v0.2.5 Y-8).
         warn_missing_keys_count: PricingTable-side counter (Y-5a).
         dropped_unknown_model_count: PricingTable-side counter (Y-5a).
         multiple_substring_match_warning: PricingTable-side counter (Y-5d).
@@ -313,6 +336,7 @@ class DailyNotionalPanel:
     dropped_unknown_model_count: int
     multiple_substring_match_warning: int
     ephemeral_pi_share: float
+    dropped_duplicate_count: int
 
     def __post_init__(self) -> None:
         actual: dict[str, pl.DataType] = dict(self.df.schema)
@@ -337,6 +361,7 @@ class DailyNotionalPanel:
             "warn_missing_keys_count",
             "dropped_unknown_model_count",
             "multiple_substring_match_warning",
+            "dropped_duplicate_count",
         ):
             v: int = getattr(self, fname)
             if v < 0:

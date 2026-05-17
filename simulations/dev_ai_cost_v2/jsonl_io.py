@@ -25,6 +25,20 @@ v0.2.4 amendment (§0.4 CORRECTIONS-Y-7):
     surfaced through ``JSONLReadResult`` (types tier). Pydantic schema
     errors on valid JSON still raise ``JSONLSchemaError``.
 
+v0.2.5 amendment (§0.5 CORRECTIONS-Y-8):
+  - ``JSONLReader.__call__`` adds an OSS-mirror uniqueHash dedup pipeline
+    keyed on ``${message.id}:${requestId}`` (ccusage ``Wr``). The
+    keep-largest-``tokenTotal`` rule (ccusage ``Sr`` + ``$``) keeps the
+    row with the largest sum of ``input + output + cache_creation +
+    cache_read`` tokens; ties broken by ``hasSpeed`` (a row whose
+    ``message.usage.speed`` is not None wins). The dedup state lives
+    LOCAL to ``__call__`` (mutability scope per CR NIT-1): the
+    ``JSONLReader`` instance remains stateless, preserving IO Boundary
+    tier discipline. The drop count surfaces as
+    ``JSONLReadResult.dropped_duplicate_count``; rows whose
+    ``message.id`` is None bypass the dedup map entirely and are
+    admitted without incrementing the counter (RC FLAG-B).
+
 v0.2.3 closure (Y-5f, CR-Z-2):
   - ``JSONLReader.__call__`` returns ``JSONLReadResult`` (types tier),
     NOT a bare ``Sequence[MessageRecord]``. The result container carries
@@ -73,19 +87,35 @@ class _CacheCreation(BaseModel):
 
 
 class _Usage(BaseModel):
-    """``message.usage`` block. Only token counts are required."""
+    """``message.usage`` block. Only token counts are required.
+
+    v0.2.5 Y-8: ``speed`` is optionally captured to support the ccusage
+    ``hasSpeed`` tiebreaker on equal-tokenTotal duplicates. The field is
+    permitted by ``extra="allow"`` (v0.2.3 Y-1) but is materialized here
+    so the dedup pipeline in ``JSONLReader.__call__`` can read it
+    cheaply without rummaging through ``model_extra``.
+    """
 
     model_config = ConfigDict(extra="allow")
     input_tokens: int
     output_tokens: int
     cache_creation: _CacheCreation = Field(default_factory=_CacheCreation)
     cache_read_input_tokens: int = 0
+    speed: str | None = None
 
 
 class _Message(BaseModel):
-    """``message`` block (model + usage)."""
+    """``message`` block (model + usage).
+
+    v0.2.5 Y-8: ``id`` is materialized as Optional to support the OSS-mirror
+    uniqueHash dedup discipline (``${message.id}:${requestId}``). Permissive
+    schema preserved — when ``id`` is absent the row bypasses the dedup map
+    and is admitted without incrementing ``dropped_duplicate_count``
+    (spec §0.5 CR optional-7th / RC FLAG-B).
+    """
 
     model_config = ConfigDict(extra="allow")
+    id: str | None = None
     model: str = "unknown"
     usage: _Usage
 
@@ -128,6 +158,50 @@ def _synth_uuid(file_path: Path, line_no: int) -> str:
     digest_input: str = f"{basename}:{str(line_no).zfill(8)}"
     digest: str = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
     return f"synth-sha256:{digest}"
+
+
+def _unique_hash(message_id: str | None, request_id: str | None) -> str | None:
+    """v0.2.5 Y-8 — ccusage ``Wr`` uniqueHash mirror.
+
+    Returns ``f"{message_id}:{request_id}"`` when both are present;
+    ``message_id`` alone when ``request_id`` is None; ``None`` when
+    ``message_id`` is missing (caller MUST treat ``None`` as "skip
+    dedup, admit unconditionally" per RC FLAG-B).
+
+    Args:
+        message_id: ``message.id`` from the Anthropic JSONL row.
+        request_id: ``requestId`` from the wrapping row.
+
+    Returns:
+        Stable hash key for the dedup map, or ``None`` to opt out.
+    """
+    if not message_id:
+        return None
+    if request_id:
+        return f"{message_id}:{request_id}"
+    return message_id
+
+
+def _token_total(
+    input_tok: int, output_tok: int, cache_create: int, cache_read: int
+) -> int:
+    """v0.2.5 Y-8 — ccusage ``Sr`` tokenTotal mirror.
+
+    Sum of the four token classes used as the keep-largest scoring
+    function on duplicate ``_unique_hash`` collisions. The cache_create
+    arg is the pre-summed ``5m + 1h`` total (matches ccusage's flat
+    ``usage.cache_creation_input_tokens``).
+
+    Args:
+        input_tok: standard input tokens.
+        output_tok: standard output tokens.
+        cache_create: ``5m + 1h`` cache-creation tokens summed.
+        cache_read: cache-read tokens.
+
+    Returns:
+        Non-negative integer score for keep-largest comparison.
+    """
+    return input_tok + output_tok + cache_create + cache_read
 
 
 def _construct_message_record(
@@ -267,6 +341,18 @@ class JSONLReader:
             Blank-line skipping is the documented JSONL convention.
             Non-assistant rows are explicitly counted, not silenced.
 
+        Dedup pipeline (v0.2.5 Y-8):
+            Rows are deduplicated by ``_unique_hash(message.id, requestId)``
+            with the keep-largest-``tokenTotal`` rule + ``hasSpeed``
+            tiebreaker (ccusage ``Wr`` / ``Sr`` / ``$`` mirror). On every
+            collision of a previously-seen hash the
+            ``dropped_duplicate_count`` counter increments, regardless of
+            whether the new row replaces or is dropped. Rows with
+            ``message.id == None`` bypass the dedup map and are admitted
+            without affecting the counter. The dedup map is a LOCAL
+            variable inside this call — ``JSONLReader`` instance state
+            is unchanged.
+
         Warnings emitted:
             ``UserWarning`` (``stacklevel=2``) when ``requestId is None``
             (legacy pre-2.0 Claude Code rows).
@@ -280,6 +366,14 @@ class JSONLReader:
         records: list[MessageRecord] = []
         dropped_non_assistant: int = 0
         dropped_malformed_line: int = 0
+        # v0.2.5 Y-8: dedup state — LOCAL to this call (CR NIT-1). Maps
+        # ``_unique_hash`` → index into ``records`` of the currently-kept
+        # entry. ``_has_speed`` parallels ``records`` (same index space)
+        # so the ``hasSpeed`` tiebreaker is decidable without surfacing
+        # ``speed`` on the public ``MessageRecord`` contract.
+        seen_hashes: dict[str, int] = {}
+        has_speed_by_idx: list[bool] = []
+        dropped_duplicate: int = 0
         for jsonl_path in projects_root.rglob("*.jsonl"):
             with jsonl_path.open("r") as f:
                 for line_no, line in enumerate(f, start=1):
@@ -320,19 +414,68 @@ class JSONLReader:
                             UserWarning,
                             stacklevel=2,
                         )
-                    records.append(
-                        _construct_message_record(
-                            row=row,
-                            file_path=jsonl_path,
-                            line_no=line_no,
-                            pricing=self._pricing,
-                            ts=ts,
-                        )
+
+                    new_record = _construct_message_record(
+                        row=row,
+                        file_path=jsonl_path,
+                        line_no=line_no,
+                        pricing=self._pricing,
+                        ts=ts,
                     )
+                    # v0.2.5 Y-8: uniqueHash dedup. ``_unique_hash`` returns
+                    # None when ``message.id`` is absent — those rows bypass
+                    # the map entirely (RC FLAG-B: admit without
+                    # incrementing the counter).
+                    new_has_speed: bool = row.message.usage.speed is not None
+                    uhash = _unique_hash(row.message.id, row.requestId)
+                    if uhash is None:
+                        records.append(new_record)
+                        has_speed_by_idx.append(new_has_speed)
+                        continue
+
+                    existing_idx = seen_hashes.get(uhash)
+                    if existing_idx is None:
+                        seen_hashes[uhash] = len(records)
+                        records.append(new_record)
+                        has_speed_by_idx.append(new_has_speed)
+                        continue
+
+                    # Collision: counter ALWAYS increments (CR NIT-3 /
+                    # spec §0.5: dropped_duplicate_count ==
+                    # raw_assistant_rows_admitted - len(records) after
+                    # the loop completes).
+                    dropped_duplicate += 1
+                    existing = records[existing_idx]
+                    existing_tt = _token_total(
+                        existing.input_tok,
+                        existing.output_tok,
+                        existing.cache_create_5m + existing.cache_create_1h,
+                        existing.cache_read,
+                    )
+                    new_tt = _token_total(
+                        new_record.input_tok,
+                        new_record.output_tok,
+                        new_record.cache_create_5m + new_record.cache_create_1h,
+                        new_record.cache_read,
+                    )
+                    existing_has_speed = has_speed_by_idx[existing_idx]
+                    # ccusage $ keep-larger rule with hasSpeed tiebreaker.
+                    # Whole-record replacement (RC FLAG-A: no
+                    # field-mixing). Tie + new-has-speed + existing-no
+                    # → replace; all other ties → keep existing.
+                    if new_tt > existing_tt or (
+                        new_tt == existing_tt
+                        and new_has_speed
+                        and not existing_has_speed
+                    ):
+                        records[existing_idx] = new_record
+                        has_speed_by_idx[existing_idx] = new_has_speed
+                    # else: discard new (existing stays).
         return JSONLReadResult(
             records=tuple(records),
             dropped_non_assistant_count=dropped_non_assistant,
             dropped_malformed_line_count=dropped_malformed_line,
+            dropped_duplicate_count=dropped_duplicate,
         )
 
 

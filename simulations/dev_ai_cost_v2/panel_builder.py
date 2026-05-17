@@ -98,10 +98,10 @@ def build_daily_panel(
         * Forward-fill is FORBIDDEN: a UTC date that lacks a source row on
           EITHER side does NOT appear in the output.
         * All arithmetic is ``float`` (ccusage parity per Y-2).
-        * Y-5a + v0.2.4 Y-7 counter threading: 3 PricingTable counters +
-          2 JSONLReader counters (``dropped_non_assistant_count``,
-          ``dropped_malformed_line_count``) are surfaced into the panel
-          for DATA_PROVENANCE.
+        * Y-5a + v0.2.4 Y-7 + v0.2.5 Y-8 counter threading: 3 PricingTable
+          counters + 3 JSONLReader counters (``dropped_non_assistant_count``,
+          ``dropped_malformed_line_count``, ``dropped_duplicate_count``)
+          are surfaced into the panel for DATA_PROVENANCE.
         * Y-6 ``ephemeral_pi_share`` computed across all records (single
           scalar, broadcast as a constant Float64 column).
 
@@ -221,6 +221,7 @@ def build_daily_panel(
         dropped_unknown_model_count=pricing.dropped_unknown_model_count,
         multiple_substring_match_warning=pricing.multiple_substring_match_warning,
         ephemeral_pi_share=pi_share,
+        dropped_duplicate_count=read_result.dropped_duplicate_count,
     )
 
 
