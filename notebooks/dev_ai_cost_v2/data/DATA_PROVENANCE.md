@@ -1,15 +1,15 @@
 # DATA_PROVENANCE — `dev_ai_cost_v2` panel
 
-Spec: `docs/specs/2026-05-16-ai-cost-factor-model-design.md` v0.2.5 §5.4.
+Spec: `docs/specs/2026-05-16-ai-cost-factor-model-design.md` v0.2.7 §5.4.
 
 ## Build date
-2026-05-17 (v0.2.5 Y-8 refresh)
+2026-05-17 (v0.2.7 Y-9 closure refresh)
 
 ## Repo state at build time
-- Branch: `iter/ai-cost-2026-05`
-- HEAD: `08249b2c5638622821dad5e3be9d585cc7527a5a` (v0.2.5 Y-8 tests; dedup landed)
-- Spec version: 0.2.5
-- Plan version: 2026-05-16 plan (17 tasks; Task 10 = this build, refreshed post-Y-8)
+- Branch: `master`
+- HEAD: post-PR#3 merge `c9eb128` + v0.2.7 §0.7 CORRECTIONS-Y-9 spec amendment
+- Spec version: 0.2.7
+- Plan version: 2026-05-16 plan (17 tasks; Task 10 = this build, refreshed post-Y-9)
 
 ## Pinned external sources
 
@@ -38,10 +38,48 @@ uv run python scripts/build_notional_cost_panel.py \
 - Columns (11): `date_utc, notional_cost_usd, notional_cost_cop, trm_cop_per_usd, input_tok, output_tok, cache_create_5m, cache_create_1h, cache_read, n_messages, ephemeral_pi_share`
 - Date window observed: **2026-01-06 → 2026-05-14**
 
-### ccusage parity verdict (apples-to-apples 27-weekday overlap)
-- **cost ratio: 0.9994 (within ±0.1%, v0.2.2 CORRECTIONS-Y-2 / Y-4 target MET)**
-- input_tok: 1.0125; output_tok: 0.9936; cache_create: 1.0008; cache_read: 1.0010 (all within ±1.3%)
-- Reference: ccusage v19.0.3, `daily --since 20240101 --until 20260517 --json`
+### ccusage parity verdict (apples-to-apples 27-weekday overlap, v0.2.7 Y-9 closure)
+
+**Comparison protocol (REQUIRED).** ccusage's default daily aggregator
+buckets timestamps into SYSTEM LOCAL timezone. Our panel buckets in UTC.
+A valid parity comparison MUST pass `--timezone UTC` to ccusage; otherwise
+the per-class ratios contain a timezone-shift artifact of up to ~1.3% per
+class (root-caused in spec §0.7 CORRECTIONS-Y-9).
+
+Reference command (canonical):
+
+```
+npx ccusage@latest daily --since 20240101 --until 20260517 --timezone UTC --json
+```
+
+Per-class ratios on the 27-weekday overlap (UTC mode, post v0.2.7):
+
+| Metric | Ours | ccusage (UTC) | Ratio | Δ |
+|---|---|---|---|---|
+| cost | $2,796.53 | $2,796.53 | 1.000000 | -0.000% |
+| input_tok | 741,206 | 741,206 | 1.000000 | +0.000% |
+| output_tok | 16,369,895 | 16,369,895 | 1.000000 | +0.000% |
+| cache_create | 135,766,073 | 135,767,117 | 0.999992 | -0.001% |
+| cache_read | 3,332,305,687 | 3,332,305,687 | 1.000000 | +0.000% |
+
+**v0.2.2 CORRECTIONS-Y-2 / Y-4 ccusage-parity-0.1% target: SATISFIED on every class.**
+Residual is -1,044 cache_create tokens (-0.001%) from 8 rows where
+Anthropic's flat `cache_creation_input_tokens` field disagrees with the
+nested `cache_creation.{ephemeral_5m,ephemeral_1h}` sum by a small amount;
+ccusage reads flat, we sum nested (Y-6 π̂ split preservation requirement).
+Two orders of magnitude below the 0.5% per-class success criterion.
+
+Reference: ccusage v19.0.3.
+
+**Default-mode (local TZ) comparison — DEPRECATED for parity but documented for reproducibility:**
+
+| Metric | Ours | ccusage (default = EDT here) | Ratio | Notes |
+|---|---|---|---|---|
+| cost | $2,788.01 | $2,789.64 | 0.9994 | Within 0.1% by aggregate coincidence (timezone-shift cancellation) |
+| input_tok | 741,130 | 731,949 | 1.0125 | ARTIFACT — see UTC-mode table above |
+| output_tok | 16,326,139 | 16,430,969 | 0.9936 | ARTIFACT |
+| cache_create | 135,650,319 | 135,535,147 | 1.0008 | ARTIFACT |
+| cache_read | 3,318,908,416 | 3,315,754,879 | 1.0010 | ARTIFACT |
 
 ### Anti-fishing N-floor check
 Spec §2.3 / §7 N_MIN = 75 weekday days. **Observed N = 29** → **expected power-HALT at Task 11** per CORRECTIONS-U (already anticipated; disposition template pre-staged at `notebooks/dev_ai_cost_v2/dispositions/power_halt_template.md`).
@@ -71,9 +109,18 @@ Spec §2.3 / §7 N_MIN = 75 weekday days. **Observed N = 29** → **expected pow
 - All 6 CR-Z architectural pins (v0.2.3) active.
 - All 4 Y-1/Y-2/Y-3/Y-4 OSS-mirror amendments (v0.2.2) active.
 
-## Deferred (per spec §0.5 Y-9 backlog)
+## Closed (v0.2.7)
 
-- **Y-9 (v0.2.6 candidate)**: residual ~1.3% input_tok overshoot + ~0.6-0.7% spreads on output/cc/cr post-dedup. Investigate (a) `usage.iterations[i]` aggregation, (b) `dropped_unknown_model_count=136` rows ccusage prices via fallback we drop, (c) `hasSpeed` tiebreaker edge cases.
+- **Y-9 (v0.2.7 §0.7 CORRECTIONS-Y-9)**: CLOSED. Pre-pinned hypotheses H1
+  (iterations[] aggregation), H2 (dropped_unknown_model pricing fallback),
+  H3 (hasSpeed tiebreaker collisions) all falsified by 9-probe empirical
+  investigation. Root cause = TIMEZONE-COMPARISON ARTIFACT: ccusage
+  default-bucket-by-local-TZ vs our UTC-bucketing. Under `--timezone UTC`
+  apples-to-apples comparison every per-class ratio is within ±0.001%
+  (see table above). No code change to `simulations/dev_ai_cost_v2/jsonl_io.py`.
+
+## Deferred
+
 - Quantitative hard-fail threshold on `dropped_malformed_line_count / total_lines` (v0.2.4 RC FLAG-5a). First baseline empirically established: `1 / 134,514 = 7.4e-6`.
-- DATA_PROVENANCE schema pin for Y-7's counter (this document instantiates the freeform shape; v0.2.6+ to formalize).
-- ccusage-parity oracle activation pending real PII-redacted fixture replacing the synthetic one at `simulations/tests/fixtures/real_claude_jsonl/synthetic_sample.jsonl`.
+- DATA_PROVENANCE schema pin for Y-7's counter (this document instantiates the freeform shape; v0.2.7+ to formalize).
+- ccusage-parity oracle activation pending real PII-redacted fixture replacing the synthetic one at `simulations/tests/fixtures/real_claude_jsonl/synthetic_sample.jsonl`. **CI-locked parity check MUST pass `--timezone UTC` to the ccusage invocation per the Y-9 closure protocol above.**
