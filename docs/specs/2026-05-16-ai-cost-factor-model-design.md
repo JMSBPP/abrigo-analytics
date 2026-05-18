@@ -1,8 +1,8 @@
 ---
 spec_id: ai-cost-factor-model
-spec_version: 0.2.5
+spec_version: 0.2.6
 created: 2026-05-16
-status: DRAFT — v0.2.5 reliability-convergence patch (§0.5 CORRECTIONS-Y-8) closing the ~2.1× ccusage cost overcount via OSS-mirror uniqueHash dedup. Empirical validation in `scratch/2026-05-17-v0_2_5-dedup-discovery/findings.md` shows cost converges from 2.11× to 0.977× of ccusage post-dedup. Awaiting two-wave review.
+status: DRAFT — v0.2.6 sensitivity-extension patch (§0.6 CORRECTIONS-Z) adding pre-registered multi-period aggregation (Z-1) + lightweight backcast bootstrap (Z-2) sensitivity arms after R5 PRIMARY (Task 12) returned FX share ≈ 0.003% for the 2026-Q1-Q2 window; Z-3 escalation gate to R6 framework if back-cast FX share deviates materially. Awaiting two-wave review on the diff.
 v0_1_0_status: REJECTED 2026-05-16 by all three reviewers — see §12 revision history
 v0_2_0_status: NEEDS_WORK (Wave 1 RC) + NEEDS_WORK (Wave 2 Model QA) + ACCEPT_WITH_FLAGS (Wave 2 Code Reviewer) — all prior BLOCKs closed; 5 new BLOCKs surfaced from deferred evidence + methodology pins
 parent_iteration_pin: dev-AI-cost iteration (parent CLAUDE.md "Abrigo Operating Framework"; prior FAIL pinned)
@@ -780,6 +780,211 @@ tokenTotals may select differently in edge cases. None are load-bearing
 for v0.2.5's primary cost-convergence goal; filed for follow-up after Y-8
 lands and is verified.
 
+## 0.6 v0.2.5 → v0.2.6 CORRECTIONS (sensitivity-extension patch)
+
+v0.2.5 closed cost reliability (Task 10 panel now matches ccusage to within
+0.1% on aggregate). Task 12 ran R5 PRIMARY on the resulting 28-day series
+and returned a surprising result: **FX share of variance ≈ 0.00003 (90% CI
+[−3.4e-6, +4.1e-5])** — essentially zero, dominated by token-burst usage
+variance. The user-asked sensitivity question follows: *is the small FX
+share a property of (i) the proxy user's cost-burden structure, or (ii)
+the 2026-Q1-Q2 TRM-regime in particular (which was quiet: ±3% range over
+the window)?*
+
+v0.2.6 adds three **pre-registered** sensitivity arms to disentangle these
+hypotheses. All arms are diagnostic-only per CORRECTIONS-K — they do not
+have verdict authority over the R5/R4-S3 framework. The arms only inform
+how much the R5 Role A headline depends on regime vs structure.
+
+**CORRECTIONS-Z-1 (Multi-period aggregation sensitivity — real data).**
+
+The 28-day panel is bucketed at three frequencies; R5 variance
+decomposition recomputed at each:
+
+| Stratum | Bucketing rule | Expected T | Anti-fishing pins |
+|---|---|---|---|
+| Daily | already the panel granularity | 28 (after first-diff) | B=10,000, seed=20260516, block_len=⌈T^(1/3)⌉=4 |
+| Weekly | sum across weekday-UTC dates within each ISO week containing ≥1 observation | ~8-12 | B=10,000, seed=20260517, block_len=⌈T^(1/3)⌉=2-3 |
+| Monthly | sum across calendar months with ≥1 observation (Feb 2026 absent → dropped) | ~4 | B=10,000, seed=20260518; **N=4 below the bootstrap CI-usability floor**. Explicit guard (RC Q3 pin): the monthly stratum's CI is **TAGGED "uninformative — N=4"** in the notebook output; monthly is **EXCLUDED from the Z-3 escalation-gate input** (only daily and weekly feed Z-3); monthly is reported solely as a directional sanity check for the operator. |
+
+Pre-pinned (no post-hoc tuning):
+- Bucketing aggregator: **sum** of `notional_cost_usd`, `notional_cost_cop`,
+  token counts; **simple-mean** of `trm_cop_per_usd` (CR Q2: this is
+  conservative against the FX-share signal relative to volume-weighted
+  mean — volume-weighting would correlate TRM with within-bucket cost
+  intensity and could inflate FX share artificially; simple-mean is the
+  agnostic choice and is pinned here as the only TRM bucket aggregator).
+- **1-observation bucket rule (CR Q3 pin)**: a bucket (week / month)
+  containing exactly 1 observed weekday-UTC date is INCLUDED as a 1-day
+  aggregate (effectively no aggregation that bucket). Conservative against
+  fishing — excluding 1-day buckets would let the implementer change N
+  post-hoc by dropping inconvenient buckets.
+- Δln series at the new frequency = first-diff of natural log of bucket
+  sums (cost) and bucket means (TRM).
+- Conservative cov rule (CORRECTIONS-Q): cov reported separately.
+- Headline FX share at each frequency reported as `fx_share_pt ± 90% CI`,
+  alongside the daily baseline (0.00003).
+- **Anti-fishing N-floor (Z-1-specific)**: monthly stratum has T=4 and is
+  reported but flagged as "below bootstrap usability floor"; the verdict
+  on FX share stays on daily.
+- Pre-pinned interpretation rule: "If weekly FX share is within ±2× of
+  daily, the small-FX finding is *not* a horizon artifact. If weekly FX
+  share is >5× the daily, the daily reading may be diluted by within-week
+  intra-day noise."
+
+**CORRECTIONS-Z-2 (Backcast bootstrap sensitivity — lightweight).**
+
+**Reframed per RC FLAG Q4 (2026-05-17).** The original framing claimed
+Z-2 tests a "higher-vol TRM regime". Empirical fact-check: 2024-Q1 daily
+TRM innovation vol = 0.00473 is **LOWER** than 2026-Q1-Q2's 0.00626. The
+2024-2025 window has larger CUMULATIVE drift (~19% range vs 2026's ~7%)
+but smaller within-day innovation vol. Z-2 as specified therefore tests
+the **drift + extended-sample-size channels**, NOT the high-vol regime
+channel. Honest reframe:
+
+- Z-2 tests: does the FX share remain small when the cost-behavior
+  distribution from 2026-Q1-Q2 is composed with a longer-history TRM
+  series (where TRM innovation vol is *lower* than our observed window)?
+  This is a corroboration that the small-FX finding is robust to the
+  available historical TRM data, not a true high-vol stress test.
+- For a true high-vol stress test, see the **v0.2.7 backlog (BACKLOG-Z-4)**
+  below: pre-2024 TRM fetch would expose 2020 COVID-shock TRM
+  volatility, which is the relevant "high-vol regime". Not in scope for
+  v0.2.6.
+
+The lightweight backcast holds cost-behavior fixed at the observed
+2026-Q1-Q2 empirical distribution and swaps in real 2024-2025 TRM:
+
+- **Cost pool**: the 28 observed `Δln cost^USD` values.
+- **Backcast horizon**: weekdays from `2024-01-03` to `2025-12-31` (~520
+  weekdays) — provides the longer TRM-regime exposure without overlapping
+  the observed window.
+- **Resampling**: for each weekday in the backcast horizon, draw one
+  `Δln cost^USD` value via **stationary bootstrap** with the same block
+  length as the daily analysis (block_len=4); reconstruct a path of
+  `cost^USD_t = cost^USD_{t-1} × exp(Δln_t)`; the starting `cost^USD_0` is
+  the median observed daily cost.
+- **TRM**: real Banrep daily TRM (already in `data/raw/banrep_trm_daily.parquet`).
+- **Combine**: `cost^COP_t = cost^USD_t × TRM_t`. Compute Δln series and
+  R5 variance decomposition.
+- **No re-anchoring** (CR Q4 pin): the simulated `cost^USD` level drifts
+  over 520 days but variance of Δln is **level-invariant**; re-anchoring
+  to median every N days would inject artificial Δln discontinuities at
+  reset points and bias the variance estimate. The pin is "no
+  re-anchoring", motivated explicitly here so future implementers cannot
+  add re-anchoring as a hidden DOF.
+- **Escalation threshold OR semantics** (CR Q5 pin): the OR in Z-3 is
+  deliberate. AND would create a false-negative band where, e.g., a
+  share of 0.04 (= 1333× the daily baseline of 3e-5 but below the 0.05
+  absolute cutoff) would NOT escalate — clearly wrong. Either a large
+  RELATIVE jump from a microscopic baseline OR a substantively large
+  ABSOLUTE share is independently sufficient to invalidate the
+  lightweight backcast.
+- **Replication**: B_paths = 1,000 backcast paths; each path's variance
+  decomposition is recomputed (so we get a posterior distribution over FX
+  share given the regime-extended setting). seed = 20260519.
+- **Anti-fishing pins**: bootstrap pool is the OBSERVED 28-day series;
+  block length = 4 = same as daily R5; conservative cov rule (Q); 90%
+  posterior interval reported.
+- **Pre-pinned interpretation**: report median FX share across paths +
+  90% inter-path interval. If median FX share ≥ 5× the daily 2026-Q1-Q2
+  baseline of 0.00003 OR ≥ 0.05 absolute, **escalate to Z-3 (R6
+  activation)**.
+- **Null-calibration sub-step (RC Q5 pin)**: before declaring escalation
+  or non-escalation, run a null-calibration: re-run the same backcast
+  bootstrap (B_paths=1,000, seed=20260520 — DIFFERENT from Z-2 main
+  seed) but using **2026-Q1-Q2 TRM only** (not the 2024-2025 extended
+  TRM). The median FX share from this null should match the daily
+  baseline of 0.00003 within Monte-Carlo noise. If the null itself
+  exceeds the 5× factor (i.e., bootstrap noise alone trips the gate),
+  the gate is mis-calibrated and Z-3 escalation is suppressed with a
+  diagnostic memo instead. This prevents Monte-Carlo noise from
+  triggering Z-3 spuriously.
+
+**CORRECTIONS-Z-2-W (Winsorized robustness sub-arm, RC Q8 pin).**
+
+Heavy-tail risk: if the observed 28-day Δln cost^USD distribution has
+outlier days whose blocks dominate Var(Δln cost^USD), the bootstrap will
+either:
+- (A) inflate the cost-vol denominator and shrink FX share toward zero
+  (Type II — Z-3 should trigger but doesn't); or
+- (B) underrepresent outliers in low-burst paths, spuriously inflating
+  FX share (Type I — Z-3 triggers on noise).
+
+**Pre-pinned diagnostic**: compute sample excess kurtosis of the 28-day
+Δln cost^USD series in cell 2 of the notebook (before any bootstrap). If
+kurtosis > 3.0 (heavier-than-Gaussian tails), run a Z-2-W parallel
+Winsorized arm:
+
+- Winsorize Δln cost^USD at the [5%, 95%] empirical quantiles.
+- Re-run the Z-2 backcast with the Winsorized pool (same B_paths=1,000,
+  seed=20260521).
+- Report median FX share + 90% inter-path interval alongside Z-2.
+
+Z-3 escalation gate evaluates on **BOTH Z-2 main AND Z-2-W**: if either
+exceeds the 5× / 0.05 threshold, escalate. If only Z-2 main exceeds and
+Z-2-W does not, the trigger is heavy-tail-driven and the disposition
+memo records this distinction before escalation.
+
+If excess kurtosis ≤ 3.0, Z-2-W is skipped with an explicit "skipped:
+kurtosis below threshold" note in the notebook.
+
+**CORRECTIONS-Z-3 (R6 escalation gate).**
+
+If Z-2 returns a median FX share that exceeds either escalation threshold
+above, the lightweight backcast is insufficient — the answer depends on
+the joint distribution of cost-arrivals × TRM moves at the within-day
+level, which the daily-bootstrap can't capture. In that case, activate
+the **R6 sibling iteration** (`docs/specs/2026-05-16-r6-continuous-stream-simulation-design.md`
+v0.1.3, plan at `docs/plans/2026-05-16-r6-continuous-stream-simulation-plan.md`)
+for the NHPP + whole-message bootstrap framework that does capture the
+joint dynamics.
+
+If Z-2's median FX share stays within ±2× of the daily baseline, the R6
+escalation is NOT triggered. **Close-out conditions (RC Q6 pin —
+compound)**: the iteration closes at v0.2.6 with the R5 Role A finding
+intact + the multi-regime corroboration **iff BOTH**:
+1. Z-2 (and Z-2-W if triggered) stay within ±2× of daily baseline.
+2. **Y-9 ccusage-parity-0.1% gap has closed** (v0.2.7+ work item). Until
+   Y-9 closes, the R5 PRIMARY headline is NOT verdict-eligible per §0.5
+   Y-8 parity-target-status pin (CR NIT-4). v0.2.6 close-out without
+   Y-9 closure is INCOMPLETE — the iteration is paused, not closed,
+   pending Y-9.
+
+This compound gate prevents the close-out branch from contradicting the
+spec's own non-verdict-eligibility statement.
+
+**BACKLOG-Z-4 (v0.2.7 candidate — true high-vol regime).** Z-2 in v0.2.6
+tests only the 2024-01-03 to 2025-12-31 TRM window because that is what
+the daily-TRM fetcher currently has. For a TRUE high-vol-regime stress
+test (the original framing intent of "would FX share be different in a
+higher-vol regime?"), extend `scripts/fetch_banrep.py` to pull 2020-2022
+TRM (COVID + post-COVID shock window) and re-run Z-2 against that. Not
+in scope for v0.2.6.
+
+**Test surface added** (Task 15-bis — single notebook):
+
+- `notebooks/dev_ai_cost_v2/06_z_sensitivity.ipynb` — Z-1 weekly + monthly
+  aggregation arms; Z-2 backcast bootstrap; explicit Z-3 escalation check
+  at the end with HALT-or-CONTINUE routing.
+- 3 trios per arm = 9 trios total; decision-citation block before each.
+- Anti-fishing pins (seeds, block lengths, B counts, escalation
+  thresholds) declared in cell 2 before any data is touched.
+- **9-trio TOC pinned in cell 1** (CR Q6): single-notebook structure is
+  defensible only if the trio table-of-contents is locked at the top of
+  the notebook before any data cell. Required: cell 1 lists all 9 trios
+  + their pre-pinned parameters before any panel/TRM is read.
+- **Persistence scope** (CR Q7): the 1,000-path backcast tensor (~25 MB
+  worst case) lives in-memory only; the notebook does NOT write
+  per-path intermediate parquets to disk. Final outputs are aggregate
+  summary statistics (median FX share, 90% inter-path interval).
+
+**Anti-fishing invariant carried.** Z-1/Z-2 are PRE-REGISTERED here with
+fixed parameters; the result of running them does not adjust the
+parameters retrospectively. Z-3 escalation gate has a numeric threshold
+pinned before the backcast is run. R5 PRIMARY's headline FX share remains
+on the daily 2026-Q1-Q2 real data; Z-arms are corroborative only.
+
 **Parity-target status (CR NIT-4).** v0.2.5 Y-8 closes the dominant root
 cause and brings cost from 211% over to 2.3% over ccusage — but the
 v0.2.2 CORRECTIONS-Y-2 / Y-4 ccusage-parity-0.1% criterion is **NOT yet
@@ -1022,6 +1227,11 @@ robustness or measurement-error concerns for the disposition memo.
 | Outlier-trimmed | R4-S3 with top/bottom 1% of $|\Delta\ln\text{Tokens}|$ trimmed | usage-spike sensitivity |
 
 No arm has verdict authority. Period.
+
+**Cross-reference (added v0.2.6):** §0.6 CORRECTIONS-Z adds three further
+diagnostic sensitivity arms (Z-1 multi-period aggregation, Z-2 lightweight
+backcast bootstrap, Z-3 R6 escalation gate). They inherit the same
+diagnostic-only / no-verdict-authority discipline as the four arms above.
 
 ## 3. Data architecture
 
@@ -1413,3 +1623,4 @@ remaining questions for closure-only re-review:
 | 0.2.3 closure-only re-review | 2026-05-17 | Wave 2 Model QA CLOSE_ALL (π̂ folded properly; CR-Z pins have no econometric implications). Wave 2 Code Reviewer CLOSE_ALL — **plan-amendment-cycle APPROVED**. Wave 1 RC PARTIAL_CLOSE on 2 trivial doc fixes (§2.1 verdict-logic table row still said exact-Decimal — corrected to ccusage-parity-0.1%-on-cost + exact-Decimal-on-tokens; Y-5f migration table missing `scripts/build_notional_cost_panel.py` — added) → both landed inline making all three channels CLOSE_ALL. Reports at `scratch/2026-05-16-ai-cost-spec-review/{wave1_reality_checker,wave2_model_qa,wave2_code_reviewer}_v0_2_3.md`. Task 9.5 implementation migration landed in 6 atomic commits (`31a4d5d..d6da500`); 109/109 dev_ai_cost_v2 tests green, 793/793 cross-suite green. Two-stage impl review: RC APPROVE (7/7 pins PASS), CR APPROVE_WITH_NITS (zero BLOCKs, 9 NITs). |
 | 0.2.4 | 2026-05-17 | Real-data HALT patch (§0.4 CORRECTIONS-Y-7). First production run of `scripts/build_notional_cost_panel.py` raised `JSONLSchemaError` on filesystem partial-write corruption (trailing null-byte block in `agent-af5e1160f7be358ba.jsonl`). User-selected Option A (ccusage-mirror): line-level malformed-skip + `JSONLReadResult.dropped_malformed_line_count` counter threaded through panel + CLI. Closes the line-level half of OSS-mirror permissive parsing that v0.2.3 Y-1 only addressed at the Pydantic-schema level. Disposition: `notebooks/dev_ai_cost_v2/dispositions/2026-05-17-task10-trailing-null-bytes.md`. |
 | 0.2.5 | 2026-05-17 | Reliability-convergence patch (§0.5 CORRECTIONS-Y-8). First Task-10 panel run on real corpus showed ~2.11× cost overcount vs `npx ccusage daily`. Empirical investigation (`scratch/2026-05-17-v0_2_5-dedup-discovery/findings.md`) identified missing OSS-mirror uniqueHash dedup as the dominant root cause (single-session 1.78× duplication factor on `${message.id}:${requestId}`). Post-dedup cost converges to 0.977× of ccusage (within 2.3%); residual gaps filed as Y-9 backlog. Spec change: in-memory dedup map in `JSONLReader.__call__` with keep-larger-tokenTotal + hasSpeed-tiebreaker (mirrors ccusage `Sr` + `$`); new `dropped_duplicate_count` counter on `JSONLReadResult` (8 panel counters total). |
+| 0.2.6 | 2026-05-17 | Sensitivity-extension patch (§0.6 CORRECTIONS-Z). Task 12 R5 PRIMARY returned FX share ≈ 0.00003 (90% CI [−3.4e-6, +4.1e-5]) on the 28-day 2026-Q1-Q2 window — essentially zero, dominated by usage variance. Adds three pre-registered sensitivity arms: Z-1 (multi-period aggregation: daily/weekly/monthly real data); Z-2 (lightweight backcast bootstrap onto 2024-2025 historical TRM regime); Z-3 (R6 escalation gate if Z-2 median FX share ≥ 5× daily baseline or ≥ 0.05 absolute). Z-arms are diagnostic-only (CORRECTIONS-K) — R5 PRIMARY's headline stays on the daily real data. Anti-fishing pins (seeds, block lengths, escalation thresholds) declared pre-data. |
