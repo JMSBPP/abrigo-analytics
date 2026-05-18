@@ -1,8 +1,8 @@
 ---
 spec_id: ai-cost-factor-model
-spec_version: 0.2.9
+spec_version: 0.2.10
 created: 2026-05-16
-status: DRAFT — v0.2.9 power-recipe lag pin (§0.9 CORRECTIONS-Z3) after Task 14 R4-S3-USD fired POWER-HALT (measured power 0.1745 < 0.50) under lagged-tokens partialling, diverging from Task 11 EDA's contemporaneous-tokens power of 0.7115. v0.2.9 pins the canonical power-recipe to **contemporaneous-tokens partialling** (matches Task 11 + CORRECTIONS-J text "natural variability after token-volume denoising") and documents the lagged-recipe divergence for transparency. §2.2.B verdict-logic block extended with PARTIAL-REJECT / PARTIAL-FAIL_TO_REJECT labels for sub-floor-N reporting (per RC SC-1 BLOCK). Task 14 verdict re-evaluation under pinned recipe: power gate passes (0.71); N=28<38 → **PARTIAL-FAIL_TO_REJECT** (subscription inelasticity confirmed; framework prior; sub-floor N disclosed).
+status: DRAFT — v0.2.10 Wave-0 post-audit closure (§0.10 CORRECTIONS-W3) applies 5 audit-econ Delphi amendments (Critical #4, #5; High #6, #7, #8 — `scratch/2026-05-18-ai-cost-delphi/`). #4 rewrites the "FOUR independent measurements" framing as "ONE descriptive ratio (R5) + ONE underpowered behavioral test (R4-S3-USD)" (Z-arms and R4-S3-COP reduce to the SAME `Var(Δln TRM)/Var(Δln Cost^COP)` ratio; only R4-S3-USD is independent). #5 adds §2.3 demonstration-grade vs. verdict-grade scope (this iteration is demonstration-grade: N_MIN=38, POWER_MIN=0.50 — PARTIAL-* verdicts disclosed in verdict memo). #6 reframes §0.8 Z2 additive-identity check as a panel-construction sanity check (not a "STRICTER" pipeline-integrity substitute for HAC-OLS). #7 explicitly removes R4-S3-COP from the corroboration list (zero-power FAIL is uninformative). #8 REVERTS §0.9 Z3 to the **lagged-tokens** recipe (matches R4-S3-USD k=1 spec lag structure); Task 14 verdict re-evaluation under the reverted recipe = **POWER-HALT** (anticipated per CORRECTIONS-U; measured power 0.1745 < 0.50 demonstration floor). §2.2.B verdict-logic table cleaned (PARTIAL-* labels retained for sub-floor-N reporting but the Task 14 specific verdict moves from PARTIAL-FAIL_TO_REJECT → POWER-HALT). v0.2.9's "first-principles" contemporaneous defense overstated the case and is reversed; honest-disclosure-as-process applies. Headline empirical finding (FX share ≈ 0% R5 PRIMARY) UNCHANGED; verdict's confidence claim is honestly reduced.
 v0_1_0_status: REJECTED 2026-05-16 by all three reviewers — see §12 revision history
 v0_2_0_status: NEEDS_WORK (Wave 1 RC) + NEEDS_WORK (Wave 2 Model QA) + ACCEPT_WITH_FLAGS (Wave 2 Code Reviewer) — all prior BLOCKs closed; 5 new BLOCKs surfaced from deferred evidence + methodology pins
 parent_iteration_pin: dev-AI-cost iteration (parent CLAUDE.md "Abrigo Operating Framework"; prior FAIL pinned)
@@ -115,6 +115,15 @@ at n=1; the lowered floor is permissible because R5's primary outputs are
 descriptive (bootstrap CIs handle uncertainty), and R4-S3 is auxiliary with
 a one-sided pre-pinned hypothesis. CORRECTIONS-block deviation from project
 default per anti-fishing protocol.
+
+**v0.2.10 §0.10 Amendment #5 forward-pointer**: this CORRECTIONS-G floor
+relaxation is re-classified under the **demonstration-grade** scope
+pinned in §2.3.1. The relaxation itself is unchanged (N_MIN stays at
+38); the v0.2.10 amendment names the scope, bounds the verdict labels
+and claim eligibility to that scope, and requires explicit headline
+disclosure in the verdict memo. See §2.3.1 for full demonstration-grade
+vs verdict-grade semantics. CORRECTIONS-J (POWER_MIN relaxation in
+§0.1) is paired with the same scope split.
 
 **CORRECTIONS-H (Implementation contracts — Code Reviewer BLOCKs 1–6).**
 v0.1.0 §3.4 left interface signatures partially untyped, reproducibility
@@ -1111,9 +1120,16 @@ its mean.
 
 This is internally consistent with R5 PRIMARY (Task 12, FX share ≈
 0.003%) and with Z-arms (Task Z, multi-period & backcast all corroborate
-small FX): three independent measurements converge on "FX-vol is
-empirically not a meaningful driver of cost^COP vol for this user × this
-window".
+small FX). **The v0.2.8 text below claimed "three independent
+measurements converge on small FX"; v0.2.10 §0.10 Amendment #4 corrects
+this:** R5, Z-arms, and R4-S3-COP all reduce algebraically to the SAME
+ratio `Var(Δln TRM)/Var(Δln Cost^COP)` and are therefore SAME-RATIO
+corroborations, not independent measurements. Only R4-S3-USD is a
+genuinely independent (behavioral) measurement, and it fires POWER-HALT
+under the v0.2.10 §0.10 Amendment #8 reverted recipe. The corrected
+framing is ONE descriptive ratio (R5) plus same-ratio sanity
+corroborations; R4-S3-COP is removed from the corroboration list per
+Amendment #7 (zero-power FAIL cannot corroborate).
 
 **Resolution (spec change)**:
 
@@ -1131,6 +1147,22 @@ window".
    This identity must hold exactly (up to floating-point error) by
    construction of the panel-builder; any violation IS data corruption.
    Task 13 verified this at 1.78e-15.
+
+   **v0.2.10 §0.10 CORRECTIONS-W3 reclassification (Amendment #6).** The
+   additive-identity check above is a **panel-construction sanity check**
+   that holds by construction of `panel_builder.build_daily_panel` (the
+   COP cost is computed as `USD cost × TRM` so `Δln COP = Δln USD + Δln
+   TRM` is an arithmetic identity, modulo FP precision). It **cannot
+   detect statistical issues**: it cannot fail unless the parquet bytes
+   on disk are arithmetically inconsistent with the panel-builder formula.
+   The v0.2.8 framing claimed this check is "STRICTER than HAC-OLS as a
+   pipeline-integrity test" — that framing is **withdrawn in v0.2.10**.
+   FP-precision tautologies are not stricter substitutes for statistical
+   tests; they are a different kind of artifact. Useful only as a
+   **pre-flight assertion** that the panel rows are arithmetically
+   consistent with the build formula (catches an artifact like an editor
+   silently corrupting a parquet row); useful NOT as a substitute for a
+   regression-based pipeline-integrity check.
 
 2. **CONSISTENCY-FAIL reclassification**. In the variance-ratio regime
    above, CONSISTENCY-FAIL is reclassified from "HALT — suspect data
@@ -1173,17 +1205,37 @@ window".
 
 **Anti-fishing invariant carried.** CORRECTIONS-Z2 is a SPEC-PREMISE
 correction surfaced by a real HALT, not a threshold relaxation under
-fishing pressure. The replacement integrity check (additive identity) is
-**STRICTER** than the original (HAC-OLS) because it requires
-floating-point exactness, not statistical significance. R5/R4-S3-USD
-framework retains full verdict authority; no parameter changes; no
-threshold tuning. CORRECTIONS-K (sensitivity-arms-no-verdict-authority)
-unchanged.
+fishing pressure. The replacement check (additive identity) is a
+panel-construction sanity check that holds by build-formula construction
+(v0.2.10 §0.10 Amendment #6: the v0.2.8 "STRICTER than HAC-OLS" framing
+is withdrawn — see Resolution step 1 above). R5/R4-S3-USD framework
+retains full verdict authority; no parameter changes; no threshold
+tuning. CORRECTIONS-K (sensitivity-arms-no-verdict-authority) unchanged.
 
 **Cross-references**:
 - Disposition memo (Task 13): `notebooks/dev_ai_cost_v2/dispositions/2026-05-17-task13-consistency-fail.md`
-- Convergent evidence: R5 PRIMARY (§2.1, FX share ≈ 0.003%), Z-arms (§0.6, multi-regime corroborated).
+- Convergent evidence (v0.2.8 framing — see v0.2.10 §0.10 Amendment #4
+  for the corrected accounting): the v0.2.8 §0.8 text claimed "three
+  independent measurements converge on small-FX" citing R5 PRIMARY +
+  Z-arms + R4-S3-COP. Amendment #4 reclassifies this as ONE descriptive
+  ratio (R5) plus same-ratio corroborations (Z-arms and R4-S3-COP both
+  reduce to `Var(Δln TRM)/Var(Δln Cost^COP)`). Amendment #7 explicitly
+  removes R4-S3-COP from the corroboration list (a zero-power
+  CONSISTENCY-FAIL is uninformative — cannot corroborate). The §2.1 R5
+  PRIMARY headline is unchanged; the **count of independent measurements
+  is reduced** in the v0.2.10 framing.
 - §2.2.A is preserved verbatim; §0.8 is a premise-conditional addendum, not a replacement.
+- **§2.2.A note on REGIME-CONDITIONAL FAIL semantics (v0.2.10 Amendment #7):**
+  a REGIME-CONDITIONAL FAIL verdict (originally introduced here in v0.2.8)
+  is UNINFORMATIVE for downstream corroboration purposes. The test failed
+  to reject the null in a regime where it had zero statistical power
+  against the null — failing to reject under zero power is consistent
+  with ANY alternative hypothesis (and with the null), so it cannot
+  support OR refute R5. R4-S3-COP is therefore removed from R5's
+  corroboration list per Amendment #7. The REGIME-CONDITIONAL label
+  remains in §2.2.A for verdict-recording purposes (it accurately
+  describes what happened); it just no longer carries
+  "supports-R5-PRIMARY" semantics.
 
 ## 0.9 v0.2.8 → v0.2.9 CORRECTIONS (power-recipe lag pin)
 
@@ -1206,12 +1258,15 @@ different residual SDs: 0.787 (contemporaneous) vs 1.156 (lagged).
 
 The CORRECTIONS-J text ("power Monte-Carlo'd on residual SD of |Δln
 cost^USD| partialling out |Δln tokens|") is silent on the lag of the
-partialled regressor. v0.2.9 pins:
+partialled regressor. v0.2.9 pinned:
 
-**The canonical power-recipe uses CONTEMPORANEOUS |Δln tokens| as the
+**[v0.2.9 PIN — REVERTED IN v0.2.10 §0.10 AMENDMENT #8.] The v0.2.9
+canonical power-recipe used CONTEMPORANEOUS |Δln tokens| as the
 partialling regressor.**
 
-**Principled rationale**:
+**v0.2.9 principled rationale (PRESERVED VERBATIM for audit trail; the
+v0.2.10 amendment reverses the decision while preserving the original
+reasoning unedited)**:
 1. The substantive meaning of "residual SD" in the power calc is the
    natural intra-day cost-vol noise after accounting for the day's token
    volume — a denoising step that yields a tighter MDES benchmark.
@@ -1232,64 +1287,316 @@ partialling regressor.**
    recipe to give a different number post-hoc would violate anti-fishing
    discipline.
 
-**Anti-fishing safeguard**: v0.2.9 pins the recipe that gives a HIGHER
-power (0.7115 > 0.1745 > 0.50 only on the higher side). On first
-reading this looks like result-chasing. The defense: (a) Task 11
-established the recipe FIRST (chronologically), so v0.2.9 is honoring
-precedent, not chasing a result; (b) the contemporaneous-recipe is
-defended by first-principles, not by which answer it gives; (c) the
-divergent lagged-recipe is DOCUMENTED here and surfaced as an explicit
-sensitivity readout (not buried). A reader can recompute power under
-the lagged recipe and obtain 0.1745; the FAIL/PASS gate is pinned to
-contemporaneous only.
+**v0.2.9 anti-fishing safeguard (PRESERVED VERBATIM)**: v0.2.9 pins the
+recipe that gives a HIGHER power (0.7115 > 0.1745 > 0.50 only on the
+higher side). On first reading this looks like result-chasing. The
+defense: (a) Task 11 established the recipe FIRST (chronologically), so
+v0.2.9 is honoring precedent, not chasing a result; (b) the
+contemporaneous-recipe is defended by first-principles, not by which
+answer it gives; (c) the divergent lagged-recipe is DOCUMENTED here and
+surfaced as an explicit sensitivity readout (not buried). A reader can
+recompute power under the lagged recipe and obtain 0.1745; the FAIL/PASS
+gate is pinned to contemporaneous only.
 
-**Test surface added** (Task 14-bis — single notebook update):
+---
 
-- `notebooks/dev_ai_cost_v2/04_r4s3_usd_behavioral.ipynb` Trio 4 power
-  cell is amended to compute BOTH recipes:
-  - Contemporaneous-tokens partialling (canonical per Z3): expected power
-    ≈ 0.71 (Task 11 confirmed).
-  - Lagged-tokens partialling (divergent, documented): expected power
-    ≈ 0.17.
-- The verdict cell evaluates the gate on the contemporaneous recipe ONLY.
-- A diagnostic markdown cell explicitly states: "Per v0.2.9 §0.9 Z3,
-  the canonical power-recipe is contemporaneous-tokens partialling.
-  Under the lagged-tokens alternative the power is 0.17 < 0.50; this
-  is documented for transparency but does NOT trigger the spec's HALT
-  gate."
+## 0.10 v0.2.9 → v0.2.10 CORRECTIONS (post-audit Wave-0 closure — CORRECTIONS-W3)
 
-**Task 14 verdict re-evaluation under pinned recipe**:
+The audit-econ Delphi (`scratch/2026-05-18-ai-cost-delphi/`) ran an
+independent end-to-end audit of the spec + pipeline + notebooks and
+surfaced 12 Critical+High findings. Of those, 5 are spec-only (no
+pipeline / no notebook re-emission needed) and are landed here as
+Wave-0 amendments BEFORE any rebuild. The remaining 7 findings (pipeline
+bugs, panel re-emission, notebook re-runs, DATA_PROVENANCE rewrite,
+verdict memo) propagate through Waves 1–5 per
+`scratch/2026-05-18-ai-cost-delphi/dependency_propagation_map.md`.
 
-- Power gate: 0.7115 ≥ 0.50 ✓ (under canonical Z3 recipe).
-- N gate: N=28 < 38 spec floor → PARTIAL verdict (not full).
-- Primary p-test gate (k=1): p_2s = 0.652 ≥ 0.05 → fails to reject null.
+**Anti-fishing pin**: Wave 0 spec decisions are made BEFORE Wave 2 / 3
+re-emit any numbers. If post-rebuild N is e.g. 36 and the operator
+were tempted to re-relax the floor to 36, that would be silent fishing.
+The §2.3.1 demonstration-grade floor (38) is pinned here and Wave 3
+returns whatever it returns; no threshold tunes to make a test pass.
 
-Under all three gates → **PARTIAL-FAIL_TO_REJECT** (subscription
-inelasticity confirmed; N below spec floor; verdict is partial pending
-N≥38). Per CORRECTIONS-S framing this is the **framework-prior outcome**
-— subscription regime produces zero marginal cost, so behavior should
-NOT respond to FX vol. The data is consistent with the prior.
+**Headline verdict-label changes (v0.2.9 → v0.2.10)**:
 
-**Anti-fishing invariant carried**: the spec amendment does NOT change
-the headline regression numbers (α̂₁^USD = −18.12, p = 0.652). It only
-pins WHICH power-recipe gates the test. The point estimate's sign and
-magnitude are unchanged. CORRECTIONS-K (sensitivity-arms-no-verdict-
-authority) and CORRECTIONS-S (subscription-inelasticity null
-pre-pinned) unchanged.
+| Arm | v0.2.9 verdict | v0.2.10 verdict | Driver |
+|---|---|---|---|
+| Task 12 R5 PRIMARY | FX share ≈ 0.003% (PARTIAL pending N≥38) | unchanged (FX share ≈ 0.003%, demonstration-grade — see §2.3.1 disclosure) | Amendment #5 reclassification only |
+| Task 13 R4-S3-COP | REGIME-CONDITIONAL FAIL ("supports R5") | REGIME-CONDITIONAL FAIL (UNINFORMATIVE; removed from corroboration list) | Amendment #7 |
+| Task 14 R4-S3-USD | PARTIAL-FAIL_TO_REJECT (contemporaneous recipe, power 0.71) | **POWER-HALT** (lagged recipe, power 0.17 < 0.50 floor) | Amendment #8 |
+| Convergent evidence | "FOUR independent measurements" | "ONE descriptive ratio (R5) + ONE POWER-HALTed behavioral test (R4-S3-USD)" | Amendment #4 + #7 |
+| §0.8 Z2 framing | "STRICTER than HAC-OLS" pipeline-integrity test | panel-construction sanity check (FP-precision tautology) | Amendment #6 |
+| Iteration scope | implicit demonstration-grade | explicit two-grade split (§2.3.1); this iteration pinned to demonstration-grade with mandatory headline disclosure | Amendment #5 |
+
+The headline EMPIRICAL finding (FX share ≈ 0% on R5 PRIMARY) is
+**UNCHANGED**. What changes is the **count of independent
+corroborations** (4 → 1+1) and the **verdict label** on Task 14
+(PARTIAL-FAIL_TO_REJECT → POWER-HALT). The v0.2.10 verdict is HONESTLY
+LESS confident than the v0.2.9 verdict; this is tightening, not
+loosening.
+
+### CORRECTIONS-W3 Amendment #4 — Convergent-evidence accounting (Critical)
+
+**Problem (audit-econ agent1 Critical #4)**: v0.2.9 §0.9 and §0.8
+claimed "FOUR independent measurements" of small FX share (R5, Z-arms,
+R4-S3-COP, R4-S3-USD). Three of these reduce algebraically to the SAME
+ratio $\text{Var}(\Delta\ln\text{TRM}) / \text{Var}(\Delta\ln\text{Cost}^{COP})$
+on this window:
+
+- **R5 PRIMARY** computes the ratio directly.
+- **Z-1 / Z-2 / Z-2-W** compute the SAME ratio at different time
+  buckets or different TRM windows, but the underlying algebraic object
+  is the same ratio applied to the same cost panel (with a different
+  TRM exposure on Z-2).
+- **R4-S3-COP** at the empirical regime
+  $\text{var}(\Delta\ln\text{USDCOP}) / \text{var}(\Delta\ln\text{Cost}^{USD})
+  \approx 4 \text{ orders apart}$ has zero statistical power and
+  trivially returns the variance-ratio sign of the same ratio.
+
+Only **R4-S3-USD** (behavioral test on USD side, $\alpha_1^{USD} = 0$
+two-sided) is structurally independent of the
+$\text{Var}(\Delta\ln\text{TRM}) / \text{Var}(\Delta\ln\text{Cost}^{COP})$
+ratio.
+
+**Fix**: rewrite the "convergent evidence" framing as **ONE descriptive
+ratio (R5) + ONE behavioral test (R4-S3-USD)**. Z-arms and R4-S3-COP
+are reclassified as SAME-RATIO corroborations of R5, NOT independent
+measurements. Inflating the count via same-ratio corroborations is
+fishing-by-redundancy under §7's anti-fishing invariants (v0.2.10
+update).
 
 **Cross-references**:
-- Disposition trigger (Task 14): the v0.2.9 spec amendment IS the
-  disposition response (no separate memo created — the spec change is
-  the disposition record per CORRECTIONS-J's "anticipated power-HALT
-  routing").
-- Convergent evidence: R5 (FX share ≈ 0.003%), Z-arms (small-FX
-  corroborated), R4-S3-COP (CONSISTENCY-FAIL → REGIME-CONDITIONAL per
-  §0.8), R4-S3-USD (PARTIAL-FAIL_TO_REJECT per §0.9). FOUR independent
-  measurements agree on "FX-vol is empirically not a meaningful
-  cost-vol driver in this regime; subscription inelasticity is the
-  consistent reading."
-- §2.2.B's power-floor language is **preserved verbatim**; §0.9 is a
-  lag-pin clarification, not a threshold relaxation.
+- §0.6 v0.2.6 Z-arms framing: Z-1/Z-2/Z-2-W remain pre-registered
+  diagnostic arms with no verdict authority (CORRECTIONS-K unchanged);
+  what changes is the LABEL applied to their result in the convergent
+  summary — they are SAME-RATIO corroborations of R5, not independent
+  measurements.
+- §0.8 closing list (v0.2.8 framing): "three independent measurements
+  converge on small FX" wording is **withdrawn** in v0.2.10 (see inline
+  amendment in §0.8). The withdrawal is also propagated through to §0.9
+  closing summary.
+- §0.9 closing list (v0.2.9 framing): "Four independent measurements
+  (R5, Z-arms, R4-S3-COP, R4-S3-USD) now converge on small-FX reading"
+  wording is **withdrawn** in v0.2.10. The §12 v0.2.9 revision-history
+  entry preserves the original wording for audit trail; this Amendment
+  #4 supersedes it.
+
+**Consumers flagged for downstream update (Wave 3)**:
+- `notebooks/dev_ai_cost_v2/02_r5_descriptive.ipynb` Trio 6
+  cross-check interpretation cell.
+- `notebooks/dev_ai_cost_v2/03_r4s3_cop_consistency.ipynb` Trio 4
+  interpretation cell (paired with Amendment #7).
+- `notebooks/dev_ai_cost_v2/06_z_sensitivity.ipynb` closing
+  interpretation cell (Z-arms relabeled as same-ratio corroborations).
+- Task 17 verdict memo headline must state "one descriptive ratio +
+  one underpowered behavioral test", NOT "four independent
+  measurements".
+
+### CORRECTIONS-W3 Amendment #5 — Demonstration-grade vs verdict-grade scope (Critical)
+
+**Problem (audit-econ agent2 Critical #5)**: v0.2.0's CORRECTIONS-G
+(N_MIN: 75 → 38) and CORRECTIONS-J (POWER_MIN: 0.80 → 0.50) jointly
+relaxed BOTH the project-default sample floor AND the project-default
+power floor without an explicit load-bearing-guarantees proof analogous
+to the Pair-D `Rev-5.3.1` precedent. The dual relaxation is materially
+load-bearing on every PARTIAL-* verdict label in §2.2.B and on the
+v0.2.9 "FAIL_TO_REJECT under power 0.71" claim. Without a scope split,
+the relaxation reads as silent fishing under §7 anti-fishing invariants.
+
+**Fix (NOT a revert; NOT a silent retention)**: add §2.3.1
+"Demonstration-grade vs verdict-grade scope" pinning two grades:
+
+- **Demonstration-grade**: N_MIN=38, POWER_MIN=0.50, MDES_SD=0.40.
+  PARTIAL-* labels permitted. Verdict-memo headline MUST state
+  "demonstration-grade — below project defaults 75 / 0.80". Population
+  claims NOT permitted at this grade.
+- **Verdict-grade**: N_MIN=75, POWER_MIN=0.80, MDES_SD=0.40. PARTIAL-*
+  labels NOT permitted. Population claims permitted subject to other
+  framework invariants.
+
+**This iteration is pinned to demonstration-grade.** The v0.2.10
+verdict memo (Task 17) MUST include the headline disclosure phrase.
+
+**Cross-references**:
+- §2.3.1 (new subsection — full grade definitions).
+- §0.1 CORRECTIONS-G + (implicit) CORRECTIONS-J forward-pointer to
+  §2.3.1.
+- §7 anti-fishing invariants updated to name the two grades and pin
+  this iteration to demonstration-grade with mandatory headline
+  disclosure.
+- §2.2.B verdict-logic table: PARTIAL-* rows remain VALID at this
+  iteration (because we are demonstration-grade) but they are SCOPED
+  to demonstration-grade; any reader copying §2.2.B labels into a
+  cohort-scale claim is reading outside the spec's verdict-grade scope.
+
+**Consumers flagged for downstream update (Wave 3)**:
+- Notebook 04 power gate cell (uses 0.50 already; no number change —
+  but the markdown interpretation cell must reference §2.3.1).
+- DATA_PROVENANCE.md "Verdict thresholds" section must include the
+  demonstration-grade caveat.
+- Task 17 verdict memo first paragraph must state demonstration-grade
+  pin and the "below project defaults" disclosure phrase.
+
+### CORRECTIONS-W3 Amendment #6 — §0.8 Z2 reframed as panel-construction sanity check (High)
+
+**Problem (audit-econ agent1 High #6)**: v0.2.8 §0.8 framed the
+additive-identity check
+$\max |\Delta\ln\text{Cost}^{COP} - \Delta\ln\text{Cost}^{USD} -
+\Delta\ln\text{USDCOP}| < 10^{-12}$
+as "STRICTER than HAC-OLS as a pipeline-integrity test". This framing
+is incorrect on two counts:
+
+1. The identity holds by **construction** of `panel_builder.build_daily_panel`:
+   COP cost is computed as USD cost × TRM, so $\Delta\ln\text{COP} =
+   \Delta\ln\text{USD} + \Delta\ln\text{TRM}$ is an arithmetic identity
+   modulo FP precision. The check is an FP-precision tautology, not a
+   statistical test.
+2. The identity check and HAC-OLS test different properties: the
+   identity checks parquet-row arithmetic consistency with the build
+   formula; HAC-OLS tests whether the USDCOP-vol signal propagates
+   through the COP-side cost-vol regression. These are different kinds
+   of artifacts, not comparable in strictness.
+
+**Fix**: §0.8 v0.2.8 "STRICTER than HAC-OLS" framing is **withdrawn**.
+The check is reclassified as a **panel-construction sanity check** —
+useful only as a pre-flight assertion that parquet rows are
+arithmetically consistent with the build formula (e.g., catches an
+editor silently corrupting a parquet row), useful NOT as a substitute
+for a regression-based pipeline-integrity test. The text of §0.8's
+"Resolution step 1" is amended inline (preserving the original FP
+identity proof and the variance-ratio diagnostic; only the "STRICTER"
+framing is withdrawn).
+
+**Cross-references**:
+- §0.8 "Resolution step 1" inline amendment (already landed in this
+  patch).
+- §7 anti-fishing invariants amended with the
+  panel-construction-vs-statistical-test distinction.
+
+**Consumers flagged for downstream update (Wave 3)**:
+- `notebooks/dev_ai_cost_v2/03_r4s3_cop_consistency.ipynb` Trio 4
+  interpretation cell must NOT claim "STRICTER than HAC-OLS"; should
+  read "panel-construction sanity check; cannot detect statistical
+  issues; useful only as a pre-flight assertion that parquet rows are
+  consistent with the build formula".
+
+### CORRECTIONS-W3 Amendment #7 — R4-S3-COP removed from corroboration list (High)
+
+**Problem (audit-econ agent1 High #7)**: v0.2.8 §0.8 and v0.2.9 §0.9
+cited R4-S3-COP's CONSISTENCY-FAIL (reclassified REGIME-CONDITIONAL
+FAIL) as **supporting R5 PRIMARY**. This is mistaken: in the empirical
+regime where $\text{var}(\Delta\ln\text{USDCOP}) /
+\text{var}(\Delta\ln\text{Cost}^{USD}) \approx 10^{-4}$ (four orders
+apart), the HAC regression of $|\Delta\ln\text{Cost}^{COP}|$ on lagged
+$|\Delta\ln\text{USDCOP}|$ has **zero statistical power against the
+null** even on clean data. A zero-power test failing to reject is zero
+evidence either way — it is consistent with ANY alternative AND with
+the null. R4-S3-COP cannot corroborate OR refute R5 in this regime.
+
+**Fix**: R4-S3-COP is explicitly **removed from R5's corroboration
+list** in §0.8 and §0.9 (both inline). The REGIME-CONDITIONAL FAIL
+verdict label is preserved in §2.2.A for audit-trail purposes (it
+accurately describes what happened in the regression); it just no
+longer carries "supports-R5-PRIMARY" semantics. §2.2.A's
+verdict-semantics block is updated (inline amendment, already landed)
+to note that REGIME-CONDITIONAL FAIL is uninformative for downstream
+corroboration purposes.
+
+**Cross-references**:
+- §0.8 inline amendment (already landed — the corroboration list now
+  reads "ONE descriptive ratio (R5) plus same-ratio corroborations;
+  R4-S3-COP is removed per Amendment #7").
+- §0.9 inline amendment (already landed via the v0.2.10 Amendment #8
+  block — the corroboration list now reads "Z-arms and R4-S3-COP —
+  SAME-RATIO corroborations of R5 (NOT independent measurements per
+  Amendment #4); R4-S3-COP further removed from the corroboration
+  list per Amendment #7").
+- §2.2.A REGIME-CONDITIONAL FAIL semantics note (already landed).
+
+**Consumers flagged for downstream update (Wave 3)**:
+- `notebooks/dev_ai_cost_v2/03_r4s3_cop_consistency.ipynb` Trio 4
+  interpretation cell — drop "supports R5 PRIMARY" framing; the verdict
+  label remains REGIME-CONDITIONAL FAIL but is annotated as
+  UNINFORMATIVE for R5 corroboration.
+- Task 17 verdict memo — does NOT cite R4-S3-COP in the convergent
+  evidence summary.
+
+### CORRECTIONS-W3 Amendment #8 — Z3 REVERTED to lagged recipe (High)
+
+**Decision**: REVERT the canonical power-recipe to **LAGGED |Δln tokens|**
+(matches R4-S3-USD's actual k=1 specification lag structure). Accept the
+**POWER-HALT** verdict (measured power 0.1745 < 0.50 demonstration-grade
+floor; CORRECTIONS-U explicitly anticipated this firing at T = 38).
+
+**Honest disclosure**: the v0.2.9 §0.9 "first-principles" framing for the
+contemporaneous recipe overstated the case. The natural reading of
+CORRECTIONS-J's text "partialling out |Δln tokens|" in a spec where the
+regression itself uses |Δln tokens|_{t-k} (lagged) is to use the SAME
+lagged regressor for the power-calc residual. The standard-econometrics
+reading (use the regression's own residuals) is the lagged recipe; that
+is what Task 14's implementer used; that is what the spec text most
+naturally supports. The contemporaneous-tokens recipe is a defensible
+alternative reading, but its v0.2.9 selection over the lagged reading
+was not first-principles-required — it was the recipe that survived the
+power gate.
+
+The contemporaneous-recipe pin was authored AFTER POWER-HALT fired on
+the lagged recipe. Chronological-precedence (Task 11 EDA used
+contemporaneous first) is a weak defense for a recipe pin: Task 11 EDA's
+contemporaneous use was incidental (no lag had been pinned yet for the
+power-calc residual at Task-11 time), not a deliberate pre-pinned recipe
+choice. Treating that incidental choice as "precedent" is a form of
+post-hoc canonicalization.
+
+**Anti-fishing safeguard (v0.2.10)**: this is a TIGHTENING of the
+verdict's confidence claim, not a loosening. Reverting to the lagged
+recipe makes the verdict harder to pass (lagged power 0.17 < 0.50 fails;
+contemporaneous power 0.71 > 0.50 passes); v0.2.10 accepts the harder
+verdict. No threshold is tuned. Honest-disclosure-as-process applies:
+v0.2.10 reverses the direction of v0.2.9's amendment because v0.2.9
+selected the wrong reading; this is not flip-flopping but corrective
+amendment.
+
+**Task 14 verdict re-evaluation under v0.2.10 REVERTED recipe**:
+
+- Power gate: 0.1745 < 0.50 demonstration-grade floor → **POWER-HALT**.
+- N gate: not reached (HALT fires first).
+- Primary p-test gate: not reached.
+
+Verdict: **POWER-HALT** (anticipated per CORRECTIONS-U; routes to
+`notebooks/dev_ai_cost_v2/dispositions/power_halt_template.md`). The
+v0.2.9 PARTIAL-FAIL_TO_REJECT label is **withdrawn**.
+
+**v0.2.10 test-surface update (supersedes v0.2.9 test-surface block
+above):**
+
+- `notebooks/dev_ai_cost_v2/04_r4s3_usd_behavioral.ipynb` Trio 4 power
+  cell computes the **lagged-tokens** recipe (canonical per v0.2.10 Z3
+  revert); expected power ≈ 0.17 < 0.50 floor → HALT verdict cell fires.
+- A diagnostic markdown cell explicitly states: "Per v0.2.10 §0.10
+  Amendment #8, the canonical power-recipe is **lagged**-tokens
+  partialling (reverted from v0.2.9's contemporaneous pin). Measured
+  power 0.17 < 0.50 demonstration-grade floor → POWER-HALT (anticipated
+  per CORRECTIONS-U)."
+- The contemporaneous recipe remains computable as a documented
+  diagnostic (power = 0.71); it is no longer the verdict gate.
+
+**Cross-references**:
+- Disposition trigger (Task 14): a power-HALT disposition memo MUST be
+  authored at `notebooks/dev_ai_cost_v2/dispositions/2026-05-18-task14-power-halt.md`
+  in Wave 3 per CORRECTIONS-U's pre-enumerated routing.
+- Convergent evidence (v0.2.10 corrected accounting): R5 (FX share ≈
+  0.003%) — ONE descriptive ratio. R4-S3-USD — POWER-HALT under reverted
+  recipe (Amendment #8); cannot supply behavioral evidence at this T.
+  Z-arms and R4-S3-COP — SAME-RATIO corroborations of R5 (NOT
+  independent measurements per Amendment #4); R4-S3-COP further removed
+  from the corroboration list per Amendment #7. The v0.2.9 "FOUR
+  independent measurements" framing is withdrawn; the v0.2.10 framing is
+  **ONE descriptive ratio + ONE POWER-HALTed behavioral test**.
+- §2.2.B's power-floor language is **preserved verbatim** (the v0.2.10
+  amendment changes WHICH recipe is canonical; it does not change the
+  0.50 demonstration-grade floor or the 0.80 verdict-grade floor —
+  see §2.3 Amendment #5).
 
 ## 1. Purpose and framework placement
 
@@ -1538,6 +1845,80 @@ The deviation is permissible because:
 
 The pilot is explicitly **demonstration-grade**. Population inference is
 deferred to the cohort-recruitment sub-project.
+
+#### 2.3.1 Demonstration-grade vs. verdict-grade scope (v0.2.10 §0.10 Amendment #5)
+
+The audit-econ Delphi (`scratch/2026-05-18-ai-cost-delphi/agent2_data_replication.md`,
+Critical #5) surfaced that v0.2.0's CORRECTIONS-G + CORRECTIONS-J jointly
+relaxed BOTH the project-default sample floor (N_MIN: 75 → 38) AND the
+project-default power floor (POWER_MIN: 0.80 → 0.50) without an explicit
+load-bearing-guarantees proof analogous to the Pair-D `Rev-5.3.1`
+precedent. The relaxation is materially load-bearing on every PARTIAL-*
+verdict label in §2.2.B. v0.2.10 neither reverts the relaxation nor
+silently keeps it; instead, it splits the verdict-eligibility surface
+into TWO grades and pins the present iteration to the LOWER grade with
+explicit headline disclosure.
+
+**Demonstration-grade (this iteration, v0.2.10)**:
+
+- $N_{\text{MIN}} = 38$ weekday days.
+- $\text{POWER}_{\text{MIN}} = 0.50$ at MDES = 0.40 residual-SD.
+- $\text{MDES}_{\text{SD}} = 0.40$ (unchanged from project default).
+- **Verdict labels permitted**: REJECT_NULL, FAIL_TO_REJECT, PARTIAL-REJECT,
+  PARTIAL-FAIL_TO_REJECT, HALT, POWER-HALT, CONSISTENCY-FAIL,
+  REGIME-CONDITIONAL FAIL.
+- **Mandatory headline disclosure**: any verdict memo or write-up that
+  reports a Task 12 / Task 13 / Task 14 result MUST include in the
+  headline the literal phrase "demonstration-grade — N_MIN=38,
+  POWER_MIN=0.50 below project defaults 75 / 0.80". Suppressing this
+  disclosure to make the headline read as verdict-grade would constitute
+  fishing-by-presentation.
+- **Population claim eligibility**: NONE. Demonstration-grade verdicts
+  inform M-design behavioral priors and corroborate / falsify the
+  framework's mechanistic hypotheses on the n=1 proxy subject; they
+  cannot graduate to a population claim on Colombian young-worker AI
+  cost-burden risk without re-meeting the verdict-grade floors.
+
+**Verdict-grade (required for cohort-scaling graduation)**:
+
+- $N_{\text{MIN}} = 75$ weekday days (project default per CLAUDE.md
+  anti-fishing invariant).
+- $\text{POWER}_{\text{MIN}} = 0.80$ at MDES = 0.40 residual-SD (project
+  default).
+- $\text{MDES}_{\text{SD}} = 0.40$ (project default).
+- **Verdict labels permitted**: REJECT_NULL, FAIL_TO_REJECT, HALT,
+  POWER-HALT, CONSISTENCY-FAIL. PARTIAL-* labels are NOT permitted at
+  verdict-grade — by construction PARTIAL means a floor is unmet, which
+  contradicts the grade definition.
+- **Population claim eligibility**: subject to all other framework
+  invariants (Y/X identification, panel reproducibility, anti-fishing
+  pins).
+
+**This iteration is demonstration-grade.** The v0.2.10 verdict memo
+(Task 17, `notebooks/dev_ai_cost_v2/dispositions/2026-05-18-task17-verdict.md`)
+MUST state this in its first paragraph and MUST include the
+"below project defaults" disclosure phrase in any headline result line.
+
+**Why two grades and not one shifted default**: the CLAUDE.md
+project-level anti-fishing invariants `N_MIN=75, POWER_MIN=0.80,
+MDES_SD=0.40` are pre-pinned ex-ante across all (Y, M, X) iterations and
+cannot be silently re-pinned at the iteration level. The two-grade split
+preserves the project-level invariant while giving demonstration-stage
+iterations a sanctioned, disclosed lower-floor surface that produces
+informative pilot results without claiming population-scale verdict
+authority. The relaxation IS the disclosure — readers can immediately
+identify which results have crossed the verdict-grade gate and which
+have not.
+
+**Anti-fishing audit trail**: CORRECTIONS-G and CORRECTIONS-J in §0.1
+remain the canonical floor-relaxation source. The Amendment #5
+contribution is to (a) acknowledge that those relaxations were not
+accompanied by a Rev-5.3.1-style preserved-power proof, (b) name the
+relaxed-floor regime "demonstration-grade", (c) bound the verdict
+labels and claim scope to that regime, and (d) require explicit
+disclosure in every consumer (verdict memo, LaTeX write-up, downstream
+M-design hand-off). No floor is moved further; the existing 38 / 0.50
+floors are simply re-classified under a disclosed scope.
 
 ### 2.4 Sensitivity arms (pre-registered, diagnostic-only — no verdict authority)
 
@@ -1841,16 +2222,48 @@ Per CLAUDE.md and `feedback_pathological_halt_anti_fishing_checkpoint`.
 
 - $N$-floor: $\max(\text{weekday days observed})$ at spec write time
   (CORRECTIONS-G), starting at 38, growing with usage. Documented
-  deviation from project-default 75.
+  deviation from project-default 75. **v0.2.10 Amendment #5**: this
+  N=38 floor is the **demonstration-grade** floor pinned in §2.3.1;
+  verdict-grade graduation requires N≥75.
 - Power-floor: 0.50 at MDES = 0.40 **residual SD** for R4-S3 (CORRECTIONS-J
   + lowered from project-default 0.80 for pilot demonstration-grade).
+  **v0.2.10 Amendment #5**: this POWER_MIN=0.50 floor is the
+  **demonstration-grade** floor pinned in §2.3.1; verdict-grade
+  graduation requires POWER_MIN≥0.80. PARTIAL-* verdicts permitted at
+  demonstration-grade only and require explicit "below project defaults"
+  headline disclosure in the verdict memo.
 - Sign expectations pinned ex-ante for R4-S3 (§2.2).
 - Lag structure pinned ex-ante: $k=1$ primary, $k=5$ sensitivity
-  (diagnostic only).
+  (diagnostic only). **v0.2.10 Amendment #8**: the power-calc partialling
+  regressor uses the SAME lag as the regression (lagged, $k=1$); see
+  §0.10 Amendment #8 and §0.9 for the v0.2.9 → v0.2.10 reversion.
 - HAC bandwidth pinned ex-ante: $L = \lfloor T^{1/3} \rfloor$ — not the
   v0.1.0 fixed 12.
 - No post-hoc trim or outlier rule beyond what is pinned in §2.4.
 - Sensitivity arms have no verdict authority (CORRECTIONS-K).
+- **v0.2.10 Amendment #4 (convergent-evidence accounting)**: count
+  "independent measurements" by their underlying ratio, not by their
+  notebook arm. R5, Z-arms, and R4-S3-COP all reduce algebraically to
+  $\text{Var}(\Delta\ln\text{TRM}) / \text{Var}(\Delta\ln\text{Cost}^{COP})$
+  on this window; only R4-S3-USD is independent. The v0.2.10 framing
+  reports ONE descriptive ratio (R5) + ONE behavioral test (R4-S3-USD,
+  currently POWER-HALTed per Amendment #8). Inflating the count via
+  same-ratio corroborations would be fishing-by-redundancy.
+- **v0.2.10 Amendment #6 (panel-construction-vs-statistical-test
+  distinction)**: the §0.8 additive-identity check
+  $\max |\Delta\ln\text{Cost}^{COP} - \Delta\ln\text{Cost}^{USD} -
+  \Delta\ln\text{USDCOP}| < 10^{-12}$ is a panel-construction sanity
+  check (cannot fail unless parquet bytes are inconsistent with the
+  build formula); it is NOT a substitute for a statistical
+  pipeline-integrity test. Framing it as "STRICTER than HAC-OLS" was
+  withdrawn in v0.2.10.
+- **v0.2.10 Amendment #7 (zero-power-cannot-corroborate)**: a
+  CONSISTENCY-FAIL or REGIME-CONDITIONAL FAIL verdict from a test that
+  has zero statistical power against the null in the empirical regime
+  cannot corroborate OR refute the related primary finding. R4-S3-COP
+  is removed from R5's corroboration list per Amendment #7 even though
+  its verdict label (REGIME-CONDITIONAL FAIL) is preserved for
+  audit-trail purposes.
 
 ## 8. Workflow / agent assignment
 
@@ -1955,3 +2368,4 @@ remaining questions for closure-only re-review:
 | 0.2.7 | 2026-05-17 | Parity-comparison-harness patch (§0.7 CORRECTIONS-Y-9). Y-9 backlog (per-token-class residuals; input +1.25%, output -0.64%) root-caused to a TIMEZONE-COMPARISON ARTIFACT in the validation harness: ccusage default behavior buckets timestamps in system local TZ (EDT on this machine), our panel buckets in UTC. When ccusage is invoked with `--timezone UTC` the per-class ratios collapse to within ±0.001% (cost 1.000000, input 1.000000, output 1.000000, cache_create 0.999992, cache_read 1.000000). Pre-pinned H1/H2/H3 hypotheses all falsified by 9-probe empirical investigation (scratch/2026-05-17-y9-investigation/). No code change — pipeline is correct. DATA_PROVENANCE.md updated with the parity-comparison-requires-`--timezone UTC` protocol. v0.2.6 §0.6 compound close-out condition (Z-2 + Y-9) now SATISFIED; R5 PRIMARY regains verdict-eligibility per §2.1. |
 | 0.2.8 | 2026-05-17 | Premise-conditional consistency-rule patch (§0.8 CORRECTIONS-Z2). Task 13 R4-S3-COP returned CONSISTENCY-FAIL (k=1: α̂₁^COP = −17.98, p_1s = 0.670; k=5: α̂₁^COP = −35.89, p_1s = 0.873). Disposition memo verified cost-panel additive identity holds at max FP error 1.78e-15 (NOT data corruption). Root cause: §2.2.A's HALT-on-FAIL rule was premise-conditional (assumed `var(USDCOP) ≳ var(cost^USD)`); empirically `var(USDCOP)/var(cost^USD) ≈ 4 orders of magnitude apart` on this window, so USDCOP signal is statistically dominated by token-volume variance. v0.2.8 substitutes pipeline-integrity check with additive-identity proof; reclassifies CONSISTENCY-FAIL as REGIME-CONDITIONAL when (a) identity holds AND (b) `var(USDCOP)/var(cost^USD) < 0.01`. Task 14 R4-S3-USD unblocked. Also includes catch-up frontmatter sync (v0.2.7 Y-9 closure patch updated §0.7 body but missed `spec_version` bump in frontmatter). |
 | 0.2.9 | 2026-05-18 | Power-recipe lag pin (§0.9 CORRECTIONS-Z3). Task 14 R4-S3-USD fired POWER-HALT (measured power 0.1745 < 0.50) under lagged-tokens partialling, while Task 11 EDA's contemporaneous-tokens recipe had measured 0.7115 (above threshold). Both readings are defensible interpretations of CORRECTIONS-J's silent-on-lag text. v0.2.9 pins canonical recipe = **contemporaneous-tokens partialling** (matches Task 11 EDA precedent + first-principles rationale: power-calc residual is a sample-noise benchmark, not part of the test geometry). Task 14 verdict re-evaluation under pinned recipe: power gate passes (0.71); N gate partial (28<38) → **PARTIAL-FAIL_TO_REJECT** (subscription inelasticity confirmed; framework prior; verdict partial pending N≥38). Four independent measurements (R5, Z-arms, R4-S3-COP, R4-S3-USD) now converge on small-FX reading. |
+| 0.2.10 | 2026-05-18 | Post-audit Wave-0 closure (§0.10 CORRECTIONS-W3). Applies 5 audit-econ Delphi amendments (Critical #4, #5; High #6, #7, #8 — `scratch/2026-05-18-ai-cost-delphi/`). **#4 (convergent-evidence accounting)**: rewrites the v0.2.9 "FOUR independent measurements" framing as "ONE descriptive ratio (R5) + ONE underpowered behavioral test (R4-S3-USD)". Z-arms and R4-S3-COP reduce algebraically to the SAME `Var(Δln TRM)/Var(Δln Cost^COP)` ratio and are SAME-RATIO corroborations, NOT independent measurements. **#5 (two-grade scope)**: adds §2.3.1 demonstration-grade (N_MIN=38, POWER_MIN=0.50; PARTIAL-* labels permitted; "below project defaults" headline disclosure mandatory) vs verdict-grade (N_MIN=75, POWER_MIN=0.80; PARTIAL-* prohibited; population claims permitted). This iteration pinned to demonstration-grade. **#6 (Z2 reframing)**: v0.2.8 "STRICTER than HAC-OLS" framing for the FP-precision additive-identity check is withdrawn; reclassified as panel-construction sanity check (cannot detect statistical issues; tautological by build-formula construction). **#7 (R4-S3-COP removed from corroboration)**: zero-power FAIL/REGIME-CONDITIONAL FAIL is uninformative for verdict purposes; cannot support OR refute R5. Verdict label preserved in §2.2.A for audit trail; corroboration semantics stripped. **#8 (Z3 REVERTED to lagged recipe)**: v0.2.9 contemporaneous pin (power 0.71) is withdrawn; lagged recipe (power 0.17 — matches R4-S3-USD's k=1 spec lag structure) is canonical. Task 14 verdict under reverted recipe: **POWER-HALT** (anticipated per CORRECTIONS-U; PARTIAL-FAIL_TO_REJECT label withdrawn). v0.2.9 "first-principles" defense is honestly acknowledged as overstated. Headline empirical finding (FX share ≈ 0% R5 PRIMARY) UNCHANGED; verdict's confidence claim is HONESTLY REDUCED. Anti-fishing safeguard: this is tightening, not loosening — no threshold tuned to make a test pass. Wave 1 (pipeline fixes #1, #3, #9, #10) + Wave 2 (panel re-emit) + Wave 3 (notebook re-run) + Wave 4 (DATA_PROVENANCE rewrite) + Wave 5 (Task 17 verdict memo with mandatory demonstration-grade headline disclosure) follow. Consumers flagged: notebooks 02/03/04/06 interpretation cells; `data/panels/notional_cost_panel.parquet` (Wave 2 re-emit); `DATA_PROVENANCE.md` (Wave 4); Task 17 verdict memo (Wave 5). |
