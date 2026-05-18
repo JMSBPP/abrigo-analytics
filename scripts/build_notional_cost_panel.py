@@ -134,6 +134,7 @@ def main() -> int:
         f"dropped_non_assistant={panel.dropped_non_assistant_count}, "
         f"dropped_malformed={panel.dropped_malformed_line_count}, "
         f"dropped_duplicate={panel.dropped_duplicate_count}, "
+        f"dropped_non_anthropic={panel.dropped_non_anthropic_count}, "
         f"warn_missing_keys={panel.warn_missing_keys_count}, "
         f"dropped_unknown_model={panel.dropped_unknown_model_count}, "
         f"substr_tiebreaker={panel.multiple_substring_match_warning}, "

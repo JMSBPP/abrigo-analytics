@@ -103,6 +103,7 @@ def _result(
     dropped_non_assistant: int = 0,
     dropped_malformed: int = 0,
     dropped_duplicate: int = 0,
+    dropped_non_anthropic: int = 0,
 ) -> JSONLReadResult:
     """Wrap records in JSONLReadResult (Y-5b — panel_builder now consumes this).
 
@@ -110,12 +111,15 @@ def _result(
     fixtures; explicit value used by Y-7 counter-threading test.
     v0.2.5 Y-8: ``dropped_duplicate`` defaults to 0 for back-compatible
     fixtures; explicit value used by Y-8 counter-threading test.
+    v0.2.10 audit-econ #9: ``dropped_non_anthropic`` defaults to 0 for
+    back-compatible fixtures; explicit value used by #9 counter-threading test.
     """
     return JSONLReadResult(
         records=tuple(records),
         dropped_non_assistant_count=dropped_non_assistant,
         dropped_malformed_line_count=dropped_malformed,
         dropped_duplicate_count=dropped_duplicate,
+        dropped_non_anthropic_count=dropped_non_anthropic,
     )
 
 
@@ -318,6 +322,7 @@ def test_counter_threading_jsonlreader_side(tmp_path: Path) -> None:
         dropped_non_assistant_count=7,
         dropped_malformed_line_count=0,
         dropped_duplicate_count=0,
+        dropped_non_anthropic_count=0,
     )
     panel = build_daily_panel(rr, pricing, _toy_trm())
     assert panel.dropped_non_assistant_count == 7
@@ -401,6 +406,7 @@ def test_build_daily_panel_consumes_jsonl_read_result(tmp_path: Path) -> None:
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
         dropped_duplicate_count=0,
+        dropped_non_anthropic_count=0,
     )
     # Must work cleanly.
     panel = build_daily_panel(rr, pricing, _toy_trm())

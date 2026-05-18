@@ -234,6 +234,7 @@ def build_daily_panel(
         multiple_substring_match_warning=pricing.multiple_substring_match_warning,
         ephemeral_pi_share=pi_share,
         dropped_duplicate_count=read_result.dropped_duplicate_count,
+        dropped_non_anthropic_count=read_result.dropped_non_anthropic_count,
     )
 
 

@@ -225,25 +225,37 @@ class JSONLReadResult:
             len(records)``. Rows whose ``message.id`` is None bypass the
             dedup map entirely and do NOT increment this counter (per
             spec §0.5 CR optional-7th / RC FLAG-B).
+        dropped_non_anthropic_count: v0.2.10 audit-econ #9 — number of
+            assistant JSONL rows skipped because ``message.model`` is
+            ``None`` or does not start with ``claude-`` (case-insensitive).
+            The operator's ``~/.claude/projects/`` tree contains both
+            Claude Code AND OpenAI Codex / other-vendor sessions; admitting
+            non-Anthropic rows inflated downstream token aggregates at
+            cost=0 (PricingTable's ladder returned 0 for unknown models).
+            The filter moves UPSTREAM to JSONLReader so non-Anthropic
+            tokens never enter the panel at all. Tokens AND cost are both
+            excluded.
 
     Counter ownership (Y-5a): this container carries ONLY the
     JSONLReader-side counters (``dropped_non_assistant_count``,
-    ``dropped_malformed_line_count``, ``dropped_duplicate_count``). The
-    PricingTable-side counters (``WARN_missing_keys_count``,
-    ``dropped_unknown_model_count``, ``multiple_substring_match_warning``)
-    live on ``PricingTable`` and are surfaced into ``DailyNotionalPanel``
-    by the panel-builder.
+    ``dropped_malformed_line_count``, ``dropped_duplicate_count``,
+    ``dropped_non_anthropic_count``). The PricingTable-side counters
+    (``WARN_missing_keys_count``, ``dropped_unknown_model_count``,
+    ``multiple_substring_match_warning``) live on ``PricingTable`` and are
+    surfaced into ``DailyNotionalPanel`` by the panel-builder.
 
     Raises:
         ValueError: if ``dropped_non_assistant_count``,
-            ``dropped_malformed_line_count``, or
-            ``dropped_duplicate_count`` is negative.
+            ``dropped_malformed_line_count``,
+            ``dropped_duplicate_count``, or
+            ``dropped_non_anthropic_count`` is negative.
     """
 
     records: tuple[MessageRecord, ...]
     dropped_non_assistant_count: int
     dropped_malformed_line_count: int
     dropped_duplicate_count: int
+    dropped_non_anthropic_count: int
 
     def __post_init__(self) -> None:
         if self.dropped_non_assistant_count < 0:
@@ -260,6 +272,11 @@ class JSONLReadResult:
             raise ValueError(
                 f"JSONLReadResult.dropped_duplicate_count must be >= 0; "
                 f"got {self.dropped_duplicate_count}"
+            )
+        if self.dropped_non_anthropic_count < 0:
+            raise ValueError(
+                f"JSONLReadResult.dropped_non_anthropic_count must be >= 0; "
+                f"got {self.dropped_non_anthropic_count}"
             )
 
 
@@ -318,6 +335,10 @@ class DailyNotionalPanel:
         rows (Y-5a, sourced from ``PricingTable``).
       - ``multiple_substring_match_warning``: substring-tiebreaker-invoked
         rows (Y-5a / Y-5d, sourced from ``PricingTable``).
+      - ``dropped_non_anthropic_count``: v0.2.10 audit-econ #9 — assistant
+        rows whose ``message.model`` is None or non-``claude-*`` (Codex,
+        GPT, etc.); filtered upstream by ``JSONLReader`` so their tokens
+        do NOT inflate panel aggregates. Sourced from ``JSONLReadResult``.
       - ``ephemeral_pi_share``: Y-6 diagnostic
         ``Σ cache_create_1h / Σ (cache_create_5m + cache_create_1h)``;
         0.0 if denominator is 0. Bounded ``[0, 1]``.
@@ -336,6 +357,8 @@ class DailyNotionalPanel:
         dropped_non_assistant_count: JSONLReader-side counter (Y-5a).
         dropped_malformed_line_count: JSONLReader-side counter (v0.2.4 Y-7).
         dropped_duplicate_count: JSONLReader-side counter (v0.2.5 Y-8).
+        dropped_non_anthropic_count: JSONLReader-side counter (v0.2.10
+            audit-econ #9).
         warn_missing_keys_count: PricingTable-side counter (Y-5a).
         dropped_unknown_model_count: PricingTable-side counter (Y-5a).
         multiple_substring_match_warning: PricingTable-side counter (Y-5d).
@@ -360,6 +383,7 @@ class DailyNotionalPanel:
     multiple_substring_match_warning: int
     ephemeral_pi_share: float
     dropped_duplicate_count: int
+    dropped_non_anthropic_count: int
 
     def __post_init__(self) -> None:
         actual: dict[str, pl.DataType] = dict(self.df.schema)
@@ -387,6 +411,7 @@ class DailyNotionalPanel:
             "dropped_unknown_model_count",
             "multiple_substring_match_warning",
             "dropped_duplicate_count",
+            "dropped_non_anthropic_count",
         ):
             v: int = getattr(self, fname)
             if v < 0:

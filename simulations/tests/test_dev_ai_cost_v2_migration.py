@@ -57,13 +57,18 @@ def test_jsonl_read_result_canonical_module() -> None:
 
 
 def test_jsonl_read_result_fields_exact() -> None:
-    """v0.2.5 Y-8: JSONLReadResult carries records + 3 JSONLReader counters."""
+    """v0.2.10 audit-econ #9: JSONLReadResult carries records + 4 JSONLReader counters.
+
+    v0.2.5 Y-8 baseline = 3 counters; v0.2.10 adds
+    ``dropped_non_anthropic_count`` to surface Codex/GPT upstream filter.
+    """
     fields = {f.name for f in JSONLReadResult.__dataclass_fields__.values()}
     assert fields == {
         "records",
         "dropped_non_assistant_count",
         "dropped_malformed_line_count",
         "dropped_duplicate_count",
+        "dropped_non_anthropic_count",
     }
 
 
@@ -148,6 +153,7 @@ def test_daily_notional_panel_v0_2_3_fields() -> None:
         "dropped_non_assistant_count",
         "dropped_malformed_line_count",
         "dropped_duplicate_count",
+        "dropped_non_anthropic_count",
         "warn_missing_keys_count",
         "dropped_unknown_model_count",
         "multiple_substring_match_warning",

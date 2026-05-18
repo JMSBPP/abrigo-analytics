@@ -49,6 +49,19 @@ v0.2.3 closure (Y-5f, CR-Z-2):
   - Type-discriminator filter (Y-1): rows with ``type != "assistant"`` are
     skipped BEFORE Pydantic validation; the skip count surfaces in the
     result container.
+
+v0.2.10 amendment (audit-econ #9 — non-Anthropic upstream filter):
+  - The operator's ``~/.claude/projects/`` tree contains both Claude Code
+    AND OpenAI Codex / other-vendor sessions. Prior to v0.2.10, all
+    assistant rows were admitted regardless of ``message.model``;
+    PricingTable later returned cost=0 for unknown models, so non-Claude
+    rows silently inflated panel token aggregates at zero cost.
+  - The filter moves UPSTREAM to ``JSONLReader.__call__``: after Pydantic
+    validation and BEFORE the dedup map, if ``message.model`` is ``None``
+    or does NOT start with ``"claude-"`` (case-insensitive), the row is
+    skipped and ``JSONLReadResult.dropped_non_anthropic_count`` is
+    incremented. Tokens AND cost are both excluded from downstream
+    aggregates — no Codex/GPT contamination.
 """
 from __future__ import annotations
 
@@ -297,6 +310,13 @@ class JSONLReader:
               skip count surfaces in
               ``JSONLReadResult.dropped_non_assistant_count``. Absent
               ``type`` field is treated as non-assistant and skipped.
+            - Non-Anthropic-model filter (v0.2.10 audit-econ #9): after
+              Pydantic validation, rows whose ``message.model`` is ``None``
+              or does NOT start with ``"claude-"`` (case-insensitive) are
+              skipped and counted in
+              ``JSONLReadResult.dropped_non_anthropic_count``. Tokens AND
+              cost are both excluded — these rows never reach the dedup
+              map nor the panel aggregates.
             - ``extra="allow"`` on every nested Pydantic model — unknown
               fields are silently accepted (Y-5f permissive schema).
             - Required fields (``timestamp``, ``message.usage.input_tokens``,
@@ -366,6 +386,9 @@ class JSONLReader:
         records: list[MessageRecord] = []
         dropped_non_assistant: int = 0
         dropped_malformed_line: int = 0
+        # v0.2.10 audit-econ #9: counter for non-Anthropic model rows
+        # (Codex, GPT, etc.) skipped upstream of the dedup map.
+        dropped_non_anthropic: int = 0
         # v0.2.5 Y-8: dedup state — LOCAL to this call (CR NIT-1). Maps
         # ``_unique_hash`` → index into ``records`` of the currently-kept
         # entry. ``_has_speed`` parallels ``records`` (same index space)
@@ -405,6 +428,19 @@ class JSONLReader:
                         raise JSONLSchemaError(
                             f"{jsonl_path}:{line_no} schema drift: {e}"
                         ) from e
+
+                    # v0.2.10 audit-econ #9: non-Anthropic upstream filter.
+                    # ``message.model`` of None or a non-``claude-*`` value
+                    # (e.g. Codex, GPT) means the row is foreign to the
+                    # Anthropic pricing scope. Skip BEFORE the dedup map so
+                    # tokens AND cost are both excluded from the panel.
+                    # Case-insensitive prefix check to survive any future
+                    # capitalization drift.
+                    model: str = row.message.model or ""
+                    if not model.lower().startswith("claude-"):
+                        dropped_non_anthropic += 1
+                        continue
+
                     ts = row.timestamp.astimezone(timezone.utc)
                     if not (lo <= ts < hi):
                         continue
@@ -476,6 +512,7 @@ class JSONLReader:
             dropped_non_assistant_count=dropped_non_assistant,
             dropped_malformed_line_count=dropped_malformed_line,
             dropped_duplicate_count=dropped_duplicate,
+            dropped_non_anthropic_count=dropped_non_anthropic,
         )
 
 
