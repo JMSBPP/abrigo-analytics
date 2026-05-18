@@ -103,6 +103,7 @@ def _result(
     dropped_non_assistant: int = 0,
     dropped_malformed: int = 0,
     dropped_duplicate: int = 0,
+    dropped_non_anthropic: int = 0,
 ) -> JSONLReadResult:
     """Wrap records in JSONLReadResult (Y-5b — panel_builder now consumes this).
 
@@ -110,12 +111,15 @@ def _result(
     fixtures; explicit value used by Y-7 counter-threading test.
     v0.2.5 Y-8: ``dropped_duplicate`` defaults to 0 for back-compatible
     fixtures; explicit value used by Y-8 counter-threading test.
+    v0.2.10 audit-econ #9: ``dropped_non_anthropic`` defaults to 0 for
+    back-compatible fixtures; explicit value used by #9 counter-threading test.
     """
     return JSONLReadResult(
         records=tuple(records),
         dropped_non_assistant_count=dropped_non_assistant,
         dropped_malformed_line_count=dropped_malformed,
         dropped_duplicate_count=dropped_duplicate,
+        dropped_non_anthropic_count=dropped_non_anthropic,
     )
 
 
@@ -188,7 +192,11 @@ def test_weekends_dropped(tmp_path: Path) -> None:
     )
     panel = build_daily_panel(_result(records), pricing, trm)
     assert set(panel.df["date_utc"].to_list()) == {date(2026, 5, 4)}
-    assert panel.dropped_rows_count >= 2
+    # v0.2.10 audit-econ #10: split counters — 2 weekend messages
+    # (Sat=2 + Sun=3) + 2 weekend TRM rows (Sat=2 + Sun=3).
+    assert panel.dropped_weekend_message_count == 2
+    assert panel.dropped_weekend_trm_row_count == 2
+    assert panel.dropped_trm_missing_weekday_count == 0
 
 
 # ─── Test 5: double-iteration equivalence over tuple records ────────────────
@@ -203,7 +211,13 @@ def test_double_iteration_equivalence(tmp_path: Path) -> None:
     p1 = build_daily_panel(_result(records), pricing, _toy_trm())
     p2 = build_daily_panel(_result(records), pricing, _toy_trm())
     assert p1.df.equals(p2.df)
-    assert p1.dropped_rows_count == p2.dropped_rows_count
+    # v0.2.10 audit-econ #10: three named counters
+    assert p1.dropped_weekend_message_count == p2.dropped_weekend_message_count
+    assert p1.dropped_weekend_trm_row_count == p2.dropped_weekend_trm_row_count
+    assert (
+        p1.dropped_trm_missing_weekday_count
+        == p2.dropped_trm_missing_weekday_count
+    )
     assert p1.dropped_error_count == p2.dropped_error_count
     assert p1.ephemeral_pi_share == p2.ephemeral_pi_share
 
@@ -275,7 +289,10 @@ def test_empty_records_yields_empty_panel(tmp_path: Path) -> None:
     panel = build_daily_panel(_result([]), pricing, _toy_trm())
     assert panel.df.height == 0
     assert panel.dropped_error_count == 0
-    assert panel.dropped_rows_count == 0
+    # v0.2.10 audit-econ #10: three named counters all 0 when no records.
+    assert panel.dropped_weekend_message_count == 0
+    assert panel.dropped_weekend_trm_row_count == 0
+    assert panel.dropped_trm_missing_weekday_count == 0
     # Y-6: zero records → π̂ = 0.0.
     assert panel.ephemeral_pi_share == 0.0
 
@@ -305,6 +322,7 @@ def test_counter_threading_jsonlreader_side(tmp_path: Path) -> None:
         dropped_non_assistant_count=7,
         dropped_malformed_line_count=0,
         dropped_duplicate_count=0,
+        dropped_non_anthropic_count=0,
     )
     panel = build_daily_panel(rr, pricing, _toy_trm())
     assert panel.dropped_non_assistant_count == 7
@@ -388,8 +406,106 @@ def test_build_daily_panel_consumes_jsonl_read_result(tmp_path: Path) -> None:
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
         dropped_duplicate_count=0,
+        dropped_non_anthropic_count=0,
     )
     # Must work cleanly.
     panel = build_daily_panel(rr, pricing, _toy_trm())
     assert isinstance(panel, DailyNotionalPanel)
     assert panel.df.height == 1
+
+
+# ─── v0.2.10 audit-econ #10: unit-mixed counter split ───────────────────────
+
+
+def test_panel_builder_counters_unit_split(tmp_path: Path) -> None:
+    """Audit-econ #10: the OLD ``dropped_rows_count`` mixed three units
+    (per-message + per-TRM-row + per-day) into one scalar. The new design
+    pins three named counters, each to ONE unit.
+
+    Fixture KNOWN counts:
+        - 3 weekend messages (Sat 2026-05-02 + Sat + Sun 2026-05-03).
+        - 2 weekend TRM rows (Sat 2026-05-02 + Sun 2026-05-03).
+        - 1 weekday TRM-missing day (Tue 2026-05-05 has Claude messages
+          but no TRM row → dropped by the inner join).
+
+    The sum of the three new counters equals the old aggregate, preserving
+    the existing total for regression-safety. Each counter is also
+    independently asserted.
+    """
+    pricing = _toy_pricing(tmp_path)
+    # Messages: 2 weekend rows (Sat=2 x1, Sun=3 x2), 1 Tue=5 (TRM-missing),
+    # 1 Wed=6 (TRM present), 1 Thu=7 (TRM present).
+    records = [
+        _rec(2, uuid_suffix="sat"),
+        _rec(3, uuid_suffix="sun-a"),
+        _rec(3, uuid_suffix="sun-b"),
+        _rec(5, uuid_suffix="tue-no-trm"),
+        _rec(6, uuid_suffix="wed-ok"),
+        _rec(7, uuid_suffix="thu-ok"),
+    ]
+    # TRM: omit Tue=5 (the holiday-Monday-equivalent day), include Sat=2 +
+    # Sun=3 weekend rows (2 weekend TRM rows), plus weekday rows
+    # 4, 6, 7, 8.
+    trm = pl.DataFrame(
+        {
+            "date": [date(2026, 5, d) for d in (2, 3, 4, 6, 7, 8)],
+            "trm_cop_per_usd": [4100.0, 4100.0, 4100.0, 4100.0, 4100.0, 4100.0],
+        },
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
+    )
+    panel = build_daily_panel(_result(records), pricing, trm)
+
+    # Assert each named counter independently.
+    assert panel.dropped_weekend_message_count == 3, (
+        "expected 3 weekend messages (Sat + 2 Sun)"
+    )
+    assert panel.dropped_weekend_trm_row_count == 2, (
+        "expected 2 weekend TRM rows (Sat + Sun)"
+    )
+    assert panel.dropped_trm_missing_weekday_count == 1, (
+        "expected 1 TRM-missing weekday (Tue=5)"
+    )
+
+    # Regression-safety: sum equals what the OLD scalar would have been.
+    old_total = (
+        panel.dropped_weekend_message_count
+        + panel.dropped_weekend_trm_row_count
+        + panel.dropped_trm_missing_weekday_count
+    )
+    assert old_total == 3 + 2 + 1 == 6
+
+    # And the surviving panel rows: Wed=6, Thu=7 (Mon=4 has no records).
+    out_dates = set(panel.df["date_utc"].to_list())
+    assert out_dates == {date(2026, 5, 6), date(2026, 5, 7)}
+
+
+def test_panel_builder_trm_missing_weekday_count_surfaces_holidays(
+    tmp_path: Path,
+) -> None:
+    """Audit-econ #1: a weekday (e.g. Mon) with Claude messages but no
+    Banrep TRM row must surface in
+    ``dropped_trm_missing_weekday_count`` (not silently masked, not
+    forward-filled).
+
+    Fixture: Mon 2026-05-04 has Claude messages; the TRM panel
+    deliberately omits that day (simulating a Colombian holiday). The
+    new day-level counter reports exactly 1.
+    """
+    pricing = _toy_pricing(tmp_path)
+    records = [_rec(4, uuid_suffix="mon-holiday-claude-active")]
+    # TRM panel omits Mon=4 → models a Colombian holiday.
+    trm = pl.DataFrame(
+        {
+            "date": [date(2026, 5, d) for d in (5, 6, 7, 8)],
+            "trm_cop_per_usd": [4100.0, 4100.0, 4100.0, 4100.0],
+        },
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
+    )
+    panel = build_daily_panel(_result(records), pricing, trm)
+    # Mon=4 is the only Claude-active weekday and it has no TRM row.
+    assert panel.dropped_trm_missing_weekday_count == 1
+    # No forward-fill: panel is empty.
+    assert panel.df.height == 0
+    # The other two counters are 0 (no weekend activity in this fixture).
+    assert panel.dropped_weekend_message_count == 0
+    assert panel.dropped_weekend_trm_row_count == 0

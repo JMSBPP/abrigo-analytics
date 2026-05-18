@@ -47,6 +47,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from simulations.dev_ai_cost_v2.anthropic_pricing import (
+    LITELLM_FILE_SHA256_PINNED,
     LITELLM_SHA_PINNED,
     PricingTable,
     _REQUIRED_KEYS,
@@ -56,6 +57,10 @@ from simulations.dev_ai_cost_v2.types import TokensByCategory
 # Local alias mirrors the module pin (kept as a string literal so this test
 # would fail-loud if the upstream constant were ever quietly bumped).
 LITELLM_SHA = "e58a561caa21169fb02174148444c08509ce7028"
+
+# v0.2.10 audit-econ #3: real file location for dual-pin smoke test.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REAL_LITELLM_JSON = REPO_ROOT / "data" / "raw" / "litellm_model_prices.json"
 
 
 # ─── Test 1: load-time WARN-not-raise (Y-3) ──────────────────────────────────
@@ -167,25 +172,36 @@ def test_pricing_monotone_in_input_tokens(
 
 
 def test_pricing_table_rejects_sha_mismatch(tmp_path: Path) -> None:
-    """Production callers (``skip_sha_check=False``) must pass the pinned SHA.
+    """Production callers (``skip_sha_check=False``) must pass the pinned
+    commit-SHA. A drifted SHA argument is a reproducibility failure and
+    must be rejected at the load boundary, not silently absorbed.
 
-    A drifted SHA argument is a reproducibility failure and must be rejected
-    at the load boundary, not silently absorbed.
+    v0.2.10 audit-econ #3: the commit-SHA check is now joined by a
+    file-sha256 check (see ``test_pricing_table_raises_on_file_sha_mismatch``
+    and ``test_pricing_table_passes_with_correct_file_sha`` for the
+    file-pin coverage). Using the REAL canonical file here so the
+    commit-SHA mismatch is the ONLY failing pin.
     """
-    fake_table = {
-        "claude-sonnet-4-5": {k: 1e-06 for k in _REQUIRED_KEYS},
-    }
-    p = tmp_path / "litellm.json"
-    p.write_text(json.dumps(fake_table))
-    bogus_sha = "0" * 40
-    with pytest.raises(ValueError, match="pinned"):
-        PricingTable.from_litellm_sha(
-            sha=bogus_sha, cached_json_path=p, skip_sha_check=False
-        )
-    # And confirm the pinned SHA loads cleanly when skip is off.
-    pt = PricingTable.from_litellm_sha(
-        sha=LITELLM_SHA_PINNED, cached_json_path=p, skip_sha_check=False
+    assert REAL_LITELLM_JSON.exists(), (
+        f"canonical LiteLLM cache missing at {REAL_LITELLM_JSON}; "
+        "make data-raw to provision"
     )
+    bogus_sha = "0" * 40
+    import warnings as _w
+    with _w.catch_warnings():
+        _w.simplefilter("ignore", UserWarning)
+        with pytest.raises(ValueError, match="pinned"):
+            PricingTable.from_litellm_sha(
+                sha=bogus_sha,
+                cached_json_path=REAL_LITELLM_JSON,
+                skip_sha_check=False,
+            )
+        # And confirm the pinned SHA loads cleanly when skip is off.
+        pt = PricingTable.from_litellm_sha(
+            sha=LITELLM_SHA_PINNED,
+            cached_json_path=REAL_LITELLM_JSON,
+            skip_sha_check=False,
+        )
     assert pt.sha == LITELLM_SHA_PINNED
 
 
@@ -481,3 +497,90 @@ def test_pricing_none_rate_contributes_zero(tmp_path: Path) -> None:
     )
     expected = 100 * 1e-06 + 50 * 2e-06
     assert cost == pytest.approx(expected, rel=1e-12)
+
+
+# ─── v0.2.10 audit-econ #3: LiteLLM dual-pin enforcement ─────────────────────
+
+
+def test_pricing_table_raises_on_file_sha_mismatch(tmp_path: Path) -> None:
+    """v0.2.10 audit-econ #3: when the cached file's sha256 does NOT
+    match ``LITELLM_FILE_SHA256_PINNED``, ``from_litellm_sha`` raises
+    ``ValueError`` (cache integrity violation).
+
+    Fixture: copy the REAL canonical file (sha matches the pin), then
+    append a single byte to corrupt it. The commit-SHA argument passes
+    its own check; only the file-sha256 check fails.
+    """
+    assert REAL_LITELLM_JSON.exists(), (
+        f"canonical LiteLLM cache missing at {REAL_LITELLM_JSON}; "
+        "make data-raw to provision"
+    )
+    corrupted = tmp_path / "litellm_corrupted.json"
+    corrupted.write_bytes(REAL_LITELLM_JSON.read_bytes() + b"X")
+
+    with pytest.raises(ValueError, match="cache integrity violation"):
+        PricingTable.from_litellm_sha(
+            sha=LITELLM_SHA_PINNED,
+            cached_json_path=corrupted,
+            skip_sha_check=False,
+        )
+
+
+def test_pricing_table_passes_with_correct_file_sha() -> None:
+    """v0.2.10 audit-econ #3: smoke test — the canonical cached file at
+    ``data/raw/litellm_model_prices.json`` satisfies both pins (commit-SHA
+    AND file-sha256) and loads cleanly without ``skip_sha_check``.
+    """
+    assert REAL_LITELLM_JSON.exists(), (
+        f"canonical LiteLLM cache missing at {REAL_LITELLM_JSON}; "
+        "make data-raw to provision"
+    )
+    import warnings as _w
+    with _w.catch_warnings():
+        # Real cache may have missing keys per Y-3 — those WARN but do
+        # not raise. Suppress them so this test focuses on the pin gates.
+        _w.simplefilter("ignore", UserWarning)
+        pt = PricingTable.from_litellm_sha(
+            sha=LITELLM_SHA_PINNED,
+            cached_json_path=REAL_LITELLM_JSON,
+            skip_sha_check=False,
+        )
+    assert pt.sha == LITELLM_SHA_PINNED
+    # And a sanity check: rates loaded.
+    assert len(pt.rates) > 0
+
+
+def test_pricing_table_file_sha_pin_constant_matches_real_file() -> None:
+    """v0.2.10 audit-econ #3: the module-level
+    ``LITELLM_FILE_SHA256_PINNED`` constant must equal the sha256 of the
+    canonical cached file actually on disk. If this fails, either the
+    cache was mutated or the pin was bumped without updating the file
+    (or vice versa).
+    """
+    import hashlib
+    assert REAL_LITELLM_JSON.exists(), (
+        f"canonical LiteLLM cache missing at {REAL_LITELLM_JSON}; "
+        "make data-raw to provision"
+    )
+    actual: str = hashlib.sha256(REAL_LITELLM_JSON.read_bytes()).hexdigest()
+    assert actual == LITELLM_FILE_SHA256_PINNED, (
+        f"file sha256 drift: actual {actual} vs pinned "
+        f"{LITELLM_FILE_SHA256_PINNED}"
+    )
+
+
+def test_pricing_table_skip_sha_check_bypasses_both_pins(tmp_path: Path) -> None:
+    """v0.2.10 audit-econ #3: ``skip_sha_check=True`` must bypass BOTH
+    the commit-SHA pin AND the file-sha256 pin so test fixtures with
+    arbitrary synthetic rate tables continue to load.
+    """
+    fake_table = {"claude-x": {k: 1e-06 for k in _REQUIRED_KEYS}}
+    p = tmp_path / "synthetic.json"
+    p.write_text(json.dumps(fake_table))
+    pt = PricingTable.from_litellm_sha(
+        sha="not-the-pinned-sha",
+        cached_json_path=p,
+        skip_sha_check=True,
+    )
+    assert pt.sha == "not-the-pinned-sha"
+    assert "claude-x" in pt.rates

@@ -550,6 +550,7 @@ def test_dropped_malformed_line_count_threaded_through_panel(
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=7,
         dropped_duplicate_count=0,
+        dropped_non_anthropic_count=0,
     )
     pricing = _toy_pricing(tmp_path)
     trm = pl.DataFrame(
@@ -631,14 +632,19 @@ def test_jsonlreader_line_conservation_property(
     the reader's output satisfies::
 
         dropped_malformed_line_count + len(records) + dropped_non_assistant_count
-            + dropped_blank_inferred == total_input_lines
+            + dropped_non_anthropic_count + dropped_blank_inferred
+            == total_input_lines
 
     where ``dropped_blank_inferred`` is computed from the fixture
     (lines whose ``.strip()`` is empty after utf-8 decode, or that cannot
     be decoded as utf-8). The reader never loses or double-counts a line.
 
-    Per spec §0.4: ``dropped_blank`` is not exposed on JSONLReadResult in
-    v0.2.4 (scope-minimal); the conservation test uses a fixture-derived
+    v0.2.10 audit-econ #9: the conservation invariant now includes
+    ``dropped_non_anthropic_count`` since the upstream non-Anthropic
+    filter is another exhaustive exit path for an admitted assistant row.
+
+    Per spec §0.4: ``dropped_blank`` is not exposed on JSONLReadResult
+    (scope-minimal); the conservation test uses a fixture-derived
     blank count rather than adding a new field.
     """
     tmp_path = tmp_path_factory.mktemp("y7_inv")
@@ -680,6 +686,7 @@ def test_jsonlreader_line_conservation_property(
         out.dropped_malformed_line_count
         + len(out.records)
         + out.dropped_non_assistant_count
+        + out.dropped_non_anthropic_count
         + dropped_blank_inferred
     )
     assert accounted == total_lines, (
@@ -687,6 +694,7 @@ def test_jsonlreader_line_conservation_property(
         f"malformed={out.dropped_malformed_line_count}, "
         f"records={len(out.records)}, "
         f"non_assistant={out.dropped_non_assistant_count}, "
+        f"non_anthropic={out.dropped_non_anthropic_count}, "
         f"blank_inferred={dropped_blank_inferred}, "
         f"total={total_lines}"
     )
@@ -918,6 +926,7 @@ def test_dropped_duplicate_count_threaded_through_panel(
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
         dropped_duplicate_count=7,
+        dropped_non_anthropic_count=0,
     )
     pricing = _toy_pricing(tmp_path)
     trm = pl.DataFrame(
@@ -999,3 +1008,129 @@ def test_jsonlreader_dedup_missing_message_id_admitted_without_counter(
     assert len(out.records) == 3
     assert {r.uuid for r in out.records} == {"u-a", "u-b", "u-c"}
     assert out.dropped_duplicate_count == 0
+
+
+# ─── v0.2.10 audit-econ #9: non-Anthropic upstream filter ────────────────────
+
+
+def test_jsonlreader_filters_non_anthropic_models(tmp_path: Path) -> None:
+    """v0.2.10 audit-econ #9: rows whose ``message.model`` does not start
+    with ``claude-`` are skipped UPSTREAM (before the dedup map and
+    before the panel). Their tokens AND cost are both excluded.
+
+    Fixture: 3 assistant rows — 1 claude-sonnet-4-5, 1 gpt-4, 1
+    codex-davinci. Only the claude row survives; the counter equals 2.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    rows = [
+        _valid_row(uuid="claude-row"),  # model = "claude-sonnet-4-5"
+    ]
+    rows[0]["message"]["model"] = "claude-sonnet-4-5"
+    gpt_row = _valid_row(uuid="gpt-row")
+    gpt_row["message"]["model"] = "gpt-4"
+    codex_row = _valid_row(uuid="codex-row")
+    codex_row["message"]["model"] = "codex-davinci"
+    rows.extend([gpt_row, codex_row])
+    _write_jsonl(proj / "session.jsonl", rows)
+
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    # Only the claude row survives; gpt + codex are filtered upstream.
+    assert len(out.records) == 1
+    assert out.records[0].uuid == "claude-row"
+    assert out.records[0].model == "claude-sonnet-4-5"
+    assert out.dropped_non_anthropic_count == 2
+    # Token aggregates must NOT include the non-Anthropic rows.
+    total_input_tok = sum(r.input_tok for r in out.records)
+    assert total_input_tok == 100  # only the claude row's tokens
+
+
+def test_jsonlreader_missing_model_dropped_as_non_anthropic(
+    tmp_path: Path,
+) -> None:
+    """v0.2.10 audit-econ #9: a row whose ``message.model`` field is
+    absent (Pydantic default ``"unknown"``) does NOT match the
+    ``claude-`` prefix and is treated as non-Anthropic. Skipped upstream
+    with counter increment.
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    row = _valid_row(uuid="missing-model")
+    del row["message"]["model"]  # Pydantic default kicks in → "unknown"
+    _write_jsonl(proj / "session.jsonl", [row])
+
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 0
+    assert out.dropped_non_anthropic_count == 1
+
+
+def test_jsonlreader_non_anthropic_filter_is_case_insensitive(
+    tmp_path: Path,
+) -> None:
+    """v0.2.10 audit-econ #9: the prefix check is case-insensitive to
+    survive any future capitalization drift in Anthropic-emitted model
+    identifiers (e.g. ``Claude-3``, ``CLAUDE-OPUS``).
+    """
+    proj = tmp_path / "projects" / "p1"
+    proj.mkdir(parents=True, exist_ok=True)
+    row = _valid_row(uuid="caps-claude")
+    row["message"]["model"] = "Claude-3-Opus"  # capitalized
+    _write_jsonl(proj / "session.jsonl", [row])
+
+    out = JSONLReader(pricing=_toy_pricing(tmp_path))(
+        since=date(2026, 5, 1),
+        until=date(2026, 5, 2),
+        projects_root=tmp_path / "projects",
+    )
+    assert len(out.records) == 1
+    assert out.dropped_non_anthropic_count == 0
+
+
+def test_dropped_non_anthropic_count_threaded_through_panel(
+    tmp_path: Path,
+) -> None:
+    """v0.2.10 audit-econ #9: ``JSONLReadResult.dropped_non_anthropic_count``
+    is surfaced on ``DailyNotionalPanel.dropped_non_anthropic_count`` by
+    ``build_daily_panel``. Mirror of Y-7 / Y-8 counter threading discipline.
+    """
+    import polars as pl
+    from datetime import datetime, timezone, date as _date
+    from simulations.dev_ai_cost_v2.panel_builder import build_daily_panel
+    from simulations.dev_ai_cost_v2.types import MessageRecord
+
+    rec = MessageRecord(
+        ts=datetime(2026, 5, 4, 12, 0, 0, tzinfo=timezone.utc),
+        model="claude-sonnet-4-5",
+        input_tok=100,
+        output_tok=50,
+        cache_create_5m=0,
+        cache_create_1h=0,
+        cache_read=0,
+        cost_usd_notional=1.5e-4,
+        session_id="s",
+        request_id="r",
+        is_error=False,
+        uuid="u-1",
+    )
+    rr = JSONLReadResult(
+        records=(rec,),
+        dropped_non_assistant_count=0,
+        dropped_malformed_line_count=0,
+        dropped_duplicate_count=0,
+        dropped_non_anthropic_count=5,
+    )
+    pricing = _toy_pricing(tmp_path)
+    trm = pl.DataFrame(
+        {"date": [_date(2026, 5, 4)], "trm_cop_per_usd": [4000.0]},
+        schema={"date": pl.Date, "trm_cop_per_usd": pl.Float64},
+    )
+    panel = build_daily_panel(rr, pricing, trm)
+    assert panel.dropped_non_anthropic_count == 5

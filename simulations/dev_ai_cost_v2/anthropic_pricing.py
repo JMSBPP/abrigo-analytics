@@ -35,6 +35,7 @@ Counter ownership (Y-5a): the table carries three int counters:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import warnings
 from collections.abc import Mapping
@@ -66,6 +67,17 @@ _INPUT_TIER_KEY: str = "input_cost_per_token_above_200k_tokens"
 _INPUT_TIER_THRESHOLD: int = 200_000
 
 LITELLM_SHA_PINNED: str = "e58a561caa21169fb02174148444c08509ce7028"
+
+# v0.2.10 audit-econ #3: sha256 of the cached
+# ``data/raw/litellm_model_prices.json`` file BYTES, computed at the same
+# upstream commit as ``LITELLM_SHA_PINNED``. The commit-SHA pin documents
+# UPSTREAM LINEAGE (which LiteLLM release the rates came from); the file
+# sha256 pin documents LOCAL CACHE INTEGRITY (the bytes on disk have not
+# been mutated since the snapshot). The two are distinct concerns and are
+# checked independently in ``PricingTable.from_litellm_sha``.
+LITELLM_FILE_SHA256_PINNED: str = (
+    "05b050523e4c71581a12605c4bc49cf7049bafe3f51e1506b9da61afb9791db9"
+)
 
 
 # ─── ModelRates value type ───────────────────────────────────────────────────
@@ -136,15 +148,26 @@ class PricingTable:
         for multi-step dispatch; v0.2.3 single-snapshot loads accept ``ts``
         without altering lookup.
 
+        v0.2.10 audit-econ #3: DUAL-PIN ENFORCEMENT. The previous
+        implementation checked only the caller-supplied commit-SHA
+        argument against ``LITELLM_SHA_PINNED``; the file BYTES on disk
+        were never hashed. A mutated cache (manual edit, partial write,
+        accidental overwrite) would load silently. The fix adds a second
+        independent check: compute ``hashlib.sha256(raw).hexdigest()`` of
+        the file bytes and compare to ``LITELLM_FILE_SHA256_PINNED``.
+        Both pins are enforced unless ``skip_sha_check=True`` (test
+        escape hatch). The two pins document different concerns —
+        commit-SHA = upstream lineage; file-SHA256 = local cache integrity.
+
         Args:
             sha: LiteLLM commit SHA. Must equal ``LITELLM_SHA_PINNED`` unless
                 ``skip_sha_check``.
             cached_json_path: filesystem path to the cached LiteLLM JSON
                 blob (``Path.read_bytes`` is the single IO call).
-            skip_sha_check: testing escape hatch. When ``True``, the SHA
-                comparison is bypassed (so test fixtures with synthetic
-                tables can be loaded). Production callers MUST pass
-                ``False`` (the default).
+            skip_sha_check: testing escape hatch. When ``True``, BOTH the
+                commit-SHA AND the file-SHA256 comparisons are bypassed
+                (so test fixtures with synthetic tables can be loaded).
+                Production callers MUST pass ``False`` (the default).
 
         Returns:
             A frozen ``PricingTable`` with ``MappingProxyType`` rate
@@ -152,8 +175,10 @@ class PricingTable:
             per-required-key absences seen at load.
 
         Raises:
-            ValueError: when ``skip_sha_check`` is ``False`` and the
-                supplied ``sha`` does not equal ``LITELLM_SHA_PINNED``.
+            ValueError: when ``skip_sha_check`` is ``False`` and either
+                (a) the supplied ``sha`` does not equal
+                ``LITELLM_SHA_PINNED``, or (b) the sha256 of the file
+                bytes does not equal ``LITELLM_FILE_SHA256_PINNED``.
 
         Errors from external state:
             FileNotFoundError: when ``cached_json_path`` does not exist.
@@ -167,11 +192,26 @@ class PricingTable:
             keys are WARNed and counted, not silenced.
         """
         raw: bytes = cached_json_path.read_bytes()
-        if not skip_sha_check and sha != LITELLM_SHA_PINNED:
-            raise ValueError(
-                f"PricingTable refuses load: requested SHA {sha} != "
-                f"pinned {LITELLM_SHA_PINNED}"
-            )
+        if not skip_sha_check:
+            # Pin 1: upstream commit-SHA (caller-supplied) must match.
+            if sha != LITELLM_SHA_PINNED:
+                raise ValueError(
+                    f"PricingTable refuses load: requested SHA {sha} != "
+                    f"pinned {LITELLM_SHA_PINNED}"
+                )
+            # Pin 2 (v0.2.10 audit-econ #3): file-bytes sha256 must match
+            # ``LITELLM_FILE_SHA256_PINNED``. Distinct from the commit-SHA
+            # pin: commit-SHA = upstream lineage; file-SHA256 = local
+            # cache integrity. Both checks are required.
+            file_digest: str = hashlib.sha256(raw).hexdigest()
+            if file_digest != LITELLM_FILE_SHA256_PINNED:
+                raise ValueError(
+                    f"PricingTable refuses load: cached file sha256 "
+                    f"{file_digest} != pinned "
+                    f"{LITELLM_FILE_SHA256_PINNED} "
+                    f"(local cache integrity violation at "
+                    f"{cached_json_path})"
+                )
 
         table = json.loads(raw)
         out: dict[str, Mapping[str, float | None]] = {}

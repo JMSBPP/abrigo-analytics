@@ -225,25 +225,37 @@ class JSONLReadResult:
             len(records)``. Rows whose ``message.id`` is None bypass the
             dedup map entirely and do NOT increment this counter (per
             spec §0.5 CR optional-7th / RC FLAG-B).
+        dropped_non_anthropic_count: v0.2.10 audit-econ #9 — number of
+            assistant JSONL rows skipped because ``message.model`` is
+            ``None`` or does not start with ``claude-`` (case-insensitive).
+            The operator's ``~/.claude/projects/`` tree contains both
+            Claude Code AND OpenAI Codex / other-vendor sessions; admitting
+            non-Anthropic rows inflated downstream token aggregates at
+            cost=0 (PricingTable's ladder returned 0 for unknown models).
+            The filter moves UPSTREAM to JSONLReader so non-Anthropic
+            tokens never enter the panel at all. Tokens AND cost are both
+            excluded.
 
     Counter ownership (Y-5a): this container carries ONLY the
     JSONLReader-side counters (``dropped_non_assistant_count``,
-    ``dropped_malformed_line_count``, ``dropped_duplicate_count``). The
-    PricingTable-side counters (``WARN_missing_keys_count``,
-    ``dropped_unknown_model_count``, ``multiple_substring_match_warning``)
-    live on ``PricingTable`` and are surfaced into ``DailyNotionalPanel``
-    by the panel-builder.
+    ``dropped_malformed_line_count``, ``dropped_duplicate_count``,
+    ``dropped_non_anthropic_count``). The PricingTable-side counters
+    (``WARN_missing_keys_count``, ``dropped_unknown_model_count``,
+    ``multiple_substring_match_warning``) live on ``PricingTable`` and are
+    surfaced into ``DailyNotionalPanel`` by the panel-builder.
 
     Raises:
         ValueError: if ``dropped_non_assistant_count``,
-            ``dropped_malformed_line_count``, or
-            ``dropped_duplicate_count`` is negative.
+            ``dropped_malformed_line_count``,
+            ``dropped_duplicate_count``, or
+            ``dropped_non_anthropic_count`` is negative.
     """
 
     records: tuple[MessageRecord, ...]
     dropped_non_assistant_count: int
     dropped_malformed_line_count: int
     dropped_duplicate_count: int
+    dropped_non_anthropic_count: int
 
     def __post_init__(self) -> None:
         if self.dropped_non_assistant_count < 0:
@@ -260,6 +272,11 @@ class JSONLReadResult:
             raise ValueError(
                 f"JSONLReadResult.dropped_duplicate_count must be >= 0; "
                 f"got {self.dropped_duplicate_count}"
+            )
+        if self.dropped_non_anthropic_count < 0:
+            raise ValueError(
+                f"JSONLReadResult.dropped_non_anthropic_count must be >= 0; "
+                f"got {self.dropped_non_anthropic_count}"
             )
 
 
@@ -280,9 +297,28 @@ class DailyNotionalPanel:
     dtypes all raise ``ValueError`` with a descriptive message identifying
     the offending column(s).
 
-    v0.2.3 counters per Y-5a + Y-6:
-      - ``dropped_rows_count``: weekend records + weekend TRM + inner-join
-        misses (v0.2.1).
+    v0.2.10 counter split (audit-econ finding #10 + #1):
+      The previous single ``dropped_rows_count`` aggregated three
+      different units (message-level + TRM-row-level + day-level) into
+      one scalar. It is removed and replaced by three named counters
+      that each pin one unit. The day-level counter
+      ``dropped_trm_missing_weekday_count`` surfaces Colombian-holiday
+      Mondays — weekdays where Claude was active but Banrep published
+      no TRM row (audit-econ finding #1). No forward-fill: TRM-missing
+      weekday drops are a DESIGN CHOICE (spec §6 forward-fill-forbidden
+      invariant). The counter exposes the magnitude.
+
+    v0.2.3 counters per Y-5a + Y-6 + v0.2.10 split:
+      - ``dropped_weekend_message_count``: per-MESSAGE count of records
+        whose UTC date falls on Sat/Sun (split from old
+        ``dropped_rows_count`` — message unit).
+      - ``dropped_weekend_trm_row_count``: per-TRM-ROW count of Banrep
+        TRM quotes whose date falls on Sat/Sun (split from old
+        ``dropped_rows_count`` — TRM-row unit).
+      - ``dropped_trm_missing_weekday_count``: per-DAY count of weekday
+        UTC dates that had Claude messages but no matching TRM row
+        (holiday Mondays etc.; split from old ``dropped_rows_count``
+        — day unit; audit-econ finding #1).
       - ``dropped_error_count``: ``is_error=True`` rows excluded from cost
         aggregation (v0.2.1).
       - ``dropped_non_assistant_count``: JSONL rows skipped because
@@ -299,6 +335,10 @@ class DailyNotionalPanel:
         rows (Y-5a, sourced from ``PricingTable``).
       - ``multiple_substring_match_warning``: substring-tiebreaker-invoked
         rows (Y-5a / Y-5d, sourced from ``PricingTable``).
+      - ``dropped_non_anthropic_count``: v0.2.10 audit-econ #9 — assistant
+        rows whose ``message.model`` is None or non-``claude-*`` (Codex,
+        GPT, etc.); filtered upstream by ``JSONLReader`` so their tokens
+        do NOT inflate panel aggregates. Sourced from ``JSONLReadResult``.
       - ``ephemeral_pi_share``: Y-6 diagnostic
         ``Σ cache_create_1h / Σ (cache_create_5m + cache_create_1h)``;
         0.0 if denominator is 0. Bounded ``[0, 1]``.
@@ -306,15 +346,19 @@ class DailyNotionalPanel:
     Fields:
         df: the underlying polars ``DataFrame``. Schema pinned by
             ``EXPECTED_PANEL_SCHEMA``.
-        dropped_rows_count: count of JSONL rows dropped due to schema /
-            parse errors during panel construction (``≥ 0``). Surfaced to
-            the CLI for an operator-visible audit line.
+        dropped_weekend_message_count: per-message weekend drops (``≥ 0``).
+        dropped_weekend_trm_row_count: per-TRM-row weekend drops (``≥ 0``).
+        dropped_trm_missing_weekday_count: per-day inner-join misses where
+            the message-side daily aggregate has no matching TRM row
+            (``≥ 0``). Surfaces holiday-Monday-style drops (audit-econ #1).
         dropped_error_count: count of assistant-error messages dropped
             during panel construction (``≥ 0``). Operator visibility
             requirement per spec v0.2.1 §3.4.
         dropped_non_assistant_count: JSONLReader-side counter (Y-5a).
         dropped_malformed_line_count: JSONLReader-side counter (v0.2.4 Y-7).
         dropped_duplicate_count: JSONLReader-side counter (v0.2.5 Y-8).
+        dropped_non_anthropic_count: JSONLReader-side counter (v0.2.10
+            audit-econ #9).
         warn_missing_keys_count: PricingTable-side counter (Y-5a).
         dropped_unknown_model_count: PricingTable-side counter (Y-5a).
         multiple_substring_match_warning: PricingTable-side counter (Y-5d).
@@ -328,7 +372,9 @@ class DailyNotionalPanel:
     """
 
     df: pl.DataFrame
-    dropped_rows_count: int
+    dropped_weekend_message_count: int
+    dropped_weekend_trm_row_count: int
+    dropped_trm_missing_weekday_count: int
     dropped_error_count: int
     dropped_non_assistant_count: int
     dropped_malformed_line_count: int
@@ -337,6 +383,7 @@ class DailyNotionalPanel:
     multiple_substring_match_warning: int
     ephemeral_pi_share: float
     dropped_duplicate_count: int
+    dropped_non_anthropic_count: int
 
     def __post_init__(self) -> None:
         actual: dict[str, pl.DataType] = dict(self.df.schema)
@@ -354,7 +401,9 @@ class DailyNotionalPanel:
                     f"{expected}, got {actual[col]}"
                 )
         for fname in (
-            "dropped_rows_count",
+            "dropped_weekend_message_count",
+            "dropped_weekend_trm_row_count",
+            "dropped_trm_missing_weekday_count",
             "dropped_error_count",
             "dropped_non_assistant_count",
             "dropped_malformed_line_count",
@@ -362,6 +411,7 @@ class DailyNotionalPanel:
             "dropped_unknown_model_count",
             "multiple_substring_match_warning",
             "dropped_duplicate_count",
+            "dropped_non_anthropic_count",
         ):
             v: int = getattr(self, fname)
             if v < 0:
