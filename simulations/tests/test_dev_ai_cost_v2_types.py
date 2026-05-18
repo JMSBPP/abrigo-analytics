@@ -210,10 +210,12 @@ def _valid_panel_df() -> pl.DataFrame:
 
 
 def _panel_kwargs(**overrides) -> dict:
-    """Default kwargs for a DailyNotionalPanel including v0.2.3/2.4/2.5 counters."""
+    """Default kwargs for a DailyNotionalPanel including v0.2.3/2.4/2.5/2.10 counters."""
     base = dict(
         df=_valid_panel_df(),
-        dropped_rows_count=0,
+        dropped_weekend_message_count=0,
+        dropped_weekend_trm_row_count=0,
+        dropped_trm_missing_weekday_count=0,
         dropped_error_count=0,
         dropped_non_assistant_count=0,
         dropped_malformed_line_count=0,
@@ -230,7 +232,9 @@ def _panel_kwargs(**overrides) -> dict:
 def test_daily_notional_panel_constructs() -> None:
     p = DailyNotionalPanel(**_panel_kwargs())
     assert p.df.height == 1
-    assert p.dropped_rows_count == 0
+    assert p.dropped_weekend_message_count == 0
+    assert p.dropped_weekend_trm_row_count == 0
+    assert p.dropped_trm_missing_weekday_count == 0
     assert p.dropped_non_assistant_count == 0
     assert p.dropped_malformed_line_count == 0
     assert p.warn_missing_keys_count == 0
@@ -257,9 +261,22 @@ def test_daily_notional_panel_rejects_wrong_dtype() -> None:
         DailyNotionalPanel(**_panel_kwargs(df=df))
 
 
-def test_daily_notional_panel_rejects_negative_dropped_counts() -> None:
-    with pytest.raises(ValueError, match="dropped"):
-        DailyNotionalPanel(**_panel_kwargs(dropped_rows_count=-1))
+def test_daily_notional_panel_rejects_negative_weekend_message_count() -> None:
+    """v0.2.10 audit-econ #10: per-message weekend counter must be ≥ 0."""
+    with pytest.raises(ValueError, match="dropped_weekend_message_count"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_weekend_message_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_weekend_trm_row_count() -> None:
+    """v0.2.10 audit-econ #10: per-TRM-row weekend counter must be ≥ 0."""
+    with pytest.raises(ValueError, match="dropped_weekend_trm_row_count"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_weekend_trm_row_count=-1))
+
+
+def test_daily_notional_panel_rejects_negative_trm_missing_weekday_count() -> None:
+    """v0.2.10 audit-econ #1: per-day TRM-missing-weekday counter must be ≥ 0."""
+    with pytest.raises(ValueError, match="dropped_trm_missing_weekday_count"):
+        DailyNotionalPanel(**_panel_kwargs(dropped_trm_missing_weekday_count=-1))
 
 
 def test_daily_notional_panel_rejects_negative_error_counts() -> None:

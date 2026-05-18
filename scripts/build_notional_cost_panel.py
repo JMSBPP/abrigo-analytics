@@ -118,15 +118,18 @@ def main() -> int:
     panel = build_daily_panel(read_result, pricing, trm)
 
     panel.df.write_parquet(args.out)
-    # Operator-visible audit line: original 2 counters (dropped_rows,
-    # dropped_error) + the 4 v0.2.3 counters (non_assistant, warn_missing,
-    # unknown_model, substr_tie) + v0.2.4 Y-7 counter (dropped_malformed)
-    # + v0.2.5 Y-8 counter (dropped_duplicate) + Y-6 π̂ scalar = 9 fields.
-    # JSONLReader-sourced counters (non_assistant, malformed, duplicate)
-    # grouped first; PricingTable-sourced next; π̂ last.
+    # Operator-visible audit line: v0.2.10 audit-econ #10 splits the old
+    # single ``dropped_rows`` counter into three named counters pinned to
+    # one unit each (message / TRM-row / weekday-day). The day-level
+    # counter surfaces holiday-Monday drops (audit-econ #1).
+    # Counters grouped: weekend/TRM-missing (panel-side) first, then
+    # error, then JSONLReader-sourced (non_assistant, malformed,
+    # duplicate), then PricingTable-sourced, then Y-6 π̂.
     print(
         f"[OK] wrote {args.out} ({panel.df.height} rows; "
-        f"dropped_rows={panel.dropped_rows_count}, "
+        f"dropped_weekend_message={panel.dropped_weekend_message_count}, "
+        f"dropped_weekend_trm_row={panel.dropped_weekend_trm_row_count}, "
+        f"dropped_trm_missing_weekday={panel.dropped_trm_missing_weekday_count}, "
         f"dropped_error={panel.dropped_error_count}, "
         f"dropped_non_assistant={panel.dropped_non_assistant_count}, "
         f"dropped_malformed={panel.dropped_malformed_line_count}, "

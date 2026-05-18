@@ -93,8 +93,17 @@ def build_daily_panel(
           count is surfaced as ``DailyNotionalPanel.dropped_error_count``
           (spec CORRECTIONS-V).
         * Weekends (Sat/Sun) are dropped on BOTH sides before the inner
-          join; their combined count is included in
-          ``DailyNotionalPanel.dropped_rows_count`` (spec §3.5).
+          join; per-message weekend drops are counted in
+          ``dropped_weekend_message_count`` (message unit) and per-TRM-row
+          weekend drops are counted in ``dropped_weekend_trm_row_count``
+          (row unit) (spec §3.5; v0.2.10 audit-econ #10 split).
+        * TRM-missing weekday days (Claude active, no Banrep TRM quote —
+          e.g. Colombian holiday Mondays) are dropped by the inner join.
+          The day-level count is surfaced as
+          ``dropped_trm_missing_weekday_count`` (v0.2.10 audit-econ #1).
+          This is a DESIGN CHOICE: forward-fill is FORBIDDEN per spec §6
+          (forward-filling would smuggle FX volatility into idle days).
+          The counter exposes the magnitude rather than papering over it.
         * Forward-fill is FORBIDDEN: a UTC date that lacks a source row on
           EITHER side does NOT appear in the output.
         * All arithmetic is ``float`` (ccusage parity per Y-2).
@@ -207,13 +216,16 @@ def build_daily_panel(
     # Final column ordering/selection to match ``EXPECTED_PANEL_SCHEMA`` exactly.
     joined = joined.select(list(EXPECTED_PANEL_SCHEMA.keys()))
 
-    # ── Phase 7: dropped-rows accounting ─────────────────────────────────
-    join_loss_left: int = pre_join_daily_height - joined.height
-    dropped_rows: int = weekend_records + weekend_trm + join_loss_left
+    # ── Phase 7: dropped-rows accounting (v0.2.10 audit-econ #10 split) ──
+    # Three named counters — each pins ONE unit. The day-level counter
+    # surfaces holiday-Monday-style drops (audit-econ finding #1).
+    trm_missing_weekday: int = pre_join_daily_height - joined.height
 
     return DailyNotionalPanel(
         df=joined,
-        dropped_rows_count=int(dropped_rows),
+        dropped_weekend_message_count=int(weekend_records),
+        dropped_weekend_trm_row_count=int(weekend_trm),
+        dropped_trm_missing_weekday_count=int(trm_missing_weekday),
         dropped_error_count=int(dropped_error),
         dropped_non_assistant_count=read_result.dropped_non_assistant_count,
         dropped_malformed_line_count=read_result.dropped_malformed_line_count,

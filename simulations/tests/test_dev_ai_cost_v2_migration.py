@@ -128,15 +128,22 @@ def test_build_daily_panel_first_arg_is_jsonl_read_result() -> None:
 
 
 def test_daily_notional_panel_v0_2_3_fields() -> None:
-    """v0.2.5 Y-8: DailyNotionalPanel carries 8 counters + π̂.
+    """v0.2.10 audit-econ #10: DailyNotionalPanel carries 10 counters + π̂.
 
     Y-5a baseline = 6 counters; Y-7 adds ``dropped_malformed_line_count``;
-    Y-8 adds ``dropped_duplicate_count``.
+    Y-8 adds ``dropped_duplicate_count``. v0.2.10 splits the legacy
+    ``dropped_rows_count`` (mixed-unit) into 3 named counters:
+    ``dropped_weekend_message_count`` (msg-level),
+    ``dropped_weekend_trm_row_count`` (TRM-row-level), and
+    ``dropped_trm_missing_weekday_count`` (day-level; surfaces
+    audit-econ #1's holiday Mondays).
     """
     fields = {f.name for f in DailyNotionalPanel.__dataclass_fields__.values()}
     required = {
         "df",
-        "dropped_rows_count",
+        "dropped_weekend_message_count",
+        "dropped_weekend_trm_row_count",
+        "dropped_trm_missing_weekday_count",
         "dropped_error_count",
         "dropped_non_assistant_count",
         "dropped_malformed_line_count",
@@ -147,7 +154,12 @@ def test_daily_notional_panel_v0_2_3_fields() -> None:
         "ephemeral_pi_share",
     }
     missing = required - fields
-    assert not missing, f"DailyNotionalPanel missing v0.2.5 fields: {missing}"
+    assert not missing, f"DailyNotionalPanel missing v0.2.10 fields: {missing}"
+    # The legacy unit-mixed counter must be GONE (per CLAUDE.md no
+    # backwards-compatibility shims).
+    assert "dropped_rows_count" not in fields, (
+        "v0.2.10 audit-econ #10: legacy dropped_rows_count must be removed"
+    )
 
 
 def test_expected_panel_schema_v0_2_3() -> None:

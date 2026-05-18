@@ -280,9 +280,28 @@ class DailyNotionalPanel:
     dtypes all raise ``ValueError`` with a descriptive message identifying
     the offending column(s).
 
-    v0.2.3 counters per Y-5a + Y-6:
-      - ``dropped_rows_count``: weekend records + weekend TRM + inner-join
-        misses (v0.2.1).
+    v0.2.10 counter split (audit-econ finding #10 + #1):
+      The previous single ``dropped_rows_count`` aggregated three
+      different units (message-level + TRM-row-level + day-level) into
+      one scalar. It is removed and replaced by three named counters
+      that each pin one unit. The day-level counter
+      ``dropped_trm_missing_weekday_count`` surfaces Colombian-holiday
+      Mondays — weekdays where Claude was active but Banrep published
+      no TRM row (audit-econ finding #1). No forward-fill: TRM-missing
+      weekday drops are a DESIGN CHOICE (spec §6 forward-fill-forbidden
+      invariant). The counter exposes the magnitude.
+
+    v0.2.3 counters per Y-5a + Y-6 + v0.2.10 split:
+      - ``dropped_weekend_message_count``: per-MESSAGE count of records
+        whose UTC date falls on Sat/Sun (split from old
+        ``dropped_rows_count`` — message unit).
+      - ``dropped_weekend_trm_row_count``: per-TRM-ROW count of Banrep
+        TRM quotes whose date falls on Sat/Sun (split from old
+        ``dropped_rows_count`` — TRM-row unit).
+      - ``dropped_trm_missing_weekday_count``: per-DAY count of weekday
+        UTC dates that had Claude messages but no matching TRM row
+        (holiday Mondays etc.; split from old ``dropped_rows_count``
+        — day unit; audit-econ finding #1).
       - ``dropped_error_count``: ``is_error=True`` rows excluded from cost
         aggregation (v0.2.1).
       - ``dropped_non_assistant_count``: JSONL rows skipped because
@@ -306,9 +325,11 @@ class DailyNotionalPanel:
     Fields:
         df: the underlying polars ``DataFrame``. Schema pinned by
             ``EXPECTED_PANEL_SCHEMA``.
-        dropped_rows_count: count of JSONL rows dropped due to schema /
-            parse errors during panel construction (``≥ 0``). Surfaced to
-            the CLI for an operator-visible audit line.
+        dropped_weekend_message_count: per-message weekend drops (``≥ 0``).
+        dropped_weekend_trm_row_count: per-TRM-row weekend drops (``≥ 0``).
+        dropped_trm_missing_weekday_count: per-day inner-join misses where
+            the message-side daily aggregate has no matching TRM row
+            (``≥ 0``). Surfaces holiday-Monday-style drops (audit-econ #1).
         dropped_error_count: count of assistant-error messages dropped
             during panel construction (``≥ 0``). Operator visibility
             requirement per spec v0.2.1 §3.4.
@@ -328,7 +349,9 @@ class DailyNotionalPanel:
     """
 
     df: pl.DataFrame
-    dropped_rows_count: int
+    dropped_weekend_message_count: int
+    dropped_weekend_trm_row_count: int
+    dropped_trm_missing_weekday_count: int
     dropped_error_count: int
     dropped_non_assistant_count: int
     dropped_malformed_line_count: int
@@ -354,7 +377,9 @@ class DailyNotionalPanel:
                     f"{expected}, got {actual[col]}"
                 )
         for fname in (
-            "dropped_rows_count",
+            "dropped_weekend_message_count",
+            "dropped_weekend_trm_row_count",
+            "dropped_trm_missing_weekday_count",
             "dropped_error_count",
             "dropped_non_assistant_count",
             "dropped_malformed_line_count",
